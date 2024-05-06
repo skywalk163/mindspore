@@ -21,7 +21,7 @@
 
 #include "gtest/gtest.h"
 #include "utils/log_adapter.h"
-#include "mindrecord/include/shard_page.h"
+#include "minddata/mindrecord/include/shard_page.h"
 #include "ut_common.h"
 
 using json = nlohmann::json;
@@ -29,10 +29,6 @@ using std::ifstream;
 using std::pair;
 using std::string;
 using std::vector;
-
-using mindspore::MsLogLevel::INFO;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::LogStream;
 
 namespace mindspore {
 namespace mindrecord {

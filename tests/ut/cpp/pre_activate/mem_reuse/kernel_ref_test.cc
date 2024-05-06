@@ -18,9 +18,9 @@
 #include <vector>
 #include <string>
 
-#include "pre_activate/mem_reuse/kernel_refcount.h"
+#include "backend/common/mem_reuse/kernel_refcount.h"
 
-#include "utils/utils.h"
+#include "include/common/utils/utils.h"
 #include "common/common_test.h"
 #include "common/py_func_graph_fetcher.h"
 

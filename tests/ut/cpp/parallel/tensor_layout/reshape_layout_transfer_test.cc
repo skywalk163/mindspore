@@ -17,17 +17,14 @@
 #include <algorithm>
 #include "common/common_test.h"
 #include "common/py_func_graph_fetcher.h"
-#include "parallel/tensor_layout/tensor_layout.h"
-#include "parallel/tensor_layout/reshape_layout_transfer.h"
+#include "frontend/parallel/tensor_layout/tensor_layout.h"
+#include "frontend/parallel/tensor_layout/reshape_layout_transfer.h"
 #include "util_layout_gen_test.h"
 #include "utils/log_adapter.h"
+#include "frontend/parallel/step_parallel.h"
 
 namespace mindspore {
 namespace parallel {
-
-using DeviceArrangement = std::vector<int32_t>;
-using TensorMap = std::vector<int32_t>;
-using TensorShape = std::vector<int32_t>;
 
 class TestReshapeLayoutTransfer : public UT::Common {
  public:
@@ -38,11 +35,11 @@ class TestReshapeLayoutTransfer : public UT::Common {
   virtual void TearDown() {}
 };
 
-void InferUnifiedLayout(const DeviceArrangement& device_arrangement_shape, const TensorMap& in_tensor_map_shape,
-                        const TensorShape& in_tensor_shape_shape, const TensorMap& out_tensor_map_shape,
-                        const TensorShape& out_tensor_shape_shape, DeviceArrangement* unified_device_arrangement_shape,
-                        TensorMap* unified_in_tensor_map_shape, TensorMap* unified_out_tensor_map_shape,
-                        TensorMap* unified_tensor_shape_shape) {
+void InferUnifiedLayout(const DeviceArrangement &device_arrangement_shape, const TensorMap &in_tensor_map_shape,
+                        const TensorShape &in_tensor_shape_shape, const TensorMap &out_tensor_map_shape,
+                        const TensorShape &out_tensor_shape_shape, DeviceArrangement *unified_device_arrangement_shape,
+                        TensorMap *unified_in_tensor_map_shape, TensorMap *unified_out_tensor_map_shape,
+                        TensorMap *unified_tensor_shape_shape) {
   Arrangement device_arrangement;
   Status status = device_arrangement.Init(device_arrangement_shape);
   ASSERT_EQ(Status::SUCCESS, status);
@@ -88,13 +85,13 @@ void InferUnifiedLayout(const DeviceArrangement& device_arrangement_shape, const
   *unified_out_tensor_map_shape = unified_out_tensor_map.array();
 }
 
-void InferUnifiedLayoutCheck(const DeviceArrangement& device_arrangement, const TensorMap& in_tensor_map,
-                             const TensorShape& in_tensor_shape, const TensorMap& out_tensor_map,
-                             const TensorShape& out_tensor_shape,
-                             const DeviceArrangement& unified_device_arrangement_expect,
-                             const TensorMap& unified_in_tensor_map_expect,
-                             const TensorMap& unified_out_tensor_map_expect,
-                             const TensorMap& unified_tensor_shape_expect) {
+void InferUnifiedLayoutCheck(const DeviceArrangement &device_arrangement, const TensorMap &in_tensor_map,
+                             const TensorShape &in_tensor_shape, const TensorMap &out_tensor_map,
+                             const TensorShape &out_tensor_shape,
+                             const DeviceArrangement &unified_device_arrangement_expect,
+                             const TensorMap &unified_in_tensor_map_expect,
+                             const TensorMap &unified_out_tensor_map_expect,
+                             const TensorMap &unified_tensor_shape_expect) {
   DeviceArrangement unified_device_arrangement;
   TensorMap unified_in_tensor_map;
   TensorMap unified_out_tensor_map;
@@ -112,9 +109,9 @@ void InferUnifiedLayoutCheck(const DeviceArrangement& device_arrangement, const 
   ASSERT_EQ(unified_tensor_shape_expect, unified_tensor_shape);
 }
 
-void ValidUnifiedLayoutCheck(const DeviceArrangement& device_arrangement, const TensorMap& in_tensor_map,
-                             const TensorShape& in_tensor_shape, const TensorMap& out_tensor_map,
-                             const TensorShape& out_tensor_shape) {
+void ValidUnifiedLayoutCheck(const DeviceArrangement &device_arrangement, const TensorMap &in_tensor_map,
+                             const TensorShape &in_tensor_shape, const TensorMap &out_tensor_map,
+                             const TensorShape &out_tensor_shape) {
   DeviceArrangement unified_device_arrangement;
   TensorMap unified_in_tensor_map;
   TensorMap unified_out_tensor_map;
@@ -260,13 +257,13 @@ TEST_F(TestReshapeLayoutTransfer, ValidInferUnifiedLayoutCheck11) {
   ValidUnifiedLayoutCheck(device_arrangement, in_tensor_map, in_tensor_shape, out_tensor_map, out_tensor_shape);
 }
 
-void ValidInferUnifiedLayoutCheckAll(int32_t device_pow_size, int32_t tensor_pow_size,
-                                     int32_t max_device_dim, int32_t max_shape_dim) {
+void ValidInferUnifiedLayoutCheckAll(int64_t device_pow_size, int64_t tensor_pow_size, int64_t max_device_dim,
+                                     int64_t max_shape_dim) {
   std::vector<std::tuple<DeviceArrangement, TensorMap, TensorShape>> layout_list;
   GenerateValidLayoutByDeviceSizeAndTensorSize(device_pow_size, tensor_pow_size, max_device_dim, max_shape_dim,
                                                &layout_list);
-  for (uint32_t in = 0; in < layout_list.size(); in++) {
-    for (uint32_t out = 0; out < layout_list.size(); out++) {
+  for (size_t in = 0; in < layout_list.size(); in++) {
+    for (size_t out = 0; out < layout_list.size(); out++) {
       DeviceArrangement in_device_arrangement = std::get<0>(layout_list[in]);
       TensorMap in_tensor_map = std::get<1>(layout_list[in]);
       TensorShape in_tensor_shape = std::get<2>(layout_list[in]);
@@ -287,33 +284,33 @@ void ValidInferUnifiedLayoutCheckAll(int32_t device_pow_size, int32_t tensor_pow
 }
 
 TEST_F(TestReshapeLayoutTransfer, ValidInferUnifiedLayoutCheckAll) {
-  int32_t device_pow_size_max = 4;
-  int32_t tensor_pow_size_max = 4;
-  int32_t device_pow_size_min = 1;
-  int32_t tensor_pow_size_min = 1;
-  const int32_t max_device_dim = 5;
-  const int32_t max_shape_dim = 5;
-  int32_t device_pow_size = device_pow_size_min;
+  int64_t device_pow_size_max = 4;
+  int64_t tensor_pow_size_max = 4;
+  int64_t device_pow_size_min = 1;
+  int64_t tensor_pow_size_min = 1;
+  const int64_t max_device_dim = 5;
+  const int64_t max_shape_dim = 5;
+  int64_t device_pow_size = device_pow_size_min;
   while (device_pow_size <= device_pow_size_max) {
-    int32_t tensor_pow_size = tensor_pow_size_min;
+    int64_t tensor_pow_size = tensor_pow_size_min;
     while (tensor_pow_size <= tensor_pow_size_max) {
       ValidInferUnifiedLayoutCheckAll(device_pow_size, tensor_pow_size, max_device_dim, max_shape_dim);
       tensor_pow_size++;
     }
-  device_pow_size++;
+    device_pow_size++;
   }
 }
 
 TEST_F(TestReshapeLayoutTransfer, ValidInferUnifiedLayoutCheckAll2) {
-  int32_t device_pow_size_max = 1;
-  int32_t tensor_pow_size_max = 2;
-  int32_t device_pow_size_min = 1;
-  int32_t tensor_pow_size_min = 2;
-  const int32_t max_device_dim = 5;
-  const int32_t max_shape_dim = 5;
-  int32_t device_pow_size = device_pow_size_min;
+  int64_t device_pow_size_max = 1;
+  int64_t tensor_pow_size_max = 2;
+  int64_t device_pow_size_min = 1;
+  int64_t tensor_pow_size_min = 2;
+  const int64_t max_device_dim = 5;
+  const int64_t max_shape_dim = 5;
+  int64_t device_pow_size = device_pow_size_min;
   while (device_pow_size <= device_pow_size_max) {
-    int32_t tensor_pow_size = tensor_pow_size_min;
+    int64_t tensor_pow_size = tensor_pow_size_min;
     while (tensor_pow_size <= tensor_pow_size_max) {
       ValidInferUnifiedLayoutCheckAll(device_pow_size, tensor_pow_size, max_device_dim, max_shape_dim);
       tensor_pow_size++;

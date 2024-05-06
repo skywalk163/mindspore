@@ -18,9 +18,16 @@ import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
+grad_all = C.GradOperation(get_all=True)
 
 
 class GradWrap(nn.Cell):
@@ -29,20 +36,20 @@ class GradWrap(nn.Cell):
         self.network = network
 
     def construct(self, x, y):
-        return C.grad_all(self.network)(x, y)
+        return grad_all(self.network)(x, y)
 
 
 def compile_net(net, x, y):
-    net.set_auto_parallel()
-    _executor.compile(net, x, y)
+    net.set_train()
+    _cell_graph_executor.compile(net, x, y)
 
 
 def test_sum_as_loss():
     class Net(nn.Cell):
         def __init__(self, strategy0, strategy1):
             super().__init__()
-            self.fc_nobias = P.MatMul(transpose_b=True).set_strategy(strategy0)
-            self.reduce_sum = P.ReduceSum(keep_dims=False).set_strategy(strategy1)
+            self.fc_nobias = P.MatMul(transpose_b=True).shard(strategy0)
+            self.reduce_sum = P.ReduceSum(keep_dims=False).shard(strategy1)
 
         def construct(self, x, y):
             out = self.fc_nobias(x, y)
@@ -64,8 +71,8 @@ def test_sum_as_loss2():
     class Net(nn.Cell):
         def __init__(self, strategy0, strategy1):
             super().__init__()
-            self.fc_nobias = P.MatMul(transpose_b=True).set_strategy(strategy0)
-            self.reduce_sum = P.ReduceSum(keep_dims=False).set_strategy(strategy1)
+            self.fc_nobias = P.MatMul(transpose_b=True).shard(strategy0)
+            self.reduce_sum = P.ReduceSum(keep_dims=False).shard(strategy1)
 
         def construct(self, x, y):
             out = self.fc_nobias(x, y)

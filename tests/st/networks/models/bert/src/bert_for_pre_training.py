@@ -1,4 +1,4 @@
-# Copyright 2020 Huawei Technologies Co., Ltd
+# Copyright 2020-2022 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 """Bert for pretraining."""
 import numpy as np
 
+import mindspore.ops as ops
 import mindspore.nn as nn
 from mindspore.common.initializer import initializer, TruncatedNormal
 from mindspore.ops import operations as P
@@ -24,7 +25,7 @@ from mindspore.common.tensor import Tensor
 from mindspore.common.parameter import Parameter, ParameterTuple
 from mindspore.common import dtype as mstype
 from mindspore.nn.wrap.grad_reducer import DistributedGradReducer
-from mindspore.train.parallel_utils import ParallelMode
+from mindspore.context import ParallelMode
 from mindspore.communication.management import get_group_size
 from mindspore import context
 from .bert_model import BertModel
@@ -32,7 +33,6 @@ from .bert_model import BertModel
 GRADIENT_CLIP_TYPE = 1
 GRADIENT_CLIP_VALUE = 1.0
 
-_nn_clip_by_norm = nn.ClipByNorm()
 clip_grad = C.MultitypeFuncGraph("clip_grad")
 
 
@@ -54,10 +54,10 @@ def _clip_grad(clip_type, clip_value, grad):
         return grad
     dt = F.dtype(grad)
     if clip_type == 0:
-        new_grad = C.clip_by_value(grad, F.cast(F.tuple_to_array((-clip_value,)), dt),
-                                   F.cast(F.tuple_to_array((clip_value,)), dt))
+        new_grad = ops.clip_by_value(grad, F.cast(F.tuple_to_array((-clip_value,)), dt),
+                                     F.cast(F.tuple_to_array((clip_value,)), dt))
     else:
-        new_grad = _nn_clip_by_norm(grad, F.cast(F.tuple_to_array((clip_value,)), dt))
+        new_grad = nn.ClipByNorm()(grad, F.cast(F.tuple_to_array((clip_value,)), dt))
     return new_grad
 
 
@@ -75,7 +75,7 @@ class GetMaskedLMOutput(nn.Cell):
         super(GetMaskedLMOutput, self).__init__()
         self.width = config.hidden_size
         self.reshape = P.Reshape()
-        self.gather = P.GatherV2()
+        self.gather = P.Gather()
 
         weight_init = TruncatedNormal(config.initializer_range)
         self.dense = nn.Dense(self.width,
@@ -272,7 +272,7 @@ class BertTrainOneStepCell(nn.Cell):
         self.network = network
         self.weights = ParameterTuple(network.trainable_params())
         self.optimizer = optimizer
-        self.grad = C.GradOperation('grad', get_by_list=True, sens_param=True)
+        self.grad = C.GradOperation(get_by_list=True, sens_param=True)
         self.sens = sens
         self.reducer_flag = False
         self.parallel_mode = context.get_auto_parallel_context("parallel_mode")
@@ -280,7 +280,7 @@ class BertTrainOneStepCell(nn.Cell):
             self.reducer_flag = True
         self.grad_reducer = None
         if self.reducer_flag:
-            mean = context.get_auto_parallel_context("mirror_mean")
+            mean = context.get_auto_parallel_context("gradients_mean")
             degree = get_group_size()
             self.grad_reducer = DistributedGradReducer(optimizer.parameters, mean, degree)
 
@@ -322,8 +322,8 @@ class BertTrainOneStepCell(nn.Cell):
             # apply grad reducer on grads
             grads = self.grad_reducer(grads)
 
-        succ = self.optimizer(grads)
-        return F.depend(loss, succ)
+        self.optimizer(grads)
+        return loss
 
 
 grad_scale = C.MultitypeFuncGraph("grad_scale")
@@ -352,8 +352,7 @@ class BertTrainOneStepWithLossScaleCell(nn.Cell):
         self.network = network
         self.weights = ParameterTuple(network.trainable_params())
         self.optimizer = optimizer
-        self.grad = C.GradOperation('grad',
-                                    get_by_list=True,
+        self.grad = C.GradOperation(get_by_list=True,
                                     sens_param=True)
         self.reducer_flag = False
         self.allreduce = P.AllReduce()
@@ -369,9 +368,8 @@ class BertTrainOneStepWithLossScaleCell(nn.Cell):
         self.cast = P.Cast()
         self.alloc_status = P.NPUAllocFloatStatus()
         self.get_status = P.NPUGetFloatStatus()
-        self.clear_before_grad = P.NPUClearFloatStatus()
+        self.clear_status = P.NPUClearFloatStatus()
         self.reduce_sum = P.ReduceSum(keep_dims=False)
-        self.depend_parameter_use = P.ControlDepend(depend_mode=1)
         self.base = Tensor(1, mstype.float32)
         self.less_equal = P.LessEqual()
         self.hyper_map = C.HyperMap()
@@ -380,7 +378,7 @@ class BertTrainOneStepWithLossScaleCell(nn.Cell):
         if scale_update_cell:
             self.loss_scale = Parameter(Tensor(scale_update_cell.get_loss_scale(), dtype=mstype.float32),
                                         name="loss_scale")
-        self.add_flags(has_effect=True)
+        self.load = P.Load()
 
     def construct(self,
                   input_ids,
@@ -406,7 +404,9 @@ class BertTrainOneStepWithLossScaleCell(nn.Cell):
             scaling_sens = sens
         # alloc status and clear should be right before gradoperation
         init = self.alloc_status()
-        self.clear_before_grad(init)
+        init = F.depend(init, loss)
+        clear_status = self.clear_status(init)
+        scaling_sens = F.depend(scaling_sens, clear_status)
         grads = self.grad(self.network, weights)(input_ids,
                                                  input_mask,
                                                  token_type_id,
@@ -420,7 +420,9 @@ class BertTrainOneStepWithLossScaleCell(nn.Cell):
         grads = self.grad_reducer(grads)
         grads = self.hyper_map(F.partial(grad_scale, scaling_sens * self.degree), grads)
         grads = self.hyper_map(F.partial(clip_grad, GRADIENT_CLIP_TYPE, GRADIENT_CLIP_VALUE), grads)
-        self.get_status(init)
+        init = F.depend(init, grads)
+        get_status = self.get_status(init)
+        init = F.depend(init, get_status)
         flag_sum = self.reduce_sum(init, (0,))
         if self.is_distributed:
             # sum overflow flag over devices
@@ -431,9 +433,6 @@ class BertTrainOneStepWithLossScaleCell(nn.Cell):
         overflow = cond
         if sens is None:
             overflow = self.loss_scaling_manager(self.loss_scale, cond)
-        if overflow:
-            succ = False
-        else:
-            succ = self.optimizer(grads)
-        ret = (loss, cond, scaling_sens)
-        return F.depend(ret, succ)
+        if not overflow:
+            self.optimizer(grads)
+        return loss, cond, scaling_sens.value()

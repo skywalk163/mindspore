@@ -1,4 +1,4 @@
-# Copyright 2019 Huawei Technologies Co., Ltd
+# Copyright 2019-2022 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 import numpy as np
 
 import mindspore.dataset as ds
-import mindspore.dataset.transforms.vision.c_transforms as vision
+import mindspore.dataset.vision as vision
 from mindspore import log as logger
 
 DATA_DIR = "../data/dataset/testPK/data"
@@ -28,6 +28,11 @@ def generator_1d():
 
 
 def test_apply_generator_case():
+    """
+    Feature: Apply op
+    Description: Test apply op on GeneratorDataset
+    Expectation: Output is equal to the expected output
+    """
     # apply dataset operations
     data1 = ds.GeneratorDataset(generator_1d, ["data"])
     data2 = ds.GeneratorDataset(generator_1d, ["data"])
@@ -40,17 +45,23 @@ def test_apply_generator_case():
     data2 = data2.repeat(2)
     data2 = data2.batch(4)
 
-    for item1, item2 in zip(data1.create_dict_iterator(), data2.create_dict_iterator()):
-        assert np.array_equal(item1["data"], item2["data"])
+    for item1, item2 in zip(data1.create_dict_iterator(num_epochs=1, output_numpy=True),
+                            data2.create_dict_iterator(num_epochs=1, output_numpy=True)):
+        np.testing.assert_array_equal(item1["data"], item2["data"])
 
 
 def test_apply_imagefolder_case():
+    """
+    Feature: Apply op
+    Description: Test apply op on ImageFolderDataset
+    Expectation: Output is equal to the expected output
+    """
     # apply dataset map operations
-    data1 = ds.ImageFolderDatasetV2(DATA_DIR, num_shards=4, shard_id=3)
-    data2 = ds.ImageFolderDatasetV2(DATA_DIR, num_shards=4, shard_id=3)
+    data1 = ds.ImageFolderDataset(DATA_DIR, num_shards=4, shard_id=3)
+    data2 = ds.ImageFolderDataset(DATA_DIR, num_shards=4, shard_id=3)
 
     decode_op = vision.Decode()
-    normalize_op = vision.Normalize([121.0, 115.0, 100.0], [70.0, 68.0, 71.0])
+    normalize_op = vision.Normalize([121.0, 115.0, 100.0], [70.0, 68.0, 71.0], True)
 
     def dataset_fn(ds_):
         ds_ = ds_.map(operations=decode_op)
@@ -63,11 +74,17 @@ def test_apply_imagefolder_case():
     data2 = data2.map(operations=normalize_op)
     data2 = data2.repeat(2)
 
-    for item1, item2 in zip(data1.create_dict_iterator(), data2.create_dict_iterator()):
-        assert np.array_equal(item1["image"], item2["image"])
+    for item1, item2 in zip(data1.create_dict_iterator(num_epochs=1, output_numpy=True),
+                            data2.create_dict_iterator(num_epochs=1, output_numpy=True)):
+        np.testing.assert_array_equal(item1["image"], item2["image"])
 
 
 def test_apply_flow_case_0(id_=0):
+    """
+    Feature: Apply op
+    Description: Test control flow operation by applying batch op
+    Expectation: Output is equal to the expected output
+    """
     # apply control flow operations
     data1 = ds.GeneratorDataset(generator_1d, ["data"])
 
@@ -85,8 +102,8 @@ def test_apply_flow_case_0(id_=0):
 
     data1 = data1.apply(dataset_fn)
     num_iter = 0
-    for _ in data1.create_dict_iterator():
-        num_iter = num_iter + 1
+    for _ in data1.create_dict_iterator(num_epochs=1):
+        num_iter += 1
 
     if id_ == 0:
         assert num_iter == 16
@@ -99,6 +116,11 @@ def test_apply_flow_case_0(id_=0):
 
 
 def test_apply_flow_case_1(id_=1):
+    """
+    Feature: Apply op
+    Description: Test control flow operation by applying repeat op
+    Expectation: Output is equal to the expected output
+    """
     # apply control flow operations
     data1 = ds.GeneratorDataset(generator_1d, ["data"])
 
@@ -116,8 +138,8 @@ def test_apply_flow_case_1(id_=1):
 
     data1 = data1.apply(dataset_fn)
     num_iter = 0
-    for _ in data1.create_dict_iterator():
-        num_iter = num_iter + 1
+    for _ in data1.create_dict_iterator(num_epochs=1):
+        num_iter += 1
 
     if id_ == 0:
         assert num_iter == 16
@@ -130,6 +152,11 @@ def test_apply_flow_case_1(id_=1):
 
 
 def test_apply_flow_case_2(id_=2):
+    """
+    Feature: Apply op
+    Description: Test control flow operation by applying batch op then repeat op
+    Expectation: Output is equal to the expected output
+    """
     # apply control flow operations
     data1 = ds.GeneratorDataset(generator_1d, ["data"])
 
@@ -147,8 +174,8 @@ def test_apply_flow_case_2(id_=2):
 
     data1 = data1.apply(dataset_fn)
     num_iter = 0
-    for _ in data1.create_dict_iterator():
-        num_iter = num_iter + 1
+    for _ in data1.create_dict_iterator(num_epochs=1):
+        num_iter += 1
 
     if id_ == 0:
         assert num_iter == 16
@@ -161,6 +188,11 @@ def test_apply_flow_case_2(id_=2):
 
 
 def test_apply_flow_case_3(id_=3):
+    """
+    Feature: Apply op
+    Description: Test control flow operation by applying shuffle op
+    Expectation: Output is equal to the expected output
+    """
     # apply control flow operations
     data1 = ds.GeneratorDataset(generator_1d, ["data"])
 
@@ -178,8 +210,8 @@ def test_apply_flow_case_3(id_=3):
 
     data1 = data1.apply(dataset_fn)
     num_iter = 0
-    for _ in data1.create_dict_iterator():
-        num_iter = num_iter + 1
+    for _ in data1.create_dict_iterator(num_epochs=1):
+        num_iter += 1
 
     if id_ == 0:
         assert num_iter == 16
@@ -192,6 +224,11 @@ def test_apply_flow_case_3(id_=3):
 
 
 def test_apply_exception_case():
+    """
+    Feature: Apply op
+    Description: Test apply op using invalid inputs
+    Expectation: Correct error is raised as expected
+    """
     # apply exception operations
     data1 = ds.GeneratorDataset(generator_1d, ["data"])
 
@@ -204,7 +241,7 @@ def test_apply_exception_case():
 
     try:
         data1 = data1.apply("123")
-        for _ in data1.create_dict_iterator():
+        for _ in data1.create_dict_iterator(num_epochs=1):
             pass
         assert False
     except TypeError:
@@ -212,7 +249,7 @@ def test_apply_exception_case():
 
     try:
         data1 = data1.apply(exception_fn)
-        for _ in data1.create_dict_iterator():
+        for _ in data1.create_dict_iterator(num_epochs=1):
             pass
         assert False
     except TypeError:
@@ -221,7 +258,7 @@ def test_apply_exception_case():
     try:
         data2 = data1.apply(dataset_fn)
         _ = data1.apply(dataset_fn)
-        for _, _ in zip(data1.create_dict_iterator(), data2.create_dict_iterator()):
+        for _, _ in zip(data1.create_dict_iterator(num_epochs=1), data2.create_dict_iterator(num_epochs=1)):
             pass
         assert False
     except ValueError as e:

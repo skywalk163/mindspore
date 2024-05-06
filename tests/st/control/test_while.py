@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ============================================================================
-import mindspore.context as context
-from mindspore import Tensor, ms_function
+from mindspore import Tensor, jit
 from mindspore.common import dtype as mstype
+import pytest
 
 
-@ms_function
+@jit
 def t1_while(x, y):
     y = y + 4
     while x < y:
@@ -26,8 +26,31 @@ def t1_while(x, y):
     return x
 
 
+@jit
+def const_branch(y):
+    if y >= 0:
+        while y > 1:
+            y -= 1
+        return y
+    return 2
+
+
+def test_const_branch():
+    """
+    Feature: control flow .
+    Description: Set one branch abstract with the other branch type
+    when all the branches can not be inferred.
+    Expectation: No error raised.
+    """
+    y = Tensor(5)
+    with pytest.raises(TypeError) as exc:
+        with const_branch(y):
+            pass
+
+    assert "join" in str(exc.value)
+
+
 def test_net():
-    context.set_context(mode=context.GRAPH_MODE, device_target="Ascend")
     c1 = Tensor([2], mstype.int32)
     c2 = Tensor([14], mstype.int32)
     expect = Tensor([21], mstype.int32)

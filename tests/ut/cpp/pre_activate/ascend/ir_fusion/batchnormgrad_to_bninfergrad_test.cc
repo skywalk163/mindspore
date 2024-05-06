@@ -15,9 +15,9 @@
  */
 #include "common/backend_common_test.h"
 #include "common/py_func_graph_fetcher.h"
-#include "pre_activate/common/optimizer.h"
-#include "pre_activate/ascend/ir_fusion/batchnormgrad_to_bninfergrad.h"
-#include "debug/anf_ir_dump.h"
+#include "include/backend/optimizer/optimizer.h"
+#include "plugin/device/ascend/optimizer/ir_fusion/batchnormgrad_to_bninfergrad.h"
+#include "include/common/debug/anf_ir_dump.h"
 
 namespace mindspore {
 namespace opt {
@@ -33,11 +33,11 @@ class TestHWOptimizeBatchNormGrad2BNInferGrad : public BackendCommon {
 TEST_F(TestHWOptimizeBatchNormGrad2BNInferGrad, test_fusion) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_batchnormgrad_to_bninfergrad", "before");
   EXPECT_NE(g, nullptr);
-  std::vector<int> shp_x{32, 64, 112, 112};
+  std::vector<int64_t> shp_x{32, 64, 112, 112};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp_x);
-  std::vector<int> shp_y{64};
+  std::vector<int64_t> shp_y{64};
   auto y_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp_y);
-  AbstractBasePtrList args_spec_list{x_abstract, x_abstract, y_abstract, y_abstract, y_abstract};
+  AbstractBasePtrList args_spec_list{x_abstract, x_abstract, y_abstract, y_abstract, y_abstract, y_abstract};
   auto fg = GetKernelGraph(g, args_spec_list);
 
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
@@ -53,11 +53,11 @@ TEST_F(TestHWOptimizeBatchNormGrad2BNInferGrad, test_fusion) {
 TEST_F(TestHWOptimizeBatchNormGrad2BNInferGrad, test_no_fusion) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_batchnormgrad_to_bninfergrad", "no_fusion");
   EXPECT_NE(g, nullptr);
-  std::vector<int> shp_x{32, 64, 112, 112};
+  std::vector<int64_t> shp_x{32, 64, 112, 112};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp_x);
-  std::vector<int> shp_y{64};
+  std::vector<int64_t> shp_y{64};
   auto y_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp_y);
-  AbstractBasePtrList args_spec_list{x_abstract, x_abstract, y_abstract, y_abstract, y_abstract};
+  AbstractBasePtrList args_spec_list{x_abstract, x_abstract, y_abstract, y_abstract, y_abstract, y_abstract};
   auto fg = GetKernelGraph(g, args_spec_list);
   auto origin_graph = std::make_shared<session::KernelGraph>(*fg);
 

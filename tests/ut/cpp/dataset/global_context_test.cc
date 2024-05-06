@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,21 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "dataset/core/global_context.h"
+#include "minddata/dataset/core/global_context.h"
 #include "common/common.h"
-#include "dataset/util/de_error.h"
 #include "utils/log_adapter.h"
 
 using namespace mindspore::dataset;
-using mindspore::MsLogLevel::INFO;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::LogStream;
 
 class MindDataTestGlobalContext : public UT::Common {
  public:
     MindDataTestGlobalContext() {}
 };
 
+/// Feature: GlobalContext
+/// Description: Test GlobalContext::Instance()
+/// Expectation: Runs successfully
 TEST_F(MindDataTestGlobalContext, TestGCFunction) {
   MS_LOG(INFO) << "Doing Test GlobalContext";
   MS_LOG(INFO) << "Doing instance";

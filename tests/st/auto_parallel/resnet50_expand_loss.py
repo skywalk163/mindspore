@@ -15,7 +15,6 @@
 
 import os
 import numpy as np
-import pytest
 
 import mindspore.common.dtype as mstype
 import mindspore.context as context
@@ -24,17 +23,19 @@ import mindspore.ops.functional as F
 from mindspore import Tensor
 from mindspore.common.initializer import TruncatedNormal
 from mindspore.communication.management import init
-from mindspore.nn.loss.loss import _Loss
+from mindspore.nn.loss.loss import LossBase
 from mindspore.nn.optim.momentum import Momentum
 from mindspore.ops import operations as P
 from mindspore.parallel import set_algo_parameters
-from mindspore.train.callback import Callback
-from mindspore.train.model import Model, ParallelMode
+from mindspore.train import Callback
+from mindspore.train import Model
+from mindspore.context import ParallelMode
 
 context.set_context(mode=context.GRAPH_MODE, device_target="Ascend")
 context.set_context(device_id=int(os.getenv('DEVICE_ID')))
 init()
-context.set_auto_parallel_context(mirror_mean=True, parallel_mode=ParallelMode.AUTO_PARALLEL)
+context.set_auto_parallel_context(gradients_mean=True, parallel_mode=ParallelMode.AUTO_PARALLEL,
+                                  search_mode="dynamic_programming")
 np.random.seed(10)
 
 
@@ -88,7 +89,7 @@ class BasicBlock(nn.Cell):
                                                                  padding=0),
                                                         _fused_bn(out_channels,
                                                                   momentum=momentum)])
-        self.add = P.TensorAdd()
+        self.add = P.Add()
 
     def construct(self, x):
         identity = x
@@ -113,8 +114,7 @@ class ResidualBlock(nn.Cell):
     def __init__(self,
                  in_channels,
                  out_channels,
-                 stride=1,
-                 momentum=0.9):
+                 stride=1):
         super(ResidualBlock, self).__init__()
 
         out_chls = out_channels // self.expansion
@@ -133,7 +133,7 @@ class ResidualBlock(nn.Cell):
         elif self.stride != 1:
             self.maxpool_down = nn.MaxPool2d(kernel_size=1, stride=2, pad_mode='same')
 
-        self.add = P.TensorAdd()
+        self.add = P.Add()
 
     def construct(self, x):
         identity = x
@@ -246,7 +246,7 @@ def resnet50(class_num=10):
                   class_num)
 
 
-class SoftmaxCrossEntropyExpand(_Loss):
+class SoftmaxCrossEntropyExpand(LossBase):
     def __init__(self, sparse=False):
         super(SoftmaxCrossEntropyExpand, self).__init__()
         self.exp = P.Exp()
@@ -277,7 +277,7 @@ class SoftmaxCrossEntropyExpand(_Loss):
 
         softmax_result_log = self.log(softmax_result + self.eps)
         loss = self.sum_cross_entropy((self.mul(softmax_result_log, label)), -1)
-        loss = self.mul2(F.scalar_to_array(-1.0), loss)
+        loss = self.mul2(F.scalar_to_tensor(-1.0), loss)
         loss = self.mean(loss, -1)
 
         return loss
@@ -308,15 +308,15 @@ class DataGenerator():
         data = (self.generate_data(shape)).astype(np.float32)
         stra = [1] * len(shape)
         stra[0] = device_num
-        datas = self.get_parallel_blocks(data, stra)
-        return Tensor(data), Tensor(datas[rank_id])
+        data_parallel = self.get_parallel_blocks(data, stra)
+        return Tensor(data), Tensor(data_parallel[rank_id])
 
     def label_data(self, shape):
         data = (self.generate_data(shape) * 1000 / np.prod(shape)).astype(np.int32)
         stra = [1] * len(shape)
         stra[0] = device_num
-        datas = self.get_parallel_blocks(data, stra)
-        return Tensor(data), Tensor(datas[rank_id])
+        data_parallel = self.get_parallel_blocks(data, stra)
+        return Tensor(data), Tensor(data_parallel[rank_id])
 
 
 class Dataset():

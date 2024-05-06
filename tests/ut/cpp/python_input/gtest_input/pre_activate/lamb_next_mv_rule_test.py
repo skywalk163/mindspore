@@ -14,14 +14,15 @@
 # ============================================================================
 from mindspore.ops import Primitive
 from mindspore.ops import operations as P
+from mindspore.ops import _constants as Constants
 
-Add = P.TensorAdd()
+Add = P.Add()
 Mul = P.Mul()
 RealDiv = P.RealDiv()
 Rsqrt = P.Rsqrt()
 Sqrt = P.Sqrt()
-make_tuple = Primitive('make_tuple')
-tuple_getitem = Primitive('tuple_getitem')
+make_tuple = Primitive('MakeTuple')
+tuple_getitem = Primitive(Constants.kTupleGetItem)
 LambNextMV = Primitive('LambNextMV')
 
 class FnDict:
@@ -57,8 +58,7 @@ def test_lamb_next_mv_rule_cond4(tag):
         mul4 = Mul(constant_mul4_x, input6)
         add3 = Add(real_div2, mul4)
         outputs = make_tuple(add3, add0, add1, real_div4)
-        output = tuple_getitem(outputs, 0)
-        return output
+        return outputs
 
     @fns
     def after(input0, input1, input2, input3, input4, input5, input6, constant_mul0_x, constant_mul1_sub,
@@ -68,8 +68,7 @@ def test_lamb_next_mv_rule_cond4(tag):
                                   constant_mul4_x, constant_add2_y)
         outputs = make_tuple(tuple_getitem(lamb_next_mv, 0), tuple_getitem(lamb_next_mv, 1),
                              tuple_getitem(lamb_next_mv, 2), tuple_getitem(lamb_next_mv, 3))
-        output = tuple_getitem(outputs, 0)
-        return make_tuple(output)
+        return make_tuple(outputs)
 
     @fns
     def before_unmatched_real_div4(input0, input1, input2, input3, input4, input5, input6, constant_mul0_x,
@@ -92,8 +91,7 @@ def test_lamb_next_mv_rule_cond4(tag):
         mul4 = Mul(constant_mul4_x, input6)
         add3 = Add(real_div2, mul4)
         outputs = make_tuple(add3, add0, add1, real_div4)
-        output = tuple_getitem(outputs, 0)
-        return output
+        return outputs
 
     @fns
     def before_unmatched_real_div0(input0, input1, input2, input3, input4, input5, input6, constant_mul0_x,
@@ -116,8 +114,7 @@ def test_lamb_next_mv_rule_cond4(tag):
         mul4 = Mul(constant_mul4_x, input6)
         add3 = Add(real_div2, mul4)
         outputs = make_tuple(add3, add0, add1, real_div4)
-        output = tuple_getitem(outputs, 0)
-        return output
+        return outputs
 
     @fns
     def before_unmatched_real_div1(input0, input1, input2, input3, input4, input5, input6, constant_mul0_x,
@@ -140,8 +137,7 @@ def test_lamb_next_mv_rule_cond4(tag):
         mul4 = Mul(constant_mul4_x, input6)
         add3 = Add(real_div2, mul4)
         outputs = make_tuple(add3, add0, add1, real_div4)
-        output = tuple_getitem(outputs, 0)
-        return output
+        return outputs
 
     @fns
     def before_unmatched_real_div2(input0, input1, input2, input3, input4, input5, input6, constant_mul0_x,
@@ -164,8 +160,7 @@ def test_lamb_next_mv_rule_cond4(tag):
         mul4 = Mul(constant_mul4_x, input6)
         add3 = Add(real_div2, mul4)
         outputs = make_tuple(add3, add0, add1, real_div4)
-        output = tuple_getitem(outputs, 0)
-        return output
+        return outputs
 
     return fns[tag]
 
@@ -192,8 +187,7 @@ def test_lamb_next_mv_rule_cond1(tag):
         mul4 = Mul(constant_mul4_x, input6)
         add3 = Add(mul4, real_div2)
         outputs = make_tuple(add3, add0, add1, real_div4)
-        output = tuple_getitem(outputs, 0)
-        return output
+        return outputs
 
     @fns
     def after(input0, input1, input2, input3, input4, input5, input6, constant_mul0_x, constant_mul1_sub,
@@ -203,8 +197,7 @@ def test_lamb_next_mv_rule_cond1(tag):
                                   constant_mul4_x, constant_add2_y)
         outputs = make_tuple(tuple_getitem(lamb_next_mv, 0), tuple_getitem(lamb_next_mv, 1),
                              tuple_getitem(lamb_next_mv, 2), tuple_getitem(lamb_next_mv, 3))
-        output = tuple_getitem(outputs, 0)
-        return make_tuple(output)
+        return make_tuple(outputs)
 
     @fns
     def un_match(input0, input1, input2, input3, input4, input5, input6, constant_mul0_x, constant_mul1_sub,
@@ -227,8 +220,7 @@ def test_lamb_next_mv_rule_cond1(tag):
         mul4 = Mul(constant_mul4_x, input6)
         add3 = Add(mul4, real_div2)
         outputs = make_tuple(add3, add0, add1, real_div4)
-        output = tuple_getitem(outputs, 0)
-        return output
+        return outputs
 
     return fns[tag]
 
@@ -255,8 +247,7 @@ def test_lamb_next_mv_rule_cond2(tag):
         mul4 = Mul(input6, constant_mul4_x)
         add3 = Add(mul4, real_div2)
         outputs = make_tuple(add3, add0, add1, real_div4)
-        output = tuple_getitem(outputs, 0)
-        return output
+        return outputs
 
     @fns
     def after(input0, input1, input2, input3, input4, input5, input6, constant_mul0_x, constant_mul1_sub,
@@ -266,8 +257,7 @@ def test_lamb_next_mv_rule_cond2(tag):
                                   constant_mul4_x, constant_add2_y)
         outputs = make_tuple(tuple_getitem(lamb_next_mv, 0), tuple_getitem(lamb_next_mv, 1),
                              tuple_getitem(lamb_next_mv, 2), tuple_getitem(lamb_next_mv, 3))
-        output = tuple_getitem(outputs, 0)
-        return make_tuple(output)
+        return make_tuple(outputs)
 
     @fns
     def un_match(input0, input1, input2, input3, input4, input5, input6, constant_mul0_x, constant_mul1_sub,
@@ -290,8 +280,7 @@ def test_lamb_next_mv_rule_cond2(tag):
         mul4 = Mul(input6, constant_mul4_x)
         add3 = Add(mul4, real_div2)
         outputs = make_tuple(add3, add0, add1, real_div4)
-        output = tuple_getitem(outputs, 0)
-        return output
+        return outputs
 
     return fns[tag]
 
@@ -318,8 +307,7 @@ def test_lamb_next_mv_rule_cond3(tag):
         mul4 = Mul(input6, constant_mul4_x)
         add3 = Add(mul4, real_div2)
         outputs = make_tuple(add3, add0, add1, real_div4)
-        output = tuple_getitem(outputs, 0)
-        return output
+        return outputs
 
     @fns
     def after(input0, input1, input2, input3, input4, input5, input6, constant_mul0_x, constant_mul1_sub,
@@ -329,8 +317,7 @@ def test_lamb_next_mv_rule_cond3(tag):
                                   constant_mul4_x, constant_add2_y)
         outputs = make_tuple(tuple_getitem(lamb_next_mv, 0), tuple_getitem(lamb_next_mv, 1),
                              tuple_getitem(lamb_next_mv, 2), tuple_getitem(lamb_next_mv, 3))
-        output = tuple_getitem(outputs, 0)
-        return make_tuple(output)
+        return make_tuple(outputs)
 
     @fns
     def un_match(input0, input1, input2, input3, input4, input5, input6, constant_mul0_x, constant_mul1_sub,
@@ -353,7 +340,6 @@ def test_lamb_next_mv_rule_cond3(tag):
         mul4 = Mul(input6, constant_mul4_x)
         add3 = Add(mul4, real_div2)
         outputs = make_tuple(add3, add0, add1, real_div4)
-        output = tuple_getitem(outputs, 0)
-        return output
+        return outputs
 
     return fns[tag]

@@ -16,7 +16,7 @@ import numpy as np
 
 import mindspore.context as context
 import mindspore.nn as nn
-from mindspore import Tensor, Model, ms_function
+from mindspore import Tensor, Model, jit
 from mindspore.nn.loss import SoftmaxCrossEntropyWithLogits
 from mindspore.ops import operations as P
 
@@ -33,13 +33,13 @@ class MsWrapper(nn.Cell):
         super(MsWrapper, self).__init__(auto_prefix=False)
         self._network = network
 
-    @ms_function
+    @jit
     def construct(self, *args):
         return self._network(*args)
 
 
 def me_train_tensor(net, input_np, label_np, epoch_size=2):
-    loss = SoftmaxCrossEntropyWithLogits(is_grad=False, sparse=True)
+    loss = SoftmaxCrossEntropyWithLogits(sparse=True)
     opt = nn.Momentum(Tensor(np.array([0.1])), Tensor(np.array([0.9])),
                       filter(lambda x: x.requires_grad, net.get_parameters()))
     context.set_context(mode=context.GRAPH_MODE)
@@ -62,7 +62,7 @@ def test_conv_bn_add_relu_fusion():
             self.conv1 = nn.Conv2d(input_channel, output_channel,
                                    kernel_size=1, stride=1, padding=0, has_bias=False, pad_mode="same")
             self.bn = nn.BatchNorm2d(output_channel, momentum=0.1, eps=0.0001)
-            self.add = P.TensorAdd()
+            self.add = P.Add()
             self.relu = P.ReLU()
             self.mean = P.ReduceMean(keep_dims=True)
             self.reshape = P.Reshape()

@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@
 #include <list>
 #include <vector>
 #include "common/common_test.h"
-#include "parallel/strategy.h"
-#include "parallel/ops_info/activation_info.h"
-#include "parallel/device_manager.h"
-#include "parallel/step_parallel.h"
+#include "frontend/parallel/strategy.h"
+#include "frontend/parallel/ops_info/activation_info.h"
+#include "frontend/parallel/device_manager.h"
+#include "frontend/parallel/step_parallel.h"
 
 namespace mindspore {
 namespace parallel {
@@ -38,13 +38,13 @@ class TestActivationInfo : public UT::Common {
 };
 
 void TestActivationInfo::SetUp() {
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 1050; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(1024);
   stage_map.push_back(26);
 
@@ -55,7 +55,7 @@ void TestActivationInfo::SetUp() {
   g_device_manager->Init(dev_list, local_dev, stage_map, "hccl");
 
   ValuePtr relu = MakeValue(std::string("relu"));
-  std::unordered_map<std::string, ValuePtr> attr = {{"activation_type", relu}};
+  mindspore::HashMap<std::string, ValuePtr> attr = {{"activation_type", relu}};
 
   Shapes inputs_shape = {{2, 4, 8, 16}};
   Shapes outputs_shape = {{2, 4, 8, 16}};
@@ -64,21 +64,21 @@ void TestActivationInfo::SetUp() {
 }
 
 TEST_F(TestActivationInfo, InferDevMatrixShape1) {
-  std::vector<Dimensions> inputs = {{2, 4, 8, 16}};
+  Strategies inputs = {{2, 4, 8, 16}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  activation->Init(strategy);
-  std::vector<int32_t> dev_matrix_shape = activation->dev_matrix_shape();
+  activation->Init(strategy, nullptr);
+  Shape dev_matrix_shape = activation->dev_matrix_shape();
 
-  std::vector<int32_t> expect = {2, 4, 8, 16};
+  Shape expect = {2, 4, 8, 16};
   ASSERT_EQ(dev_matrix_shape, expect);
 }
 
 TEST_F(TestActivationInfo, InferSliceShape1) {
-  std::vector<Dimensions> str = {{2, 4, 8, 16}};
+  Strategies str = {{2, 4, 8, 16}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  activation->Init(strategy);
+  activation->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = activation->inputs_tensor_info();
   std::vector<TensorInfo> outputs = activation->outputs_tensor_info();
 
@@ -96,10 +96,10 @@ TEST_F(TestActivationInfo, InferSliceShape1) {
 }
 
 TEST_F(TestActivationInfo, GetTensorLayout1) {
-  std::vector<Dimensions> str = {{2, 4, 8, 16}};
+  Strategies str = {{2, 4, 8, 16}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  activation->Init(strategy);
+  activation->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = activation->inputs_tensor_info();
   std::vector<TensorInfo> outputs = activation->outputs_tensor_info();
 
@@ -117,10 +117,10 @@ TEST_F(TestActivationInfo, GetTensorLayout1) {
 }
 
 TEST_F(TestActivationInfo, GetForwardOp1) {
-  std::vector<Dimensions> inputs = {{2, 4, 8, 16}};
+  Strategies inputs = {{2, 4, 8, 16}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  activation->Init(strategy);
+  activation->Init(strategy, nullptr);
   OperatorVector forward_op = activation->forward_op();
   size_t size = forward_op.size();
 
@@ -128,10 +128,10 @@ TEST_F(TestActivationInfo, GetForwardOp1) {
 }
 
 TEST_F(TestActivationInfo, GetMirrorOPs1) {
-  std::vector<Dimensions> inputs = {{1, 4, 8, 16}};
+  Strategies inputs = {{1, 4, 8, 16}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  activation->Init(strategy);
+  activation->Init(strategy, nullptr);
   MirrorOps mirror_ops = activation->mirror_ops();
 
   OperatorVector mirror_op = mirror_ops.at(0);
@@ -148,10 +148,10 @@ TEST_F(TestActivationInfo, GetMirrorOPs1) {
 }
 
 TEST_F(TestActivationInfo, GetMirrorOPs2) {
-  std::vector<Dimensions> inputs = {{2, 4, 8, 16}};
+  Strategies inputs = {{2, 4, 8, 16}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  activation->Init(strategy);
+  activation->Init(strategy, nullptr);
   MirrorOps mirror_ops = activation->mirror_ops();
 
   size_t size = mirror_ops.size();
@@ -161,19 +161,19 @@ TEST_F(TestActivationInfo, GetMirrorOPs2) {
 
 TEST_F(TestActivationInfo, CheckStrategy1) {
   // Success: {{2,4,8,16}}
-  std::vector<Dimensions> inputs = {{2, 2, 8, 16}, {2, 4, 16, 1}};
+  Strategies inputs = {{2, 2, 8, 16}, {2, 4, 16, 1}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = activation->Init(strategy);
+  Status ret = activation->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 
 TEST_F(TestActivationInfo, CheckStrategy2) {
   // Success: {{2,4,8,16}}
-  std::vector<Dimensions> inputs = {{2, 4, 8}};
+  Strategies inputs = {{2, 4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = activation->Init(strategy);
+  Status ret = activation->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 

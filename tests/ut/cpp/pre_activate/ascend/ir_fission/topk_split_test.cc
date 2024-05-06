@@ -1,5 +1,5 @@
 /**
- * Copyright 2020 Huawei Technologies Co., Ltd
+ * Copyright 2020-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,16 @@
 
 #include "common/backend_common_test.h"
 #include "common/py_func_graph_fetcher.h"
-#include "device/kernel_info.h"
-#include "pre_activate/pass/convert_const_input_to_attr.h"
-#include "debug/anf_ir_dump.h"
-#include "session/anf_runtime_algorithm.h"
+#include "include/backend/kernel_info.h"
+#include "backend/common/pass/const_input_to_attr.h"
+#include "backend/common/pass/convert_const_input_to_attr.h"
+#include "include/common/debug/anf_ir_dump.h"
+#include "include/backend/anf_runtime_algorithm.h"
+#include "include/common/utils/anfalgo.h"
+
 #define private public
 #define protected public
-#include "pre_activate/ascend/ir_fission/topk_split.h"
+#include "plugin/device/ascend/optimizer/ir_fission/topk_split.h"
 #undef private
 #undef protected
 
@@ -51,16 +54,6 @@ class TestHWTopKSplit : public BackendCommon {
   UT::PyFuncGraphFetcher get_py_fun_;
 };
 
-class MockSupportedChecker : public SupportedChecker {
- public:
-  MockSupportedChecker() = default;
-  ~MockSupportedChecker() override = default;
-  bool CheckAiCoreSupported(const AnfNodePtr &anf_node,
-                            const kernel::KernelBuildInfoPtr &select_kernel_build_info) override {
-    return true;
-  }
-};  // namespace opt
-
 TEST_F(TestHWTopKSplit, test_topk_split) {
   /*
    * def before(input):
@@ -69,7 +62,7 @@ TEST_F(TestHWTopKSplit, test_topk_split) {
    *     return output
    */
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_topk_split", "before");
-  std::vector<int> shp{4, 4};
+  std::vector<int64_t> shp{4, 4};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list{x_abstract};
   auto kernel_graph = GetKernelGraph(g, args_spec_list);
@@ -78,7 +71,6 @@ TEST_F(TestHWTopKSplit, test_topk_split) {
   auto pm = std::make_shared<opt::PassManager>();
   pm->AddPass(std::make_shared<opt::ConvertConstInputToAttr>());
   auto topk_split = std::make_shared<opt::TopKSplit>();
-  topk_split->supported_checker_ = std::make_shared<MockSupportedChecker>();
   pm->AddPass(topk_split);
   optimizer->AddPassManager(pm);
   FuncGraphPtr new_graph = optimizer->Optimize(kernel_graph);
@@ -90,7 +82,7 @@ TEST_F(TestHWTopKSplit, test_topk_split) {
   EXPECT_TRUE(value_node->value()->isa<tensor::Tensor>());
   auto tensor = value_node->value()->cast<tensor::TensorPtr>();
   EXPECT_EQ(tensor->shape().size(), 1);
-  EXPECT_EQ(tensor->shape()[0], 8);
+  EXPECT_EQ(tensor->shape()[0], 4096*2);
 }
 
 TEST_F(TestHWTopKSplit, test_topk_no_split) {
@@ -101,30 +93,29 @@ TEST_F(TestHWTopKSplit, test_topk_no_split) {
    *     return output
    */
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_topk_split", "before");
-  std::vector<int> shp{4, 4};
+  std::vector<int64_t> shp{4, 4};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list{x_abstract};
   auto kernel_graph = GetKernelGraph(g, args_spec_list);
 
   CNodePtr topk_cnode = GetTopkCNodeFromKernelGraph(kernel_graph);
   EXPECT_EQ(topk_cnode->inputs().size(), 3);
-  auto input_names_vec = AnfAlgo::GetNodeAttr<std::vector<std::string>>(topk_cnode, kAttrInputNames);
+  auto input_names_vec = common::AnfAlgo::GetNodeAttr<std::vector<std::string>>(topk_cnode, kAttrInputNames);
   EXPECT_EQ(input_names_vec.size(), 2);
-  std::unordered_set<size_t> attr_index{1};
-  ConstInputToAttr(topk_cnode, attr_index);
+  mindspore::HashSet<size_t> attr_index{1};
+  topk_cnode = ConstInputToAttr(topk_cnode, attr_index);
   EXPECT_EQ(topk_cnode->inputs().size(), 2);
-  input_names_vec = AnfAlgo::GetNodeAttr<std::vector<std::string>>(topk_cnode, kAttrInputNames);
-  EXPECT_EQ(input_names_vec.size(), 1);
+  input_names_vec = common::AnfAlgo::GetNodeAttr<std::vector<std::string>>(topk_cnode, kAttrInputNames);
+  EXPECT_EQ(input_names_vec.size(), 2);
 
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
   auto pm = std::make_shared<opt::PassManager>();
   pm->AddPass(std::make_shared<opt::ConvertConstInputToAttr>());
   auto topk_split = std::make_shared<opt::TopKSplit>();
-  topk_split->supported_checker_ = std::make_shared<MockSupportedChecker>();
   pm->AddPass(topk_split);
   optimizer->AddPassManager(pm);
   FuncGraphPtr new_graph = optimizer->Optimize(kernel_graph);
-  EXPECT_EQ(topk_cnode, GetTopkCNodeFromKernelGraph(new_graph));
+  EXPECT_NE(topk_cnode, GetTopkCNodeFromKernelGraph(new_graph));
 }
 }  // namespace opt
 }  // namespace mindspore

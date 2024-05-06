@@ -16,8 +16,8 @@
 
 #include "common/common_test.h"
 #include "common/py_func_graph_fetcher.h"
-#include "parallel/tensor_layout/redistribution_operator_infer.h"
-#include "parallel/device_manager.h"
+#include "frontend/parallel/tensor_layout/redistribution_operator_infer.h"
+#include "frontend/parallel/device_manager.h"
 #include "util_layout_gen_test.h"
 
 namespace mindspore {
@@ -28,13 +28,13 @@ class TestRedistributionOperatorInfer : public UT::Common {
   TestRedistributionOperatorInfer() {}
 
   void SetUp() {
-    std::vector<int32_t> dev_list;
+    RankList dev_list;
 
     for (int32_t i = 0; i < 1050; i++) {
       dev_list.push_back(i);
     }
 
-    std::vector<int32_t> stage_map;
+    RankList stage_map;
     stage_map.push_back(1024);
     stage_map.push_back(26);
 
@@ -49,7 +49,7 @@ class TestRedistributionOperatorInfer : public UT::Common {
 };
 
 // check if in_tensor_map could be changed to out_tensor_map with operator_list
-void InferOperatorCheck(Shape in_tensor_map, const Shape& out_tensor_map, const OperatorList& operator_list) {
+void InferOperatorCheck(Shape in_tensor_map, const Shape &out_tensor_map, const OperatorList &operator_list) {
   for (auto op_cost : operator_list) {
     OperatorR op = op_cost.first;
     Args args = op.second;

@@ -1,4 +1,4 @@
-# Copyright 2019 Huawei Technologies Co., Ltd
+# Copyright 2019-2022 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 import pytest
 
 import mindspore.dataset as ds
-import mindspore.dataset.transforms.vision.c_transforms as vision
+import mindspore.dataset.vision as vision
 from mindspore import log as logger
 
 DATA_DIR = ["../data/dataset/test_tf_file_3_images/train-0000-of-0001.data"]
@@ -24,38 +24,42 @@ SCHEMA_DIR = "../data/dataset/test_tf_file_3_images/datasetSchema.json"
 
 def test_exception_01():
     """
-    Test single exception with invalid input
+    Feature: Exception
+    Description: Test single Exception with invalid input
+    Expectation: Correct error and message are thrown as expected (here TypeError)
     """
     logger.info("test_exception_01")
     data = ds.TFRecordDataset(DATA_DIR, columns_list=["image"])
-    with pytest.raises(ValueError) as info:
-        data = data.map(input_columns=["image"], operations=vision.Resize(100, 100))
-    assert "Invalid interpolation mode." in str(info.value)
+    with pytest.raises(TypeError) as info:
+        data.map(operations=vision.Resize(100, 100), input_columns=["image"])
+    assert "Argument interpolation with value 100 is not of type [<enum 'Inter'>]" in str(
+        info.value)
 
 
 def test_exception_02():
     """
-    Test multiple exceptions with invalid input
+    Feature: Exception
+    Description: Test Exception with invalid input and test valid input
+    Expectation: Correct error and message are thrown for invalid input and runs successfully for valid input
     """
     logger.info("test_exception_02")
-    num_samples = 0
-    with pytest.raises(ValueError) as info:
-        data = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], num_samples=num_samples)
-    assert "num_samples must be greater than 0" in str(info.value)
-
     num_samples = -1
     with pytest.raises(ValueError) as info:
-        data = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], num_samples=num_samples)
-    assert "num_samples must be greater than 0" in str(info.value)
+        ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=[
+            "image"], num_samples=num_samples)
+    assert 'num_samples exceeds the boundary between 0 and 9223372036854775807(INT64_MAX)' in str(
+        info.value)
 
     num_samples = 1
-    data = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], num_samples=num_samples)
-    data = data.map(input_columns=["image"], operations=vision.Decode())
-    data = data.map(input_columns=["image"], operations=vision.Resize((100, 100)))
+    data = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=[
+        "image"], num_samples=num_samples)
+    data = data.map(operations=vision.Decode(), input_columns=["image"])
+    data = data.map(operations=vision.Resize(
+        (100, 100)), input_columns=["image"])
     # Confirm 1 sample in dataset
     assert sum([1 for _ in data]) == 1
     num_iters = 0
-    for _ in data.create_dict_iterator():
+    for _ in data.create_dict_iterator(num_epochs=1):
         num_iters += 1
     assert num_iters == 1
 

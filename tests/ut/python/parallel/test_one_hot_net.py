@@ -19,15 +19,25 @@ import mindspore.nn as nn
 from mindspore import Tensor, Parameter
 from mindspore import context
 from mindspore.common import dtype as mstype
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.nn.cell import Cell
 from mindspore.nn.optim.momentum import Momentum
 from mindspore.ops import composite as C
 from mindspore.ops import functional as F
 from mindspore.ops import operations as P
-from mindspore.train import Model, ParallelMode
+from mindspore.train import Model
+from mindspore.context import ParallelMode
 from tests.dataset_mock import MindData
 from tests.ut.python.ops.test_math_ops import VirtualLoss
+
+from parallel.utils.utils import BasicValidator
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
+grad_all = C.GradOperation(get_all=True)
 
 device_num = 16
 device_id = 2
@@ -80,15 +90,15 @@ class SemiAutoOneHotNet(Cell):
         self.d = args.d
         self.e = args.e
         self.cast = P.Cast()
-        self.cast.set_strategy(strategy=strategy.twod_strategy)
+        self.cast.shard(strategy.twod_strategy)
         self.cast1 = P.Cast()
-        self.cast1.set_strategy(strategy=strategy.twod_strategy)
+        self.cast1.shard(strategy.twod_strategy)
         self.cast2 = P.Cast()
-        self.cast2.set_strategy(strategy=strategy.twod_strategy)
+        self.cast2.shard(strategy.twod_strategy)
         self.cast3 = P.Cast()
-        self.cast3.set_strategy(strategy=strategy.scalar_strategy)
+        self.cast3.shard(strategy.scalar_strategy)
         self.cast4 = P.Cast()
-        self.cast4.set_strategy(strategy=strategy.scalar_strategy)
+        self.cast4.shard(strategy.scalar_strategy)
         self.a_const = Tensor(self.a, dtype=mstype.float32)
         self.b_const = Tensor(self.b, dtype=mstype.float32)
         self.c_const = Tensor(self.c, dtype=mstype.float32)
@@ -97,64 +107,64 @@ class SemiAutoOneHotNet(Cell):
         self.m_const_zero = Tensor(0, dtype=mstype.float32)
         self.a_const_one = Tensor(1, dtype=mstype.float32)
         self.onehot = P.OneHot()
-        self.onehot.set_strategy(strategy=strategy.onehot_strategy)
+        self.onehot.shard(strategy.onehot_strategy)
         self.exp = P.Exp()
-        self.exp.set_strategy(strategy=strategy.twod_strategy)
+        self.exp.shard(strategy.twod_strategy)
         self.exp2 = P.Exp()
-        self.exp2.set_strategy(strategy=strategy.twod_strategy)
+        self.exp2.shard(strategy.twod_strategy)
         self.exp3 = P.Exp()
-        self.exp3.set_strategy(strategy=strategy.twod_strategy)
+        self.exp3.shard(strategy.twod_strategy)
         self.mul_const = P.Mul()
-        self.mul_const.set_strategy(strategy=strategy.scalar_twod_strategy)
-        self.mul_const2 = P.TensorAdd()
-        self.mul_const2.set_strategy(strategy=strategy.scalar_twod_strategy)
+        self.mul_const.shard(strategy.scalar_twod_strategy)
+        self.mul_const2 = P.Add()
+        self.mul_const2.shard(strategy.scalar_twod_strategy)
         self.mul_const3 = P.Sub()
-        self.mul_const3.set_strategy(strategy=strategy.twod_scalar_strategy)
+        self.mul_const3.shard(strategy.twod_scalar_strategy)
         self.mul_const4 = P.Sub()
-        self.mul_const4.set_strategy(strategy=strategy.scalar_twod_strategy)
+        self.mul_const4.shard(strategy.scalar_twod_strategy)
         self.mul_const5 = P.Mul()
-        self.mul_const5.set_strategy(strategy=strategy.twod_scalar_strategy)
+        self.mul_const5.shard(strategy.twod_scalar_strategy)
         self.mul = P.Mul()
-        self.mul.set_strategy(strategy=strategy.twod_twod_strategy)
+        self.mul.shard(strategy.twod_twod_strategy)
         self.mul2 = P.Mul()
-        self.mul2.set_strategy(strategy=strategy.twod_twod_strategy)
-        self.mul3 = P.TensorAdd()
-        self.mul3.set_strategy(strategy=strategy.twod_twod_strategy)
+        self.mul2.shard(strategy.twod_twod_strategy)
+        self.mul3 = P.Add()
+        self.mul3.shard(strategy.twod_twod_strategy)
         self.mul4 = P.Sub()
-        self.mul4.set_strategy(strategy=strategy.twod_twodbc_strategy)
+        self.mul4.shard(strategy.twod_twodbc_strategy)
         self.mul5 = P.RealDiv()
-        self.mul5.set_strategy(strategy=strategy.twod_twodbc_strategy)
+        self.mul5.shard(strategy.twod_twodbc_strategy)
         self.mul6 = P.Mul()
-        self.mul6.set_strategy(strategy=strategy.twod_twod_strategy)
+        self.mul6.shard(strategy.twod_twod_strategy)
         self.mul7 = P.Mul()
-        self.mul7.set_strategy(strategy=strategy.twod_scalar_strategy)
+        self.mul7.shard(strategy.twod_scalar_strategy)
         self.mul8 = P.RealDiv()
-        self.mul8.set_strategy(strategy=strategy.scalar_scalar_strategy)
-        self.mul9 = P.TensorAdd()
-        self.mul9.set_strategy(strategy=strategy.twod_scalar_strategy)
+        self.mul8.shard(strategy.scalar_scalar_strategy)
+        self.mul9 = P.Add()
+        self.mul9.shard(strategy.twod_scalar_strategy)
 
         self.reduce_max = P.ReduceMax(keep_dims=True)
-        self.reduce_max.set_strategy(strategy=strategy.twod_strategy)
+        self.reduce_max.shard(strategy.twod_strategy)
 
         self.reduce_sum = P.ReduceSum(keep_dims=False)
-        self.reduce_sum.set_strategy(strategy=strategy.twod_strategy)
+        self.reduce_sum.shard(strategy.twod_strategy)
         self.reduce_sum_2 = P.ReduceSum(keep_dims=False)
-        self.reduce_sum_2.set_strategy(strategy=strategy.twod_strategy)
+        self.reduce_sum_2.shard(strategy.twod_strategy)
         self.reduce_sum_3 = P.ReduceSum(keep_dims=False)
-        self.reduce_sum_3.set_strategy(strategy=strategy.oned_strategy)
+        self.reduce_sum_3.shard(strategy.oned_strategy)
 
         self.reshape = P.Reshape()
         self.log = P.Log()
-        self.log.set_strategy(strategy=strategy.twod_strategy)
+        self.log.shard(strategy.twod_strategy)
 
         self.on_value = Tensor(1.0, mstype.float32)
         self.off_value = Tensor(0.0, mstype.float32)
         self.normalize = P.L2Normalize(axis=1)
-        self.normalize.set_strategy(strategy=strategy.twod_strategy_m)
+        self.normalize.shard(strategy.twod_strategy_m)
         self.normalize2 = P.L2Normalize(axis=1)
-        self.normalize2.set_strategy(strategy=strategy.twod_strategy_m)
+        self.normalize2.shard(strategy.twod_strategy_m)
         self.fc = P.MatMul(transpose_b=True)
-        self.fc.set_strategy(strategy=strategy.twodbc_twod_strategy)
+        self.fc.shard(strategy.twodbc_twod_strategy)
         weight_shape = [args.num_classes, args.emb_size]
         weight_np = np.zeros(weight_shape, np.float32)
         self.weight = Parameter(Tensor(weight_np), name='model_parallel_weight')
@@ -172,7 +182,7 @@ class SemiAutoOneHotNet(Cell):
         mul_const2_o = self.mul_const2(self.b_const, mul_const_o)
         exp2_o = self.exp2(mul_const2_o)
         mul_const3_o = self.mul_const3(exp2_o, self.c_const)
-        mul_const4_o = self.mul_const4(F.scalar_to_array(1), local_label)
+        mul_const4_o = self.mul_const4(F.scalar_to_tensor(1, mstype.int32), local_label)
         mul6_o = self.mul6(self.mul(mul_const3_o, one_hot_float),
                            self.mul2(fc_o, self.cast2(mul_const4_o, mstype.float32)))
         mul_const5_o = self.mul_const5(mul6_o, self.d_const)
@@ -185,11 +195,26 @@ class SemiAutoOneHotNet(Cell):
         mul5_o = self.mul5(exp3_o, reshape_o)
         log_o = self.log(self.mul9(mul5_o, self.e_const))
         mul3_o = self.mul3(log_o, one_hot_float)
-        mul7_o = self.mul7(mul3_o, self.cast3(F.scalar_to_array(-1), mstype.float32))
+        mul7_o = self.mul7(mul3_o, self.cast3(F.scalar_to_tensor(-1), mstype.float32))
         sum2_o = self.reduce_sum_2(mul7_o, -1)
         loss = self.mul8(self.reduce_sum_3(sum2_o, -1),
-                         self.cast4(F.scalar_to_array(F.shape(mul_const5_o)[0]), mstype.float32))
+                         self.cast4(F.scalar_to_tensor(F.shape(mul_const5_o)[0]), mstype.float32))
         return loss
+
+
+class OneHotWithMulNet(Cell):
+    def __init__(self, onehot_strategy, mul_strategy):
+        super(OneHotWithMulNet, self).__init__()
+        self.onehot = P.OneHot().shard(onehot_strategy)
+        self.mul = P.Mul().shard(mul_strategy)
+        self.depth = Tensor(120, mstype.int64)
+        self.on_value = Tensor(1.0, mstype.float32)
+        self.off_value = Tensor(0.0, mstype.float32)
+
+    def construct(self, x, label):
+        output = self.onehot(x, F.shape(label)[-1], self.on_value, self.off_value)
+        output2 = self.mul(output, 0.1)
+        return output2
 
 
 class Dataset(MindData):
@@ -233,7 +258,7 @@ class GradWrap(nn.Cell):
         self.network = network
 
     def construct(self, x, b):
-        return C.grad_all(self.network)(x, b)
+        return grad_all(self.network)(x, b)
 
 
 def bn_with_initialize(out_channels):
@@ -266,28 +291,28 @@ class BNReshapeDenseBNNet(nn.Cell):
 def test_bn_reshape_dense_bn_train_loss():
     batch_size = 16
     context.set_auto_parallel_context(device_num=device_num, global_rank=0)
+    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
     input_ = Tensor(np.ones([batch_size, 2, 32, 32]).astype(np.float32) * 0.01)
     label = Tensor(np.ones([batch_size]), dtype=ms.int32)
 
     net = GradWrap(NetWithLoss(BNReshapeDenseBNNet()))
-    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
-    net.set_auto_parallel()
 
-    _executor.compile(net, input_, label)
+    net.set_train()
+    _cell_graph_executor.compile(net, input_, label)
 
 
 def test_semi_one_hot_net_batch():
     batch_size = 16
     context.set_auto_parallel_context(device_num=device_num, global_rank=0)
+    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
     input_ = Tensor(np.ones([batch_size * 1, 512]).astype(np.float32) * 0.01)
     label = Tensor(np.ones([batch_size]), dtype=ms.int32)
 
     net = SemiAutoOneHotNet(args=Args(), strategy=StrategyBatch())
     net = GradWrap(NetWithLoss(net))
-    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
-    net.set_auto_parallel()
 
-    _executor.compile(net, input_, label)
+    net.set_train()
+    _cell_graph_executor.compile(net, input_, label)
 
 
 def test_semi_one_hot_net_model():
@@ -300,10 +325,31 @@ def test_semi_one_hot_net_model():
     label = Tensor(np.ones([batch_size]), dtype=ms.int32)
     dataset = Dataset(predict, label, 2, input_num=2)
 
+    context.reset_auto_parallel_context()
+    context.set_auto_parallel_context(parallel_mode=ParallelMode.SEMI_AUTO_PARALLEL, device_num=16,
+                                      dataset_strategy="data_parallel")
+    context.set_context(mode=context.GRAPH_MODE)
     net = SemiAutoOneHotNet(args=Args(), strategy=StrategyModel())
     opt = Momentum(net.trainable_params(), learning_rate, momentum)
-    context.reset_auto_parallel_context()
-    context.set_auto_parallel_context(parallel_mode=ParallelMode.SEMI_AUTO_PARALLEL, device_num=16)
-    context.set_context(mode=context.GRAPH_MODE)
     model = Model(net, optimizer=opt)
     model.train(epoch_size, dataset, dataset_sink_mode=False)
+
+
+class TestOneHotNet(BasicValidator):
+    def test_onehot_no_redistribution(self):
+        """
+        Feature: TestOneHot with one redistribution
+        Description: TestOneHot with no redistribution
+        Expectation: When there are many redistribution operators.
+        """
+        batch_size = 16
+        context.set_auto_parallel_context(device_num=device_num, global_rank=0, full_batch=True)
+        context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
+        input_ = Tensor(np.ones([batch_size]).astype(np.int32))
+        label = Tensor(np.ones([batch_size]), dtype=ms.int32)
+
+        net = GradWrap(NetWithLoss(OneHotWithMulNet(onehot_strategy=((1, 4), (), ()), mul_strategy=((1, 4), ()))))
+
+        net.set_train()
+        _cell_graph_executor.compile(net, input_, label)
+        self.validate_pattern_from_ir("= _reditribution", target_count=0, file_name="step_parallel_end")

@@ -1,4 +1,4 @@
-# Copyright 2019 Huawei Technologies Co., Ltd
+# Copyright 2019-2022 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,11 +17,11 @@ import numpy as np
 
 import mindspore.context as context
 import mindspore.dataset as ds
-import mindspore.dataset.transforms.vision.c_transforms as vision
+import mindspore.dataset.vision as vision
 import mindspore.nn as nn
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.common.tensor import Tensor
-from mindspore.dataset.transforms.vision import Inter
+from mindspore.dataset.vision import Inter
 from mindspore.ops import operations as P
 
 context.set_context(mode=context.GRAPH_MODE, device_target="Ascend")
@@ -47,11 +47,11 @@ def test_me_de_train_dataset():
     rescale_op = vision.Rescale(rescale, shift)
 
     # apply map operations on images
-    data_set_new = data_set_new.map(input_columns="image/encoded", operations=decode_op)
-    data_set_new = data_set_new.map(input_columns="image/encoded", operations=resize_op)
-    data_set_new = data_set_new.map(input_columns="image/encoded", operations=rescale_op)
+    data_set_new = data_set_new.map(operations=decode_op, input_columns="image/encoded")
+    data_set_new = data_set_new.map(operations=resize_op, input_columns="image/encoded")
+    data_set_new = data_set_new.map(operations=rescale_op, input_columns="image/encoded")
     hwc2chw_op = vision.HWC2CHW()
-    data_set_new = data_set_new.map(input_columns="image/encoded", operations=hwc2chw_op)
+    data_set_new = data_set_new.map(operations=hwc2chw_op, input_columns="image/encoded")
     data_set_new = data_set_new.repeat(1)
     # apply batch operations
     batch_size_new = 32
@@ -64,7 +64,7 @@ def convert_type(shapes, types):
     for np_shape, np_type in zip(shapes, types):
         input_np = np.zeros(np_shape, np_type)
         tensor = Tensor(input_np)
-        ms_types.append(tensor.dtype())
+        ms_types.append(tensor.dtype)
     return ms_types
 
 
@@ -83,8 +83,6 @@ if __name__ == '__main__':
 
 
     class dataiter(nn.Cell):
-        def __init__(self):
-            super(dataiter, self).__init__()
 
         def construct(self):
             input_, _ = get_next()
@@ -94,11 +92,11 @@ if __name__ == '__main__':
     net = dataiter()
     net.set_train()
 
-    _executor.init_dataset(ds1.queue_name, 39, batch_size,
-                           dataset_types, dataset_shapes, (), 'dataset')
+    _cell_graph_executor.init_dataset(ds1.queue_name, 39, batch_size,
+                                      dataset_types, dataset_shapes, (), 'dataset')
     ds1.send()
 
-    for data in data_set.create_tuple_iterator():
+    for data in data_set.create_tuple_iterator(output_numpy=True, num_epochs=1):
         output = net()
         print(data[0].any())
         print(

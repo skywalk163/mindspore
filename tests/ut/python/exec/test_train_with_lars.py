@@ -20,7 +20,6 @@ from mindspore.common.parameter import ParameterTuple, Parameter
 from mindspore.nn.loss import SoftmaxCrossEntropyWithLogits
 from mindspore.nn.optim import Momentum
 from mindspore.ops import composite as C
-from mindspore.ops import functional as F
 from mindspore.ops import operations as P
 
 
@@ -52,8 +51,7 @@ class TrainOneStepWithLarsCell(nn.Cell):
         self.slice_index, self.params_len, weights = get_net_trainable_reordered_params(self.network)
         self.weights = ParameterTuple(weights)
         self.optimizer = optimizer
-        self.grad = C.GradOperation('grad',
-                                    get_by_list=True,
+        self.grad = C.GradOperation(get_by_list=True,
                                     sens_param=True)
         self.sens = Parameter(Tensor([sens], mstype.float32), name='sens', requires_grad=False)
         self.weight_decay = 1.0
@@ -68,10 +66,11 @@ class TrainOneStepWithLarsCell(nn.Cell):
         bias_grads = grads[self.slice_index: self.params_len]
         lars_grads = self.lars(non_bias_weights, non_bias_grads, self.weight_decay)
         new_grads = lars_grads + bias_grads
-        return F.depend(loss, self.optimizer(new_grads))
+        self.optimizer(new_grads)
+        return loss
 
 
-# fn is a funcation use i as input
+# fn is a function use i as input
 def lr_gen(fn, epoch_size):
     for i in range(epoch_size):
         yield fn(i)
@@ -79,7 +78,7 @@ def lr_gen(fn, epoch_size):
 
 def me_train_tensor(net, input_np, label_np, epoch_size=2):
     """me_train_tensor"""
-    loss = SoftmaxCrossEntropyWithLogits(is_grad=False, sparse=True)
+    loss = SoftmaxCrossEntropyWithLogits(sparse=True, reduction='mean')
     # reorder the net parameters , leave the parameters that need to be passed into lars to the end part
 
     opt = Momentum(get_net_trainable_reordered_params(net)[2], lr_gen(lambda i: 0.1, epoch_size), 0.9, 0.01, 1024)

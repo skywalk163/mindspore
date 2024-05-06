@@ -16,9 +16,9 @@
 
 #include "common/backend_common_test.h"
 #include "common/py_func_graph_fetcher.h"
-#include "debug/anf_ir_dump.h"
-#include "session/anf_runtime_algorithm.h"
-#include "pre_activate/ascend/ir_fusion/transpose_reshape_fusion.h"
+#include "include/common/debug/anf_ir_dump.h"
+#include "include/common/utils/anfalgo.h"
+#include "plugin/device/ascend/optimizer/ir_fusion/transpose_reshape_fusion.h"
 
 namespace mindspore {
 namespace opt {
@@ -33,13 +33,12 @@ class TestHWTransposeReshapeFusion : public BackendCommon {
 
 TEST_F(TestHWTransposeReshapeFusion, test_transpose_reshape_fusion) {
   /*
-   * def before(input0, input1):
-   * reshape = Reshape(input0, input1)
-   * transpose = Transpose(reshape)
-   * return transpose
+   * transpose = Transpose(x, (1, 0, 2, 3))
+   * reshape = Reshape(transpose, (2, 2, 16, 16))
+   * res = BatchMatMul(reshape, reshape)
    */
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_transpose_reshape_fusion", "before");
-  std::vector<int> shp{2, 2, 16, 16};
+  std::vector<int64_t> shp{2, 2, 16, 16};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list{x_abstract};
   auto kg = GetKernelGraph(g, args_spec_list);
@@ -47,10 +46,12 @@ TEST_F(TestHWTransposeReshapeFusion, test_transpose_reshape_fusion) {
   // Set Attr for transpose
   auto ret = kg->get_return();
   EXPECT_NE(ret->input(1), nullptr);
-  auto reshape = ret->input(1)->cast<CNodePtr>();
+  auto bmm = ret->input(1)->cast<CNodePtr>();
+  EXPECT_NE(bmm, nullptr);
+  auto reshape = bmm->input(1)->cast<CNodePtr>();
   EXPECT_NE(reshape->input(1), nullptr);
   auto transpose = reshape->input(1)->cast<CNodePtr>();
-  AnfAlgo::SetNodeAttr(kAttrPerm, MakeValue("perm"), transpose);
+  common::AnfAlgo::SetNodeAttr(kAttrPerm, MakeValue("perm"), transpose);
 
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
   auto pm = std::make_shared<opt::PassManager>();
@@ -64,13 +65,12 @@ TEST_F(TestHWTransposeReshapeFusion, test_transpose_reshape_fusion) {
 
 TEST_F(TestHWTransposeReshapeFusion, test_transpose_reshape_no_fusion) {
   /*
-   * def before(input0, input1):
-   * reshape = Reshape(input0, input1)
-   * transpose = Transpose(reshape)
-   * return transpose
+   * transpose = Transpose(x, (1, 0, 2, 3))
+   * reshape = Reshape(transpose, (2, 2, 16, 16))
+   * res = BatchMatMul(reshape, reshape)
    */
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_transpose_reshape_fusion", "before");
-  std::vector<int> shp{2, 4, 8, 16};
+  std::vector<int64_t> shp{2, 4, 8, 16};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list{x_abstract};
   auto kg = GetKernelGraph(g, args_spec_list);

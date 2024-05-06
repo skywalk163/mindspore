@@ -21,10 +21,16 @@ from mindspore import context
 from mindspore.common.parameter import Parameter, ParameterTuple
 from mindspore.nn.loss import SoftmaxCrossEntropyWithLogits
 from mindspore.nn.optim.momentum import Momentum
-from mindspore.ops import composite as C, functional as F, operations as P
-from mindspore.train import Model, ParallelMode
+from mindspore.ops import composite as C, operations as P
+from mindspore.train import Model
+from mindspore.context import ParallelMode
 from mindspore.train.loss_scale_manager import DynamicLossScaleManager
 from tests.dataset_mock import MindData
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
 
 context.set_context(mode=context.GRAPH_MODE)
 
@@ -53,9 +59,9 @@ class Dataset(MindData):
 class AllToAllNet(nn.Cell):
     def __init__(self, strategy1):
         super(AllToAllNet, self).__init__()
-        self.matmul = P.MatMul().set_strategy(((1, 1), (1, 8)))
+        self.matmul = P.MatMul().shard(((1, 1), (1, 8)))
         self.matmul_weight = Parameter(Tensor(np.ones([128, 256]), dtype=ms.float32), name="weight")
-        self.transpose1 = P.Transpose().set_strategy(strategy1)
+        self.transpose1 = P.Transpose().shard(strategy1)
 
     def construct(self, x):
         x = self.matmul(x, self.matmul_weight)
@@ -72,15 +78,15 @@ def loss_scale_manager_common(strategy1):
     momentum = 0.9
     epoch_size = 2
 
-    context.reset_auto_parallel_context()
-    context.set_auto_parallel_context(parallel_mode=ParallelMode.AUTO_PARALLEL, device_num=8)
+    context.set_auto_parallel_context(parallel_mode=ParallelMode.AUTO_PARALLEL, search_mode="dynamic_programming", 
+                                      device_num=8, dataset_strategy="data_parallel")
     predict = Tensor(np.ones([32, 128]), dtype=ms.float32)
     label = Tensor(np.ones([32]), dtype=ms.int32)
     dataset = Dataset(predict, label, 2)
     net = all_to_all_net(strategy1)
 
-    loss = SoftmaxCrossEntropyWithLogits(is_grad=False, sparse=True)
-    loss.softmax_cross_entropy.set_strategy(((8, 1), (8, 1)))
+    loss = SoftmaxCrossEntropyWithLogits(sparse=True, reduction='mean')
+    loss.softmax_cross_entropy.shard(((8, 1), (8, 1)))
     opt = Momentum(net.trainable_params(), learning_rate, momentum)
     scale_manager = DynamicLossScaleManager(32, 2, 2000)
     model = Model(net, loss, opt, loss_scale_manager=scale_manager)
@@ -107,20 +113,20 @@ class TrainOneStepCell(nn.Cell):
         self.network.add_flags(defer_inline=True)
         self.weights = ParameterTuple(network.trainable_params())
         self.optimizer = optimizer
-        self.grad = C.GradOperation('grad', get_by_list=True, sens_param=True)
+        self.grad = C.GradOperation(get_by_list=True, sens_param=True)
 
     def construct(self, data, sens):
         weights = self.weights
         loss = self.network(data)
         grads = self.grad(self.network, weights)(data, sens)
-        return F.depend(loss, self.optimizer(grads))
+        self.optimizer(grads)
+        return loss
 
 
 def loss_scale_manager_sens(strategy1, sens):
     learning_rate = 0.1
     momentum = 0.9
     device_num = 8
-    context.reset_auto_parallel_context()
     context.set_auto_parallel_context(parallel_mode=ParallelMode.SEMI_AUTO_PARALLEL, device_num=device_num)
     predict = Tensor(np.ones([32 * device_num, 128]), dtype=ms.float32)
     net = all_to_all_net(strategy1)
@@ -149,13 +155,13 @@ def test_dataset_interface_sens_shape_equal_loss():
     loss_scale_manager_sens(strategy1, sens)
 
 
-def test_input_not_in_parameter_layotu_dict():
+def test_input_not_in_parameter_layout_dict():
     class Net(nn.Cell):
         def __init__(self, strategy1):
             super(Net, self).__init__()
-            self.matmul = P.MatMul().set_strategy(((1, 1), (1, 8)))
+            self.matmul = P.MatMul().shard(((1, 1), (1, 8)))
             self.matmul_weight = Parameter(Tensor(np.ones([128, 256]), dtype=ms.float32), name="weight")
-            self.transpose1 = P.Transpose().set_strategy(strategy1)
+            self.transpose1 = P.Transpose().shard(strategy1)
 
         def construct(self, x):
             x = self.matmul(x, self.matmul_weight)
@@ -164,7 +170,6 @@ def test_input_not_in_parameter_layotu_dict():
 
     strategy1 = ((8, 1),)
     device_num = 8
-    context.reset_auto_parallel_context()
     context.set_auto_parallel_context(parallel_mode=ParallelMode.SEMI_AUTO_PARALLEL, device_num=device_num)
     predict = Tensor(np.ones([32 * device_num, 128]), dtype=ms.float32)
     net = Net(strategy1)

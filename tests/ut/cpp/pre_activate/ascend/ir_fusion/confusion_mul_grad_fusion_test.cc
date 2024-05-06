@@ -15,9 +15,10 @@
  */
 #include "common/backend_common_test.h"
 #include "common/py_func_graph_fetcher.h"
-#include "pre_activate/common/optimizer.h"
-#include "pre_activate/ascend/ir_fusion/confusion_mul_grad_fusion.h"
-#include "debug/anf_ir_dump.h"
+#include "include/backend/optimizer/optimizer.h"
+#include "plugin/device/ascend/optimizer/ir_fusion/confusion_mul_grad_fusion.h"
+#include "plugin/device/ascend/optimizer/ir_fission/ascend_convert_tuple_input_to_dynamic_input.h"
+#include "include/common/debug/anf_ir_dump.h"
 
 namespace mindspore {
 namespace opt {
@@ -32,7 +33,7 @@ class TestHWOptimizeConfusionMulGradFusion : public BackendCommon {
 TEST_F(TestHWOptimizeConfusionMulGradFusion, test_fusion) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_confusion_mul_grad_fusion", "before");
   EXPECT_NE(g, nullptr);
-  std::vector<int> shp{1, 1, 1, 1};
+  std::vector<int64_t> shp{10, 1024};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list;
   for (size_t i = 0; i < 3; ++i) {
@@ -42,6 +43,7 @@ TEST_F(TestHWOptimizeConfusionMulGradFusion, test_fusion) {
 
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
   auto pm = std::make_shared<opt::PassManager>();
+  pm->AddPass(std::make_shared<opt::AscendConvertTupleInputToDynamicInput>());
   pm->AddPass(std::make_shared<opt::ConfusionMulGradFusion>());
   optimizer->AddPassManager(pm);
   FuncGraphPtr new_graph = optimizer->Optimize(fg);
@@ -49,6 +51,5 @@ TEST_F(TestHWOptimizeConfusionMulGradFusion, test_fusion) {
   FuncGraphPtr g_after = get_py_fun_.CallAndParseRet("test_confusion_mul_grad_fusion", "after");
   EXPECT_TRUE(CheckEqualGraph(g_after, new_graph));
 }
-
 }  // namespace opt
 }  // namespace mindspore

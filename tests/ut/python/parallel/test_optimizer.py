@@ -17,13 +17,18 @@ import numpy as np
 import mindspore.context as context
 import mindspore.nn as nn
 from mindspore import Tensor, Parameter
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.communication.management import init
 from mindspore.nn import Dense
 from mindspore.nn import Momentum
 from mindspore.nn import TrainOneStepCell, WithLossCell
 from mindspore.ops import operations as P
-from mindspore.train.parallel_utils import ParallelMode
+from mindspore.context import ParallelMode
+from mindspore.communication._comm_helper import GlobalComm
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
 
 
 class Net(nn.Cell):
@@ -45,7 +50,11 @@ class Net(nn.Cell):
 
 def test_dense_gen_graph():
     context.set_context(mode=context.GRAPH_MODE)
+    context.reset_auto_parallel_context()
+    context.set_auto_parallel_context(parallel_mode=ParallelMode.HYBRID_PARALLEL, gradients_mean=True, device_num=8)
+    GlobalComm.CHECK_ENVS = False
     init()
+    GlobalComm.CHECK_ENVS = True
     network = Net(512, 128)
 
     loss_fn = nn.SoftmaxCrossEntropyWithLogits()
@@ -53,11 +62,8 @@ def test_dense_gen_graph():
                          learning_rate=0.1,
                          momentum=0.9)
     network = WithLossCell(network, loss_fn)
-    context.reset_auto_parallel_context()
-    context.set_auto_parallel_context(parallel_mode=ParallelMode.HYBRID_PARALLEL, mirror_mean=True, device_num=8)
     network = TrainOneStepCell(network, optimizer)
 
     predict = Tensor(np.ones([64, 512]).astype(np.float32) * 0.01)
     label = Tensor(np.zeros([64, 32]).astype(np.float32))
-    network.set_auto_parallel()
-    _executor.compile(network, predict, label)
+    _cell_graph_executor.compile(network, predict, label)

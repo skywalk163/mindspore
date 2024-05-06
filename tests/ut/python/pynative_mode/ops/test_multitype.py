@@ -16,16 +16,17 @@
 import numpy as np
 
 from mindspore import Tensor
-from mindspore.common.api import ms_function
+from mindspore.common.api import jit
 from mindspore.common.parameter import Parameter
-from mindspore.ops import Primitive
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
+from mindspore.ops import functional as F
+from mindspore import dtype as mstype
 from ...ut_filter import non_graph_engine
 
-tensor_add = P.TensorAdd()
+tensor_add = P.Add()
 op_add = P.AddN()
-scala_add = Primitive('scalar_add')
+scala_add = F.scalar_add
 add = C.MultitypeFuncGraph('add')
 
 
@@ -39,7 +40,7 @@ def add_tensor(x, y):
     return tensor_add(x, y)
 
 
-@ms_function
+@jit
 def mainf(x, y):
     return add(x, y)
 
@@ -57,8 +58,32 @@ def test_multitype_tuple():
     params1 = Parameter(tensor1, name="params1")
     tensor2 = Tensor(np.array([[1.2, 2.1], [2.2, 3.2]]).astype('float32'))
     output = op_add((params1, tensor2))
-    assert output == Tensor(np.array([[2.4, 4.2], [4.4, 6.4]]).astype('float32'))
+    assert np.all(output.asnumpy() == np.array([[2.4, 4.2], [4.4, 6.4]]).astype('float32'))
 
 
 def test_multitype_scalar():
     mainf(1, 2)
+
+
+add2 = C.MultitypeFuncGraph('add2')
+@add2.register(mstype.number, mstype.number)
+def add_scala2(x, y):
+    return scala_add(x, y)
+
+
+@add2.register(mstype.tensor_type, mstype.tensor_type)
+def add_tensor2(x, y):
+    return tensor_add(x, y)
+
+
+@jit
+def mainf2(x, y):
+    return add2(x, y)
+
+
+@non_graph_engine
+def test_multitype_tensor_by_type():
+    tensor1 = Tensor(np.array([[1.2, 2.1], [2.2, 3.2]]).astype('float32'))
+    tensor2 = Tensor(np.array([[1.2, 2.1], [2.2, 3.2]]).astype('float32'))
+    out = mainf2(tensor1, tensor2)
+    print(out)

@@ -1,3 +1,17 @@
+# Copyright 2020 Huawei Technologies Co., Ltd
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============================================================================
 import numpy as np
 
 import mindspore.nn as nn
@@ -6,6 +20,10 @@ from mindspore.nn import Momentum
 from mindspore.nn import WithLossCell, TrainOneStepCell
 from mindspore.ops import operations as P
 from mindspore.parallel._cost_model_context import set_cost_model_context
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
 
 
 class Net(nn.Cell):
@@ -21,8 +39,13 @@ class Net(nn.Cell):
 
 
 def test_inference_phase():
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
     context.set_auto_parallel_context(device_num=8, global_rank=0)
-    context.set_auto_parallel_context(parallel_mode="auto_parallel")
+    context.set_auto_parallel_context(parallel_mode="auto_parallel", search_mode="dynamic_programming")
     set_cost_model_context(run_phase=1)
 
     net = Net(512, 128)
@@ -34,6 +57,5 @@ def test_inference_phase():
     net_with_loss = WithLossCell(net, loss)
     train_network = TrainOneStepCell(net_with_loss, optimizer)
     train_network.set_train()
-    train_network.set_auto_parallel()
 
     _ = train_network(predict, label)

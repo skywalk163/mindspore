@@ -19,17 +19,17 @@ from mindspore.ops import Primitive
 from mindspore.ops import operations as P
 from mindspore.ops.operations import _grad_ops as G
 
-make_tuple = Primitive('make_tuple')
+make_tuple = Primitive('MakeTuple')
 reshape = P.Reshape()
 backend_reshape = Primitive('Reshape')
 cast = P.Cast()
 backend_cast = Primitive('Cast')
 transpose = P.Transpose()
-backend_transpose = Primitive('Transpose')
+backend_transpose = Primitive('TransposeD')
 onehot1 = P.OneHot()
 onehot2 = P.OneHot()
-backend_onehot1 = Primitive('OneHot')
-backend_onehot2 = Primitive('OneHot')
+backend_onehot1 = Primitive('OneHotD')
+backend_onehot2 = Primitive('OneHotD')
 stridedslicegrad = G.StridedSliceGrad()
 backend_stridedslicegrad = Primitive('StridedSliceGrad')
 on_value = Tensor(1.0, mstype.float32)
@@ -95,7 +95,7 @@ def test_convert_transpose_input_to_attr(tag):
     return fns[tag]
 
 
-def test_convert_onehot_input_to_attr(tag):
+def convert_onehot_input_to_attr(tag):
     fns = FnDict()
 
     @fns
@@ -125,7 +125,7 @@ def test_convert_onehot_input_to_tensor1(tag):
     return fns[tag]
 
 
-def test_convert_onehot_input_to_tensor2(tag):
+def convert_onehot_input_to_tensor2(tag):
     fns = FnDict()
 
     @fns

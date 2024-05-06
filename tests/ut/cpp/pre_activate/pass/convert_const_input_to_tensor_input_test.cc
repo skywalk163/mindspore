@@ -14,15 +14,17 @@
  * limitations under the License.
  */
 #include "common/backend_common_test.h"
+#include "mindspore/core/ops/nn_ops.h"
 #include "ir/anf.h"
 #include "ir/tensor.h"
-#include "debug/anf_ir_dump.h"
+#include "include/common/debug/anf_ir_dump.h"
 #include "common/py_func_graph_fetcher.h"
-#include "session/anf_runtime_algorithm.h"
-#include "pre_activate/common/optimizer.h"
-#include "pre_activate/common/pass_manager.h"
-#include "pre_activate/pass/convert_const_input_to_tensor_input.h"
-#include "utils/utils.h"
+#include "include/backend/anf_runtime_algorithm.h"
+#include "include/backend/optimizer/optimizer.h"
+#include "include/backend/optimizer/pass_manager.h"
+#include "backend/common/pass/convert_const_input_to_tensor_input.h"
+#include "include/common/utils/utils.h"
+#include "include/common/utils/anfalgo.h"
 
 namespace mindspore {
 namespace opt {
@@ -40,7 +42,7 @@ TEST_F(TestHWConstInputToTensorInput, test_onehot_fg) {
   ASSERT_TRUE(g != nullptr);
   FuncGraphPtr g_after = getPyFun_.CallAndParseRet("test_convert_onehot_input_to_tensor1", "after_func_graph");
   ASSERT_TRUE(g_after != nullptr);
-  std::vector<int> shp_x{16};
+  std::vector<int64_t> shp_x{16};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kInt32, shp_x);
   AbstractBasePtrList args_spec_list{x_abstract};
   auto func_graph = GetFuncGraph(g, args_spec_list);
@@ -59,17 +61,20 @@ TEST_F(TestHWConstInputToTensorInput, test_onehot_fg) {
   EXPECT_NE(ret->input(1), nullptr);
   EXPECT_NE(ret->input(1)->cast<CNodePtr>(), nullptr);
   auto cnode = ret->input(1)->cast<CNodePtr>();
-  EXPECT_FALSE(AnfAlgo::HasNodeAttr("depth", cnode));
+  EXPECT_FALSE(common::AnfAlgo::HasNodeAttr("depth", cnode));
   EXPECT_TRUE(IsValueNode<tensor::Tensor>(cnode->input(2)));
 }
 
-TEST_F(TestHWConstInputToTensorInput, test_onehot_kg) {
-  FuncGraphPtr g = getPyFun_.CallAndParseRet("test_convert_onehot_input_to_tensor2", "before");
+/// Feature: Const input to tensor input.
+/// Description: Test if can change const input to tensor input successfully.
+/// Expectation: Success.
+TEST_F(TestHWConstInputToTensorInput, onehot_kg_case) {
+  FuncGraphPtr g = getPyFun_.CallAndParseRet("convert_onehot_input_to_tensor2", "before");
   ASSERT_TRUE(g != nullptr);
-  FuncGraphPtr g_after = getPyFun_.CallAndParseRet("test_convert_onehot_input_to_tensor2", "after_kernel_graph");
+  FuncGraphPtr g_after = getPyFun_.CallAndParseRet("convert_onehot_input_to_tensor2", "after_kernel_graph");
   ASSERT_TRUE(g_after != nullptr);
   EXPECT_FALSE(CheckEqualGraph(g, g_after));
-  std::vector<int> shp_x{16};
+  std::vector<int64_t> shp_x{16};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kInt32, shp_x);
   AbstractBasePtrList args_spec_list{x_abstract};
   auto func_graph = GetKernelGraph(g, args_spec_list);
@@ -80,14 +85,14 @@ TEST_F(TestHWConstInputToTensorInput, test_onehot_kg) {
   EXPECT_NE(ret->input(1), nullptr);
   EXPECT_NE(ret->input(1)->cast<CNodePtr>(), nullptr);
   auto cnode = ret->input(1)->cast<CNodePtr>()->input(1)->cast<CNodePtr>();
-  EXPECT_TRUE(AnfAlgo::HasNodeAttr("depth", cnode));
+  EXPECT_TRUE(common::AnfAlgo::HasNodeAttr("depth", cnode));
   EXPECT_TRUE(CheckEqualGraph(func_graph, g_after));
 }
 
 TEST_F(TestHWConstInputToTensorInput, test_value_tuple_tensor_input) {
   FuncGraphPtr g = getPyFun_.CallAndParseRet("test_convert_dropout_gen_mask_tuple_input_to_tensor", "before");
   ASSERT_TRUE(g != nullptr);
-  std::vector<int> shp_x{1};
+  std::vector<int64_t> shp_x{1};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp_x);
   AbstractBasePtrList args_spec_list{x_abstract};
   auto kernel_graph = GetKernelGraph(g, args_spec_list);
@@ -98,14 +103,14 @@ TEST_F(TestHWConstInputToTensorInput, test_value_tuple_tensor_input) {
   EXPECT_NE(ret->input(1), nullptr);
   EXPECT_NE(ret->input(1)->cast<CNodePtr>(), nullptr);
   auto cnode = ret->input(1)->cast<CNodePtr>()->input(1)->cast<CNodePtr>();
-  EXPECT_EQ(AnfAlgo::GetCNodeName(cnode), prim::kPrimDropoutGenMask->name());
+  EXPECT_EQ(common::AnfAlgo::GetCNodeName(cnode), prim::kPrimDropoutGenMask->name());
   auto input1 = cnode->input(1);
   ASSERT_TRUE(input1 != nullptr);
   EXPECT_TRUE(IsValueNode<tensor::Tensor>(input1));
   auto tensor = input1->cast<ValueNodePtr>()->value()->cast<tensor::TensorPtr>();
   ASSERT_TRUE(tensor != nullptr);
-  auto data = tensor->data_c(false);
-  EXPECT_EQ(std::vector<int>((int *)data, (int *)data + 4), std::vector<int>({2, 4, 2, 2}));
+  auto data = tensor->data_c();
+  EXPECT_EQ(std::vector<int64_t>((int64_t *)data, (int64_t *)data + 4), std::vector<int64_t>({2, 4, 2, 2}));
 }
 }  // namespace opt
 }  // namespace mindspore

@@ -46,14 +46,10 @@ def test_activation_param():
     assert isinstance(output_np[0][0][0][0], (np.float32, np.float64))
 
 
-def test_activation_empty():
-    assert nn.get_activation('') is None
-
-
 # test softmax
 def test_softmax_axis():
     layer = nn.Softmax(1)
-    x = Tensor(np.ones([3, 3]))
+    x = Tensor(np.ones([3, 3]).astype(np.float32))
     assert layer.softmax.axis == (1,)
     output = layer.construct(x)
     output_np = output.asnumpy()
@@ -62,7 +58,7 @@ def test_softmax_axis():
 
 def test_softmax_axis_none():
     layer = nn.Softmax()
-    x = Tensor(np.ones([3, 2]))
+    x = Tensor(np.ones([3, 2]).astype(np.float32))
     assert layer.softmax.axis == (-1,)
     output = layer.construct(x)
     output_np = output.asnumpy()

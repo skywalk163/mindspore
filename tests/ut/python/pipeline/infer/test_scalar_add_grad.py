@@ -20,10 +20,10 @@ from mindspore.common.tensor import Tensor
 from mindspore.nn import Cell
 from mindspore.nn import ReLU
 from mindspore.ops import composite as C
-from mindspore.ops.operations import TensorAdd
+from mindspore.ops.operations import Add
 
 context.set_context(mode=context.GRAPH_MODE)
-grad = C.GradOperation('get_all', get_all=True, sens_param=True)
+grad = C.GradOperation(get_all=True, sens_param=True)
 
 
 class TensorAddNetMe(Cell):
@@ -32,7 +32,7 @@ class TensorAddNetMe(Cell):
     def __init__(self):
         super(TensorAddNetMe, self).__init__()
         self.relu = ReLU()
-        self.add = TensorAdd()
+        self.add = Add()
 
     def construct(self, inputA, inputB):
         inputA = self.relu(inputA)

@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@
 #include <list>
 #include <vector>
 #include "common/common_test.h"
-#include "parallel/strategy.h"
-#include "parallel/ops_info/reshape_info.h"
-#include "parallel/device_manager.h"
-#include "parallel/step_parallel.h"
+#include "frontend/parallel/strategy.h"
+#include "frontend/parallel/ops_info/reshape_info.h"
+#include "frontend/parallel/device_manager.h"
+#include "frontend/parallel/step_parallel.h"
 
 namespace mindspore {
 namespace parallel {
@@ -38,13 +38,13 @@ class TestReshapeInfo : public UT::Common {
 };
 
 void TestReshapeInfo::SetUp() {
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 34; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(32);
   stage_map.push_back(2);
 
@@ -54,11 +54,11 @@ void TestReshapeInfo::SetUp() {
   g_device_manager = std::make_shared<DeviceManager>();
   g_device_manager->Init(dev_list, local_dev, stage_map, "hccl");
 
-  std::unordered_map<std::string, ValuePtr> attr;
+  mindspore::HashMap<std::string, ValuePtr> attr;
 
   Shapes inputs_shape = {{32, 512, 7, 7}};
   Shapes outputs_shape = {{32, 25088}};
-  std::vector<int> axis = {32, 25088};
+  std::vector<int64_t> axis = {32, 25088};
   ValuePtr val0;
   ValuePtr val1 = MakeValue(axis);
   std::vector<ValuePtr> val = {val0, val1};
@@ -68,37 +68,37 @@ void TestReshapeInfo::SetUp() {
 }
 
 TEST_F(TestReshapeInfo, InferDevMatrixShape1) {
-  std::vector<Dimensions> inputs = {{4, 1, 1, 1}};
+  Strategies inputs = {{4, 1, 1, 1}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  reshape->Init(strategy);
-  std::vector<int32_t> dev_matrix_shape = reshape->dev_matrix_shape();
+  reshape->Init(strategy, nullptr);
+  Shape dev_matrix_shape = reshape->dev_matrix_shape();
 
-  std::vector<int32_t> expect = {8, 4};
+  Shape expect = {4, 1, 1, 1, 8};
   ASSERT_EQ(dev_matrix_shape, expect);
 }
 
 TEST_F(TestReshapeInfo, InferDevMatrixShape2) {
-  std::vector<Dimensions> inputs = {{32, 1, 1, 1}};
+  Strategies inputs = {{32, 1, 1, 1}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  reshape->Init(strategy);
-  std::vector<int32_t> dev_matrix_shape = reshape->dev_matrix_shape();
+  reshape->Init(strategy, nullptr);
+  Shape dev_matrix_shape = reshape->dev_matrix_shape();
 
-  std::vector<int32_t> expect = {32};
+  Shape expect = {32, 1, 1, 1};
   ASSERT_EQ(dev_matrix_shape, expect);
 }
 
 TEST_F(TestReshapeInfo, InferSliceShape1) {
-  std::vector<Dimensions> str = {{4, 1, 1, 1}};
+  Strategies str = {{4, 1, 1, 1}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  reshape->Init(strategy);
+  reshape->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = reshape->inputs_tensor_info();
   std::vector<TensorInfo> outputs = reshape->outputs_tensor_info();
 
   Shape input_slice_shape_expect = {8, 512, 7, 7};
-  Shape output_slice_shape_expect = {8, 25088};
+  Shape output_slice_shape_expect = {32, 25088};
 
   TensorInfo input_tensor_info = inputs.at(0);
   TensorInfo output_tensor_info = outputs.at(0);
@@ -111,15 +111,15 @@ TEST_F(TestReshapeInfo, InferSliceShape1) {
 }
 
 TEST_F(TestReshapeInfo, InferSliceShape2) {
-  std::vector<Dimensions> str = {{32, 1, 1, 1}};
+  Strategies str = {{32, 1, 1, 1}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  reshape->Init(strategy);
+  reshape->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = reshape->inputs_tensor_info();
   std::vector<TensorInfo> outputs = reshape->outputs_tensor_info();
 
   Shape input_slice_shape_expect = {1, 512, 7, 7};
-  Shape output_slice_shape_expect = {1, 25088};
+  Shape output_slice_shape_expect = {32, 25088};
 
   TensorInfo input_tensor_info = inputs.at(0);
   TensorInfo output_tensor_info = outputs.at(0);
@@ -132,15 +132,15 @@ TEST_F(TestReshapeInfo, InferSliceShape2) {
 }
 
 TEST_F(TestReshapeInfo, GetTensorLayout1) {
-  std::vector<Dimensions> str = {{4, 1, 1, 1}};
+  Strategies str = {{4, 1, 1, 1}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  reshape->Init(strategy);
+  reshape->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = reshape->inputs_tensor_info();
   std::vector<TensorInfo> outputs = reshape->outputs_tensor_info();
 
-  TensorMap input_expect = {0, -1, -1, -1};
-  TensorMap output_expect = {0, -1};
+  TensorMap input_expect = {4, 3, 2, 1};
+  TensorMap output_expect = {-1, -1};
 
   TensorInfo input_tensor_info = inputs.at(0);
   TensorInfo output_tensor_info = outputs.at(0);
@@ -153,15 +153,15 @@ TEST_F(TestReshapeInfo, GetTensorLayout1) {
 }
 
 TEST_F(TestReshapeInfo, GetTensorLayout2) {
-  std::vector<Dimensions> str = {{32, 1, 1, 1}};
+  Strategies str = {{32, 1, 1, 1}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  reshape->Init(strategy);
+  reshape->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = reshape->inputs_tensor_info();
   std::vector<TensorInfo> outputs = reshape->outputs_tensor_info();
 
-  TensorMap input_expect = {0, -1, -1, -1};
-  TensorMap output_expect = {0, -1};
+  TensorMap input_expect = {3, 2, 1, 0};
+  TensorMap output_expect = {-1, -1};
 
   TensorInfo input_tensor_info = inputs.at(0);
   TensorInfo output_tensor_info = outputs.at(0);
@@ -174,10 +174,10 @@ TEST_F(TestReshapeInfo, GetTensorLayout2) {
 }
 
 TEST_F(TestReshapeInfo, GetForwardOp1) {
-  std::vector<Dimensions> inputs = {{4, 1, 1, 1}};
+  Strategies inputs = {{4, 1, 1, 1}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  reshape->Init(strategy);
+  reshape->Init(strategy, nullptr);
   OperatorVector forward_op = reshape->forward_op();
   size_t size = forward_op.size();
 
@@ -185,10 +185,10 @@ TEST_F(TestReshapeInfo, GetForwardOp1) {
 }
 
 TEST_F(TestReshapeInfo, GetMirrorOPs1) {
-  std::vector<Dimensions> inputs = {{4, 1, 1, 1}};
+  Strategies inputs = {{4, 1, 1, 1}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  reshape->Init(strategy);
+  reshape->Init(strategy, nullptr);
   MirrorOps mirror_ops = reshape->mirror_ops();
 
   size_t size = mirror_ops.size();
@@ -197,26 +197,26 @@ TEST_F(TestReshapeInfo, GetMirrorOPs1) {
 }
 
 TEST_F(TestReshapeInfo, CheckStrategy1) {
-  std::vector<Dimensions> inputs = {{1, 4, 8}};
+  Strategies inputs = {{1, 4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = reshape->Init(strategy);
+  Status ret = reshape->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 
 TEST_F(TestReshapeInfo, CheckStrategy2) {
-  std::vector<Dimensions> inputs = {{2, 4, 8}, {2, 4, 8}};
+  Strategies inputs = {{2, 4, 8}, {2, 4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = reshape->Init(strategy);
+  Status ret = reshape->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 
 TEST_F(TestReshapeInfo, CheckStrategy3) {
-  std::vector<Dimensions> inputs = {{4, 1, 1, 1}};
+  Strategies inputs = {{4, 1, 1, 1}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = reshape->Init(strategy);
+  Status ret = reshape->Init(strategy, nullptr);
   ASSERT_EQ(ret, SUCCESS);
 }
 }  // namespace parallel

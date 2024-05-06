@@ -18,10 +18,17 @@ import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
 from tests.ut.python.ops.test_math_ops import VirtualLoss
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
+grad_all = C.GradOperation(get_all=True)
 
 
 class NetWithLoss(nn.Cell):
@@ -41,12 +48,18 @@ class GradWrap(nn.Cell):
         self.network = network
 
     def construct(self, x, y, b):
-        return C.grad_all(self.network)(x, y, b)
+        return grad_all(self.network)(x, y, b)
 
     # model_parallel test
 
 
 def test_two_matmul():
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
+
     class Net(nn.Cell):
         def __init__(self):
             super().__init__()
@@ -65,6 +78,6 @@ def test_two_matmul():
     b = Tensor(np.ones([64, 64]), dtype=ms.float32)
 
     net = GradWrap(NetWithLoss(Net()))
-    context.set_auto_parallel_context(parallel_mode="auto_parallel")
-    net.set_auto_parallel()
-    _executor.compile(net, x, y, b)
+    context.set_auto_parallel_context(parallel_mode="auto_parallel", search_mode="dynamic_programming")
+    net.set_train()
+    _cell_graph_executor.compile(net, x, y, b)

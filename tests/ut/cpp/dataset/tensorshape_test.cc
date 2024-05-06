@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,28 +15,26 @@
  */
 #include <string>
 #include "./securec.h"
-#include "dataset/core/client.h"
-#include "dataset/core/data_type.h"
-#include "dataset/core/tensor_shape.h"
-#include "dataset/engine/data_schema.h"
+#include "minddata/dataset/core/data_type.h"
+#include "minddata/dataset/core/tensor_shape.h"
+#include "minddata/dataset/engine/data_schema.h"
 #include "common/common.h"
-#include "common/utils.h"
+#include "utils/ms_utils.h"
 #include "gtest/gtest.h"
 #include "utils/log_adapter.h"
 
 namespace common = mindspore::common;
 
 using namespace mindspore::dataset;
-using mindspore::MsLogLevel::INFO;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::LogStream;
 
 class MindDataTestTensorShape : public UT::Common {
  public:
-    MindDataTestTensorShape() = default;
+  MindDataTestTensorShape() = default;
 };
 
-
+/// Feature: TensorShape
+/// Description: Test TensorShape functions where input comes from a vector
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestTensorShape, TestBasics) {
   std::vector<dsize_t> vec = {4, 5, 6};
   TensorShape t(vec);
@@ -67,6 +65,9 @@ TEST_F(MindDataTestTensorShape, TestBasics) {
   ASSERT_EQ(t3.NumOfElements(), 0);
 }
 
+/// Feature: TensorShape
+/// Description: Test TensorShape::CreateScalar() basic functions
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestTensorShape, TestScalars) {
   TensorShape t = TensorShape::CreateScalar();
   ASSERT_EQ(t.Rank(), 0);
@@ -77,6 +78,9 @@ TEST_F(MindDataTestTensorShape, TestScalars) {
   ASSERT_EQ(t.NumOfElements(), 1);
 }
 
+/// Feature: TensorShape
+/// Description: Test TensorShape dim functions (Append, Prepend, Insert)
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestTensorShape, TestDims) {
   TensorShape t = TensorShape::CreateScalar();
   t = t.AppendDim(1);
@@ -95,6 +99,9 @@ TEST_F(MindDataTestTensorShape, TestDims) {
   ASSERT_EQ(t3, TensorShape({1, 4, 2, 5, 3, 6}));
 }
 
+/// Feature: TensorShape
+/// Description: Test TensorShape::CreateUnknownRankShape and TensorShape::CreateUnknownShapeWithRank
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestTensorShape, TestUnknown) {
   TensorShape t1({-1, 5, 6});
   ASSERT_EQ(t1.AsVector(), std::vector<dsize_t>({-1, 5, 6}));
@@ -109,9 +116,11 @@ TEST_F(MindDataTestTensorShape, TestUnknown) {
   ASSERT_EQ(t4, TensorShape({-1, -1, -1}));
 }
 
-// Test materializing a TensorShape by calling method on a given column descriptor
+/// Feature: TensorShape
+/// Description: Test materializing a TensorShape by calling method on a given column descriptor
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestTensorShape, TestColDescriptor) {
-  int32_t rank = 0; // not used
+  int32_t rank = 0;  // not used
   int32_t num_elements = 0;
 
   // Has no shape
@@ -121,7 +130,7 @@ TEST_F(MindDataTestTensorShape, TestColDescriptor) {
   Status rc = c1.MaterializeTensorShape(num_elements, &generated_shape1);
   ASSERT_TRUE(rc.IsOk());
   MS_LOG(INFO) << "generated_shape1: " << common::SafeCStr(generated_shape1.ToString()) << ".";
-  ASSERT_EQ(TensorShape({4}),generated_shape1);
+  ASSERT_EQ(TensorShape({4}), generated_shape1);
 
   // Has shape <DIM_UNKNOWN> i.e. <*>
   TensorShape requested_shape2({TensorShape::kDimUnknown});
@@ -131,7 +140,7 @@ TEST_F(MindDataTestTensorShape, TestColDescriptor) {
   rc = c2.MaterializeTensorShape(num_elements, &generated_shape2);
   ASSERT_TRUE(rc.IsOk());
   MS_LOG(INFO) << "generated_shape2: " << common::SafeCStr(generated_shape2.ToString()) << ".";
-  ASSERT_EQ(TensorShape({5}),generated_shape2);
+  ASSERT_EQ(TensorShape({5}), generated_shape2);
 
   // Compute unknown dimension <*,4>
   TensorShape requested_shape3({TensorShape::kDimUnknown, 4});
@@ -141,7 +150,7 @@ TEST_F(MindDataTestTensorShape, TestColDescriptor) {
   rc = c3.MaterializeTensorShape(num_elements, &generated_shape3);
   ASSERT_TRUE(rc.IsOk());
   MS_LOG(INFO) << "generated_shape3: " << common::SafeCStr(generated_shape3.ToString()) << ".";
-  ASSERT_EQ(TensorShape({3,4}),generated_shape3);
+  ASSERT_EQ(TensorShape({3, 4}), generated_shape3);
 
   // Compute unknown dimension <3,*,4>
   TensorShape requested_shape4({3, TensorShape::kDimUnknown, 4});
@@ -151,7 +160,7 @@ TEST_F(MindDataTestTensorShape, TestColDescriptor) {
   rc = c4.MaterializeTensorShape(num_elements, &generated_shape4);
   ASSERT_TRUE(rc.IsOk());
   MS_LOG(INFO) << "generated_shape4: " << common::SafeCStr(generated_shape4.ToString()) << ".";
-  ASSERT_EQ(TensorShape({3,2,4}),generated_shape4);
+  ASSERT_EQ(TensorShape({3, 2, 4}), generated_shape4);
 
   // requested and generated should be the same! <2,3,4>
   TensorShape requested_shape5({2, 3, 4});
@@ -161,7 +170,7 @@ TEST_F(MindDataTestTensorShape, TestColDescriptor) {
   rc = c5.MaterializeTensorShape(num_elements, &generated_shape5);
   ASSERT_TRUE(rc.IsOk());
   MS_LOG(INFO) << "generated_shape5: " << common::SafeCStr(generated_shape5.ToString()) << ".";
-  ASSERT_EQ(requested_shape5,generated_shape5);
+  ASSERT_EQ(requested_shape5, generated_shape5);
 
   // expect fail due to multiple unknown dimensions
   TensorShape requested_shape6({2, TensorShape::kDimUnknown, TensorShape::kDimUnknown});
@@ -180,7 +189,9 @@ TEST_F(MindDataTestTensorShape, TestColDescriptor) {
   ASSERT_FALSE(rc.IsOk());
 }
 
+/// Feature: TensorShape
+/// Description: Test TensorShape with invalid parameters
+/// Expectation: Same output as TensorShape::CreateUnknownRankeShape()
 TEST_F(MindDataTestTensorShape, TestInvalid) {
-  ASSERT_EQ(TensorShape({2147483648}), TensorShape::CreateUnknownRankShape());
   ASSERT_EQ(TensorShape({kDeMaxDim - 1, kDeMaxDim - 1, kDeMaxDim - 1}), TensorShape::CreateUnknownRankShape());
 }

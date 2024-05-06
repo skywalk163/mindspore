@@ -19,8 +19,8 @@
 #include "common/py_func_graph_fetcher.h"
 
 #include "utils/log_adapter.h"
-#include "pipeline/parse/parse.h"
-#include "debug/draw.h"
+#include "pipeline/jit/ps/parse/parse.h"
+#include "include/common/debug/draw.h"
 
 namespace mindspore {
 namespace parse {
@@ -65,7 +65,7 @@ TEST_F(TestParser, TestParseApi) {
 TEST_F(TestParser, TestParseAst) {
   GetPythonFunction("test_f");
 
-  ParseAst ast = ParseAst(fn);
+  ParseFunctionAst ast = ParseFunctionAst(fn);
   bool succ = ast.InitParseAstInfo();
   ASSERT_TRUE(succ = true);
 
@@ -94,21 +94,6 @@ TEST_F(TestParser, TestParseGraphSuccess) {
   // parse fn to graph
   FuncGraphPtr func_graph = ParsePythonCode(fn);
   ASSERT_TRUE(nullptr != func_graph);
-}
-
-TEST_F(TestParser, TestParseGraphFailure) {
-  GetPythonFunction("get_no_return_fn");
-
-  // create parser
-  std::shared_ptr<ParseAst> ast = std::make_shared<ParseAst>(fn);
-  bool succ = ast->InitParseAstInfo();
-  ASSERT_TRUE(succ = true);
-  std::shared_ptr<Parser> parser = std::make_shared<Parser>(ast);
-
-  // parse ast to graph
-  FuncGraphPtr func_graph = parser->ParseFuncGraph();
-  ASSERT_EQ(PARSE_NO_RETURN, parser->errcode());
-  ASSERT_TRUE(nullptr == func_graph);
 }
 
 TEST_F(TestParser, TestParseGraphIf) {
@@ -161,9 +146,6 @@ TEST_F(TestParser, TestParseGraphNamedConst) {
   GetPythonFunction("testDoNamedConstFalse");
   ret_val = ParsePythonCode(fn);
   ASSERT_TRUE(nullptr != ret_val);
-  GetPythonFunction("testDoNamedConstNone");
-  ret_val = ParsePythonCode(fn);
-  ASSERT_TRUE(nullptr != ret_val);
 }
 
 TEST_F(TestParser, TestParseGraphForStatement) {
@@ -179,14 +161,6 @@ TEST_F(TestParser, TestParseGraphForStatement) {
   bool ret_ = ResolveAll(manager);
 
   ASSERT_TRUE(ret_);
-
-  // draw graph
-  int i = 0;
-  for (auto tmp : manager->func_graphs()) {
-    std::string name = "ut_parser_for_loop_" + std::to_string(i) + ".dot";
-    draw::Draw(name, tmp);
-    i++;
-  }
 }
 
 TEST_F(TestParser, TestParseGraphCompareExprLt) {
@@ -336,14 +310,6 @@ TEST_F(TestParser, TestParseGraphBoolNot) {
   bool ret_ = ResolveAll(manager);
 
   ASSERT_TRUE(ret_);
-
-  // draw graph
-  int i = 0;
-  for (auto tmp : manager->func_graphs()) {
-    std::string name = "ut_parser_for_not_" + std::to_string(i) + ".dot";
-    draw::Draw(name, tmp);
-    i++;
-  }
 }
 
 TEST_F(TestParser, TestCallPythonFnUseTupleParamete) {
@@ -394,6 +360,13 @@ TEST_F(TestParser, TestParseGraphCallVargs) {
   std::shared_ptr<FuncGraphManager> manager = Manage(ret_val);
   bool ret_ = ResolveAll(manager);
   ASSERT_TRUE(ret_);
+}
+
+TEST_F(TestParser, TestParserUndefinedVar) {
+  py::function fn_ = python_adapter::GetPyFn("gtest_input.pipeline.parse.parser_test", "test_parse_undefined_var");
+
+  // parse undefined var
+  EXPECT_THROW({ ParsePythonCode(fn_); }, std::runtime_error);
 }
 }  // namespace parse
 }  // namespace mindspore

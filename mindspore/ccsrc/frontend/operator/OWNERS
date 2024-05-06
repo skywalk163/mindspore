@@ -1,0 +1,10 @@
+approvers:
+- zh_qh #
+- ginfung
+- chenfei52
+
+reviewers:
+- lianliguang
+
+options:
+    no_parent_owners: true

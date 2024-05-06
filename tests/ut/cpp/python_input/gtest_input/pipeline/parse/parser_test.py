@@ -19,7 +19,7 @@
 @Desc  : parser test function.
 """
 import logging
-from dataclasses import dataclass
+from mindspore import jit_class
 
 log = logging.getLogger("test")
 log.setLevel(level=logging.ERROR)
@@ -221,15 +221,12 @@ def testDoNamedConstFalse():
     return False
 
 
-def testDoNamedConstNone():
-    return None
-
-
 # Test_Class_type
-@dataclass
+@jit_class
 class TestFoo:
-    x: float
-    y: int
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
 
     def inf(self):
         return self.x
@@ -298,7 +295,7 @@ def test_augassign(x, y):
     return y
 
 
-def test_resolvefail(x, y):
+def test_parse_undefined_var(x, y):
     a = x + y + Undef
     return a
 

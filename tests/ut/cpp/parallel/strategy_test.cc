@@ -17,7 +17,7 @@
 #include <list>
 #include <vector>
 #include "common/common_test.h"
-#include "parallel/strategy.h"
+#include "frontend/parallel/strategy.h"
 
 namespace mindspore {
 namespace parallel {
@@ -33,9 +33,9 @@ class TestStrategy : public UT::Common {
 TEST_F(TestStrategy, GetInputNumber) {
   int32_t number = 2;
   int32_t stage = 1;
-  std::vector<int32_t> dimension1 = {2, 4};
-  std::vector<int32_t> dimension2 = {2, 2};
-  std::vector<std::vector<int32_t>> inputs = {dimension1, dimension2};
+  Dimensions dimension1 = {2, 4};
+  Dimensions dimension2 = {2, 2};
+  Strategies inputs = {dimension1, dimension2};
 
   Strategy strategy(stage, inputs);
   int32_t number_test = strategy.GetInputNumber();
@@ -44,9 +44,9 @@ TEST_F(TestStrategy, GetInputNumber) {
 
 TEST_F(TestStrategy, GetInputStage) {
   int32_t stage = 1;
-  std::vector<int32_t> dimension1 = {2, 4};
-  std::vector<int32_t> dimension2 = {2, 2};
-  std::vector<std::vector<int32_t>> inputs = {dimension1, dimension2};
+  Dimensions dimension1 = {2, 4};
+  Dimensions dimension2 = {2, 2};
+  Strategies inputs = {dimension1, dimension2};
 
   Strategy strategy(stage, inputs);
   int32_t stage_test = strategy.GetInputStage();
@@ -55,23 +55,23 @@ TEST_F(TestStrategy, GetInputStage) {
 
 TEST_F(TestStrategy, GetInputDim) {
   int32_t stage = 1;
-  std::vector<int32_t> dimension1 = {2, 4};
-  std::vector<int32_t> dimension2 = {2, 2};
-  std::vector<std::vector<int32_t>> inputs = {dimension1, dimension2};
+  Dimensions dimension1 = {2, 4};
+  Dimensions dimension2 = {2, 2};
+  Strategies inputs = {dimension1, dimension2};
 
   Strategy strategy(stage, inputs);
-  std::vector<std::vector<int32_t>> inputs_test = strategy.GetInputDim();
+  Strategies inputs_test = strategy.GetInputDim();
   ASSERT_EQ(inputs, inputs_test);
 }
 
 TEST_F(TestStrategy, IsEqual) {
   int32_t stage1 = 0, stage2 = 0, stage3 = 1, stage4 = 0;
-  std::vector<int32_t> dimension1 = {8, 1};
-  std::vector<int32_t> dimension2 = {1, 8};
-  std::vector<std::vector<int32_t>> inputs1 = {dimension1};
-  std::vector<std::vector<int32_t>> inputs2 = {dimension1};
-  std::vector<std::vector<int32_t>> inputs3 = {dimension2};
-  std::vector<std::vector<int32_t>> inputs4 = {dimension1, dimension2};
+  Dimensions dimension1 = {8, 1};
+  Dimensions dimension2 = {1, 8};
+  Strategies inputs1 = {dimension1};
+  Strategies inputs2 = {dimension1};
+  Strategies inputs3 = {dimension2};
+  Strategies inputs4 = {dimension1, dimension2};
 
   StrategyPtr stra1 = std::make_shared<Strategy>(stage1, inputs1);
   StrategyPtr stra2 = std::make_shared<Strategy>(stage2, inputs2);

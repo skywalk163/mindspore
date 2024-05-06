@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2019 Huawei Technologies Co., Ltd
+# Copyright 2019-2021 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,65 +13,119 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ============================================================================
+CURRPATH=$(cd "$(dirname $0)" || exit; pwd)
+IGNORE_EXEC="--ignore=$CURRPATH/exec"
 
-CURRPATH=$(cd $(dirname $0); pwd)
-cd ${CURRPATH}
-PROJECT_PATH=${CURRPATH}/../../..
-if [ $BUILD_PATH ];then
-	echo "BUILD_PATH = $BUILD_PATH"
+source $CURRPATH/env.sh
+
+if [ $# -eq 1 ]  &&  ([ "$1" == "stage1" ] || [ "$1" == "stage2" ] || [ "$1" == "stage3" ] || [ "$1" == "stage4" ]); then
+    if [ $1 == "stage1" ]; then
+        echo "run python dataset ut"
+        pytest -v $CURRPATH/dataset
+
+        RET=$?
+        if [ ${RET} -ne 0 ]; then
+            exit ${RET}
+        fi
+
+        echo "run python debugger gpu ut"
+        pytest -v $CURRPATH/debugger/gpu_tests
+
+        RET=$?
+        if [ ${RET} -ne 0 ]; then
+            exit ${RET}
+        fi
+
+    elif [ $1 == "stage2" ]; then
+        echo "run python parallel"
+        pytest -s $CURRPATH/parallel/*.py
+
+        RET=$?
+        if [ ${RET} -ne 0 ]; then
+            exit ${RET}
+        fi
+
+    elif [ $1 == "stage3" ]; then
+        echo "run python ops, pynative_mode, pipeline, train ut"
+        pytest -v $CURRPATH/ops $CURRPATH/pynative_mode
+
+        RET=$?
+        if [ ${RET} -ne 0 ]; then
+            exit ${RET}
+        fi
+
+        pytest -v $CURRPATH/pipeline $CURRPATH/train
+        RET=$?
+        if [ ${RET} -ne 0 ]; then
+            exit ${RET}
+        fi
+
+    elif [ $1 == "stage4" ]; then
+        echo "run ut"
+        pytest -v $CURRPATH/nn
+
+        RET=$?
+        if [ ${RET} -ne 0 ]; then
+            exit ${RET}
+        fi
+
+        pytest -v --ignore=$CURRPATH/dataset --ignore=$CURRPATH/debugger/gpu_tests --ignore=$CURRPATH/parallel --ignore=$CURRPATH/ops --ignore=$CURRPATH/pynative_mode --ignore=$CURRPATH/pipeline --ignore=$CURRPATH/train --ignore=$CURRPATH/nn $IGNORE_EXEC $CURRPATH
+
+        RET=$?
+        if [ ${RET} -ne 0 ]; then
+            exit ${RET}
+        fi
+    fi
 else
-    BUILD_PATH=${PROJECT_PATH}/build
-	echo "BUILD_PATH = $BUILD_PATH"
-fi
+    echo "run all python ut"
+    pytest $CURRPATH/dataset
+    RET=$?
+    if [ ${RET} -ne 0 ]; then
+        exit ${RET}
+    fi
 
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${BUILD_PATH}/third_party/gtest/lib
-export PYTHONPATH=$PYTHONPATH:${PROJECT_PATH}:${PROJECT_PATH}/tests/ut/cpp/python_input:${PROJECT_PATH}/tests/ut/python
-echo "export PYTHONPATH=$PYTHONPATH"
+    pytest $CURRPATH/debugger/gpu_tests
+    RET=$?
+    if [ ${RET} -ne 0 ]; then
+        exit ${RET}
+    fi
 
-IGNORE_EXEC=""
-if [ "x${ENABLE_GE}" == "xON" -o "x${ENABLE_GE}" == "xOn" -o "x${ENABLE_GE}" == "xon" -o \
-     "x${ENABLE_GE}" == "xTrue" -o "x${ENABLE_GE}" == "xtrue" ]; then
-    if [ $# -gt 0 ]; then
-        IGNORE_EXEC="--ignore=$1/exec"
-    else
-        IGNORE_EXEC="--ignore=$CURRPATH/exec"
+    pytest -v $CURRPATH/parallel/*.py
+    RET=$?
+    if [ ${RET} -ne 0 ]; then
+        exit ${RET}
+    fi
+
+    pytest -v $CURRPATH/ops $CURRPATH/pynative_mode
+    RET=$?
+    if [ ${RET} -ne 0 ]; then
+        exit ${RET}
+    fi
+
+    pytest -v $CURRPATH/pipeline $CURRPATH/train
+    RET=$?
+    if [ ${RET} -ne 0 ]; then
+        exit ${RET}
+    fi
+
+    pytest -v $CURRPATH/nn
+    RET=$?
+    if [ ${RET} -ne 0 ]; then
+        exit ${RET}
+    fi
+
+    pytest -v --ignore=$CURRPATH/dataset --ignore=$CURRPATH/debugger/gpu_tests --ignore=$CURRPATH/parallel --ignore=$CURRPATH/ops --ignore=$CURRPATH/pynative_mode --ignore=$CURRPATH/pipeline --ignore=$CURRPATH/train --ignore=$CURRPATH/nn $IGNORE_EXEC $CURRPATH
+    RET=$?
+    if [ ${RET} -ne 0 ]; then
+        exit ${RET}
+    fi
+
+    pytest -s $CURRPATH/rewrite/*.py
+    RET=$?
+    if [ ${RET} -ne 0 ]; then
+        exit ${RET}
     fi
 fi
 
-if [ $# -gt 0 ]; then
-    pytest -s --ignore=$1/pynative_mode --ignore=$1/parallel  --ignore=$1/train  $IGNORE_EXEC $1
-else
-    pytest --ignore=$CURRPATH/pynative_mode --ignore=$CURRPATH/parallel --ignore=$CURRPATH/train $IGNORE_EXEC $CURRPATH
-fi
-
 RET=$?
-if [ "x${IGNORE_EXEC}" != "x" ]; then
-    exit ${RET}
-fi
-
-if [ ${RET} -ne 0 ]; then
-    exit ${RET}
-fi
-
-if [ $# -gt 0 ]; then
-    pytest -n 4 --dist=loadfile -v $1/parallel $1/train
-else
-    pytest -n 4 --dist=loadfile -v $CURRPATH/parallel $CURRPATH/train
-fi
-
-RET=$?
-
-if [ ${RET} -ne 0 ]; then
-    exit ${RET}
-fi
-
-if [ $# -gt 0 ]; then
-    pytest -s $1/pynative_mode
-else
-    pytest $CURRPATH/pynative_mode
-fi
-
-RET=$?
-if [ ${RET} -ne 0 ]; then
-    exit ${RET}
-fi
+exit ${RET}

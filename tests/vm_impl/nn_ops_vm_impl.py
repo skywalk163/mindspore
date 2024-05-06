@@ -1,4 +1,4 @@
-# Copyright 2020 Huawei Technologies Co., Ltd
+# Copyright 2021-2024 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -63,9 +63,9 @@ def vm_impl_flatten(self):
 def vm_impl_softmax(self):
     """Generate vm_impl function for Softmax"""
 
-    def vm_impl(x):
+    def vm_impl(x, axis):
         x = x.asnumpy()
-        return Tensor(vm.softmax(x))
+        return Tensor(vm.softmax(x, axis))
 
     return vm_impl
 
@@ -92,32 +92,11 @@ def vm_impl_tanh(self):
     return vm_impl
 
 
-@vm_impl_getters.register(P.FusedBatchNorm)
-def vm_impl_fused_batch_norm(self):
-    """Generate vm_impl function for FusedBatchNorm"""
-
-    def vm_impl(x, scale, b, mean, variance):
-        # pylint: disable=unused-argument
-        x = x.asnumpy()
-        scale = scale.asnumpy()
-        b = b.asnumpy()
-        mean = mean.asnumpy()
-        variance = variance.asnumpy()
-        out, x_mean, x_var, running_mean, running_var = vm.batch_norm(x, scale, b, mean, \
-                                                                      variance, \
-                                                                      eps=self.epsilon, \
-                                                                      momentum=self.momentum)
-        return Tensor(out), Tensor(x_mean), Tensor(x_var), \
-               Tensor(running_mean), Tensor(running_var)
-
-    return vm_impl
-
-
 @vm_impl_getters.register(P.BatchNorm)
 def vm_impl_batch_norm(self):
     """Generate vm_impl function for BatchNorm"""
 
-    def vm_impl(x, scale, b, mean, variance):
+    def vm_impl(x, scale, b, mean, variance, reserve, is_training, epsilon, data_format):
         # pylint: disable=unused-argument
         x = x.asnumpy()
         scale = scale.asnumpy()
@@ -126,7 +105,7 @@ def vm_impl_batch_norm(self):
         variance = variance.asnumpy()
         out, x_mean, x_var, running_mean, running_var = vm.batch_norm(x, scale, b, mean, \
                                                                       variance, \
-                                                                      eps=self.epsilon)
+                                                                      eps=epsilon)
         return Tensor(out), Tensor(x_mean), Tensor(x_var), \
                Tensor(running_mean), Tensor(running_var)
 
@@ -156,7 +135,7 @@ def vm_impl_max_pool_grad_with_argmax(self):
         dout = dout.asnumpy()
         arg_max = argmax.asnumpy()
         dx = vm.max_pool_grad_with_argmax(x, dout, arg_max,
-                                          self.ksize[1], self.ksize[2], self.strides[1])
+                                          self.kernel_size[1], self.kernel_size[2], self.strides[1])
         return Tensor(dx)
 
     return vm_impl
@@ -168,7 +147,7 @@ def vm_impl_max_pool_with_argmax(self):
 
     def vm_impl(x):
         x = x.asnumpy()
-        out, out_argmax = vm.max_pool_with_argmax(x, self.ksize[1], self.ksize[2], self.strides[1])
+        out, out_argmax = vm.max_pool_with_argmax(x, self.kernel_size[1], self.kernel_size[2], self.strides[1])
         return Tensor(out), Tensor(out_argmax)
 
     return vm_impl
@@ -180,7 +159,7 @@ def vm_impl_max_pool(self):
 
     def vm_impl(x):
         x = x.asnumpy()
-        out = vm.max_pooling(x, self.ksize[-2], self.ksize[-1], self.strides[-2])
+        out = vm.max_pooling(x, self.kernel_size[-2], self.kernel_size[-1], self.strides[-2])
         return Tensor(out)
 
     return vm_impl
@@ -193,7 +172,7 @@ def vm_impl_max_pool_grad(self):
     def vm_impl(x, out, dout):
         x = x.asnumpy()
         dout = dout.asnumpy()
-        out = vm.max_pool_grad(x, dout, self.ksize[-2], self.ksize[-1], self.strides[-2])
+        out = vm.max_pool_grad(x, dout, self.kernel_size[-2], self.kernel_size[-1], self.strides[-2])
         return Tensor(out)
 
     return vm_impl
@@ -203,9 +182,9 @@ def vm_impl_max_pool_grad(self):
 def vm_impl_avg_pool(self):
     """Generate vm_impl function for AvgPool"""
 
-    def vm_impl(x):
+    def vm_impl(x, kernel_size, strides, pad_mode, data_format):
         x = x.asnumpy()
-        out = vm.avg_pooling(x, self.ksize[-2], self.ksize[-1], self.strides[-2])
+        out = vm.avg_pooling(x, kernel_size[-2], kernel_size[-1], strides[-2])
         return Tensor(out)
 
     return vm_impl
@@ -217,25 +196,8 @@ def vm_impl_avg_pool_grad(self):
 
     def vm_impl(dout, origin_shape):
         dout = dout.asnumpy()
-        out = vm.avg_pool_grad(dout, origin_shape, self.ksize[-2], self.ksize[-1], self.strides[-2])
+        out = vm.avg_pool_grad(dout, origin_shape, self.kernel_size[-2], self.kernel_size[-1], self.strides[-2])
         return Tensor(out)
-
-    return vm_impl
-
-
-# pylint: disable=function-redefined
-@vm_impl_getters.register(G.FusedBatchNormGrad)
-def vm_impl_fused_batch_norm_grad(self):
-    """Generate vm_impl function for FusedBatchNormGrad"""
-
-    def vm_impl(dy, x, scale, save_mean, save_inv_variance):
-        dy = dy.asnumpy()
-        x = x.asnumpy()
-        scale = scale.asnumpy()
-        save_mean = save_mean.asnumpy()
-        save_inv_variance = save_inv_variance.asnumpy()
-        dx, dscale, dshift = vm.batch_norm_grad(dy, x, scale, save_mean, save_inv_variance)
-        return (Tensor(dx), Tensor(dscale), Tensor(dshift))
 
     return vm_impl
 
@@ -312,7 +274,7 @@ def vm_impl_flatten_grad(self):
 def vm_impl_bias_add(self):
     """Generate vm_impl function for BiasAdd"""
 
-    def vm_impl(wx, bias):
+    def vm_impl(wx, bias, data_format):
         wx = wx.asnumpy()
         bias = bias.asnumpy()
         out = wx + bias
@@ -325,7 +287,7 @@ def vm_impl_bias_add(self):
 def vm_impl_bias_add_grad(self):
     """Generate vm_impl function for BiasAddGrad"""
 
-    def vm_impl(dout):
+    def vm_impl(dout, data_format):
         dout = dout.asnumpy()
         shape = np.shape(dout)
         return Tensor(np.add.reduce(dout, axis=tuple(range(len(shape) - 1))))
@@ -383,7 +345,7 @@ def vm_impl_momentum(self):
         learning_rate = np.full(shape, learning_rate.asnumpy())
         momentum = np.full(shape, momentum.asnumpy())
         accumulation = accumulation * momentum + gradient
-        if use_nesterov is True:
+        if use_nesterov:
             variable -= gradient * learning_rate + accumulation * momentum * learning_rate
         else:
             variable -= accumulation * learning_rate
@@ -392,12 +354,12 @@ def vm_impl_momentum(self):
     return vm_impl
 
 
-@vm_impl_getters.register(P.ResizeBilinear)
+@vm_impl_getters.register(P.ResizeBilinearV2)
 def vm_impl_resize_bilinear(self):
-    """Generate vm_impl function for ResizeBilinear"""
+    """Generate vm_impl function for ResizeBilinearV2"""
 
     def vm_impl(x):
-        out = vm.ResizeBilinear(x)
+        out = vm.ResizeBilinearV2(x)
         return Tensor(out)
 
     return vm_impl

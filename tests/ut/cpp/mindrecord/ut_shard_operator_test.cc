@@ -21,19 +21,15 @@
 #include <string>
 #include <vector>
 
-#include "common/utils.h"
+#include "utils/ms_utils.h"
 #include "gtest/gtest.h"
 #include "utils/log_adapter.h"
-#include "mindrecord/include/shard_category.h"
-#include "mindrecord/include/shard_pk_sample.h"
-#include "mindrecord/include/shard_reader.h"
-#include "mindrecord/include/shard_sample.h"
-#include "mindrecord/include/shard_shuffle.h"
+#include "minddata/mindrecord/include/shard_category.h"
+#include "minddata/mindrecord/include/shard_pk_sample.h"
+#include "minddata/mindrecord/include/shard_reader.h"
+#include "minddata/mindrecord/include/shard_sample.h"
+#include "minddata/mindrecord/include/shard_shuffle.h"
 #include "ut_common.h"
-
-using mindspore::LogStream;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::MsLogLevel::INFO;
 
 namespace mindspore {
 namespace mindrecord {
@@ -73,7 +69,7 @@ TEST_F(TestShardOperator, TestShardSampleBasic) {
     MS_LOG(INFO) << "index: " << i << ", filename: " << common::SafeCStr((std::get<1>(x[0]))["file_name"]);
     i++;
   }
-  dataset.Finish();
+  dataset.Close();
   ASSERT_TRUE(i <= kSampleCount);
 }
 
@@ -99,7 +95,7 @@ TEST_F(TestShardOperator, TestShardSampleWrongNumber) {
     MS_LOG(INFO) << "index: " << i << ", filename: " << common::SafeCStr((std::get<1>(x[0]))["file_name"]);
     i++;
   }
-  dataset.Finish();
+  dataset.Close();
   ASSERT_TRUE(i <= 5);
 }
 
@@ -125,7 +121,7 @@ TEST_F(TestShardOperator, TestShardSampleRatio) {
     MS_LOG(INFO) << "index: " << i << ", filename: " << common::SafeCStr((std::get<1>(x[0]))["file_name"]);
     i++;
   }
-  dataset.Finish();
+  dataset.Close();
   ASSERT_TRUE(i <= 10);
 }
 
@@ -139,9 +135,6 @@ TEST_F(TestShardOperator, TestShardSamplePartition) {
   const int kPar = 2;
   std::vector<std::shared_ptr<ShardOperator>> ops;
   ops.push_back(std::make_shared<ShardSample>(kNum, kDen, kPar));
-  auto partitions = std::dynamic_pointer_cast<ShardSample>(ops[0])->GetPartitions();
-  ASSERT_TRUE(partitions.first == 4);
-  ASSERT_TRUE(partitions.second == 2);
 
   ShardReader dataset;
   dataset.Open({file_name}, true, 4, column_list, ops);
@@ -154,7 +147,7 @@ TEST_F(TestShardOperator, TestShardSamplePartition) {
     MS_LOG(INFO) << "index: " << i << ", filename: " << common::SafeCStr((std::get<1>(x[0]))["file_name"]);
     i++;
   }
-  dataset.Finish();
+  dataset.Close();
   ASSERT_TRUE(i <= 10);
 }
 
@@ -165,7 +158,7 @@ TEST_F(TestShardOperator, TestShardPkSamplerBasic) {
   auto column_list = std::vector<std::string>{"file_name", "label"};
 
   std::vector<std::shared_ptr<ShardOperator>> ops;
-  ops.push_back(std::make_shared<ShardPkSample>("label", 2));
+  ops.push_back(std::make_shared<ShardPkSample>("label", 2, 0));
 
   ShardReader dataset;
   dataset.Open({file_name},true, 4, column_list, ops);
@@ -179,7 +172,7 @@ TEST_F(TestShardOperator, TestShardPkSamplerBasic) {
               << ", label: " << common::SafeCStr((std::get<1>(x[0]))["label"].dump()) << std::endl;
     i++;
   }
-  dataset.Finish();
+  dataset.Close();
   ASSERT_TRUE(i == 20);
 }  // namespace mindrecord
 
@@ -190,7 +183,7 @@ TEST_F(TestShardOperator, TestShardPkSamplerNumClass) {
   auto column_list = std::vector<std::string>{"file_name", "label"};
 
   std::vector<std::shared_ptr<ShardOperator>> ops;
-  ops.push_back(std::make_shared<ShardPkSample>("label", 2, 3, 0));
+  ops.push_back(std::make_shared<ShardPkSample>("label", 2, 3, 0, 0));
 
   ShardReader dataset;
   dataset.Open({file_name},true, 4, column_list, ops);
@@ -205,9 +198,9 @@ TEST_F(TestShardOperator, TestShardPkSamplerNumClass) {
               << ", label: " << common::SafeCStr((std::get<1>(x[0]))["label"].dump()) << std::endl;
     i++;
   }
-  dataset.Finish();
+  dataset.Close();
   ASSERT_TRUE(i == 6);
-}  // namespace mindrecord
+}
 
 TEST_F(TestShardOperator, TestShardCategory) {
   MS_LOG(INFO) << common::SafeCStr(FormatInfo("Test read imageNet"));
@@ -241,7 +234,7 @@ TEST_F(TestShardOperator, TestShardCategory) {
     category_no++;
     category_no %= static_cast<int>(categories.size());
   }
-  dataset.Finish();
+  dataset.Close();
 }
 
 TEST_F(TestShardOperator, TestShardShuffle) {
@@ -265,7 +258,7 @@ TEST_F(TestShardOperator, TestShardShuffle) {
                  << ", label: " << common::SafeCStr((std::get<1>(x[0]))["label"].dump());
     i++;
   }
-  dataset.Finish();
+  dataset.Close();
 }
 
 TEST_F(TestShardOperator, TestShardSampleShuffle) {
@@ -290,7 +283,7 @@ TEST_F(TestShardOperator, TestShardSampleShuffle) {
                  << ", label: " << common::SafeCStr((std::get<1>(x[0]))["label"].dump());
     i++;
   }
-  dataset.Finish();
+  dataset.Close();
   ASSERT_LE(i, 35);
 }
 
@@ -317,7 +310,7 @@ TEST_F(TestShardOperator, TestShardShuffleSample) {
                  << ", label: " << common::SafeCStr((std::get<1>(x[0]))["label"].dump());
     i++;
   }
-  dataset.Finish();
+  dataset.Close();
   ASSERT_TRUE(i <= kSampleSize);
 }
 
@@ -344,7 +337,7 @@ TEST_F(TestShardOperator, TestShardSampleShuffleSample) {
                  << ", label: " << common::SafeCStr((std::get<1>(x[0]))["label"].dump());
     i++;
   }
-  dataset.Finish();
+  dataset.Close();
   ASSERT_LE(i, 35);
 }
 
@@ -376,8 +369,8 @@ TEST_F(TestShardOperator, TestShardShuffleCompare) {
     auto y = compare_dataset.GetNext();
     if ((std::get<1>(x[0]))["file_name"] != (std::get<1>(y[0]))["file_name"]) different = true;
   }
-  dataset.Finish();
-  compare_dataset.Finish();
+  dataset.Close();
+  compare_dataset.Close();
   ASSERT_TRUE(different);
 }
 
@@ -412,7 +405,7 @@ TEST_F(TestShardOperator, TestShardCategoryShuffle1) {
     category_no++;
     category_no %= static_cast<int>(categories.size());
   }
-  dataset.Finish();
+  dataset.Close();
 }
 
 TEST_F(TestShardOperator, TestShardCategoryShuffle2) {
@@ -445,7 +438,7 @@ TEST_F(TestShardOperator, TestShardCategoryShuffle2) {
     category_no++;
     category_no %= static_cast<int>(categories.size());
   }
-  dataset.Finish();
+  dataset.Close();
 }
 
 TEST_F(TestShardOperator, TestShardCategorySample) {
@@ -480,7 +473,7 @@ TEST_F(TestShardOperator, TestShardCategorySample) {
     category_no++;
     category_no %= static_cast<int>(categories.size());
   }
-  dataset.Finish();
+  dataset.Close();
   ASSERT_EQ(category_no, 0);
   ASSERT_TRUE(i <= kSampleSize);
 }
@@ -518,7 +511,7 @@ TEST_F(TestShardOperator, TestShardCategorySampleShuffle) {
     category_no++;
     category_no %= static_cast<int>(categories.size());
   }
-  dataset.Finish();
+  dataset.Close();
   ASSERT_EQ(category_no, 0);
   ASSERT_TRUE(i <= kSampleSize);
 }

@@ -1,4 +1,4 @@
-# Copyright 2020 Huawei Technologies Co., Ltd
+# Copyright 2021 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,10 +21,12 @@ from enum import Enum
 import numpy as np
 import pytest
 
+
 import mindspore.nn as nn
 from mindspore.common.tensor import Tensor
 from mindspore.ops import operations as P
 from mindspore.train.summary.summary_record import SummaryRecord
+from tests.security_utils import security_off_wrap
 
 
 class SummaryEnum(Enum):
@@ -43,7 +45,7 @@ class SummaryNet(nn.Cell):
         self.data = data
         self.summary_fn = getattr(P, summary_type)()
         self.one = Tensor(np.array([1]).astype(np.float32))
-        self.add = P.TensorAdd()
+        self.add = P.Add()
 
     def construct(self):
         self.summary_fn(self.tag, self.data)
@@ -76,6 +78,7 @@ class TestSummaryOps:
         if os.path.exists(cls.summary_dir):
             shutil.rmtree(cls.summary_dir)
 
+    @security_off_wrap
     @pytest.mark.parametrize(
         "summary_type, value",
         [
@@ -90,6 +93,7 @@ class TestSummaryOps:
         net = SummaryNet(summary_type, tag='tag', data=value)
         TestSummaryOps.run_case(net)
 
+    @security_off_wrap
     @pytest.mark.parametrize(
         "summary_type",
         [
@@ -104,7 +108,7 @@ class TestSummaryOps:
         with pytest.raises(TypeError):
             TestSummaryOps.run_case(net)
 
-
+    @security_off_wrap
     @pytest.mark.parametrize(
         "summary_type",
         [
@@ -119,6 +123,7 @@ class TestSummaryOps:
         with pytest.raises(ValueError):
             TestSummaryOps.run_case(net)
 
+    @security_off_wrap
     @pytest.mark.parametrize("tag", [123, True, Tensor(0)])
     def test_summary_tag_is_not_string(self, tag):
         """Test summary tag is not a string, all summary operator validation rules are consistent."""
@@ -127,6 +132,7 @@ class TestSummaryOps:
         with pytest.raises(TypeError):
             TestSummaryOps.run_case(net)
 
+    @security_off_wrap
     @pytest.mark.parametrize("value", [123, True, 'data'])
     def test_summary_value_type_invalid(self, value):
         """Test the type of summary value is invalid, all summary operator validation rules are consistent."""
@@ -135,14 +141,15 @@ class TestSummaryOps:
         with pytest.raises(TypeError):
             TestSummaryOps.run_case(net)
 
+    @security_off_wrap
     @pytest.mark.parametrize(
         "summary_type, value",
         [
             (SummaryEnum.IMAGE.value, Tensor(np.array([1, 2]))),
-            (SummaryEnum.SCALAR.value, Tensor(np.array([1, 2]))),
             (SummaryEnum.TENSOR.value, Tensor(0)),
             (SummaryEnum.HISTOGRAM.value, Tensor(0))
         ])
+
     def test_value_shape_invalid(self, summary_type, value):
         """Test invalid shape of every summary operators."""
         net = SummaryNet(summary_type, tag='tag', data=value)

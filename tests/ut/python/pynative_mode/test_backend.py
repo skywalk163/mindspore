@@ -14,14 +14,16 @@
 # ============================================================================
 """ test_backend """
 import os
+import shutil
 import pytest
 
 import mindspore.nn as nn
-from mindspore import context, ms_function
+from mindspore import context, jit
 from mindspore._checkparam import args_type_check
 from mindspore.common.initializer import initializer
 from mindspore.common.parameter import Parameter
 from mindspore.ops import operations as P
+from tests.security_utils import security_off_wrap
 
 
 def setup_module():
@@ -33,11 +35,11 @@ class Net(nn.Cell):
 
     def __init__(self):
         super(Net, self).__init__()
-        self.add = P.TensorAdd()
+        self.add = P.Add()
         self.x = Parameter(initializer('normal', [1, 3, 3, 4]), name='x')
         self.y = Parameter(initializer('normal', [1, 3, 3, 4]), name='y')
 
-    @ms_function
+    @jit
     def construct(self):
         return self.add(self.x, self.y)
 
@@ -49,7 +51,7 @@ def test_vm_backend():
     output = add()
     assert output.asnumpy().shape == (1, 3, 3, 4)
 
-
+@security_off_wrap
 def test_vm_set_context():
     """ test_vm_set_context """
     context.set_context(save_graphs=True, save_graphs_path="mindspore_ir_path", mode=context.GRAPH_MODE)
@@ -86,6 +88,6 @@ def teardown_module():
         if not os.path.exists(item_name):
             continue
         if os.path.isdir(item_name):
-            os.rmdir(item_name)
+            shutil.rmtree(item_name)
         elif os.path.isfile(item_name):
             os.remove(item_name)

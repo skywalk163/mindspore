@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2023 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,12 @@
  * limitations under the License.
  */
 
-#ifndef MINDSPORE_CCSRC_KERNEL_TASK_STREAM_H_
-#define MINDSPORE_CCSRC_KERNEL_TASK_STREAM_H_
+#ifndef MINDSPORE_CCSRC_BACKEND_KERNEL_COMPILER_TASK_STREAM_H_
+#define MINDSPORE_CCSRC_BACKEND_KERNEL_COMPILER_TASK_STREAM_H_
 
-#include <new>
 #include <unordered_map>
 #include <vector>
 #include <memory>
-#include "runtime/base.h"
 #include "utils/log_adapter.h"
 
 namespace mindspore {
@@ -35,25 +33,25 @@ class TaskStream {
     return instance;
   }
 
-  void set_gen_stream_list(const std::vector<rtStream_t> &stream_list) { gen_stream_list_ = stream_list; }
-  void set_run_stream_list(const std::vector<rtStream_t> &stream_list) { run_stream_list_ = stream_list; }
+  void set_gen_stream_list(const std::vector<aclrtStream> &stream_list) { gen_stream_list_ = stream_list; }
+  void set_run_stream_list(const std::vector<aclrtStream> &stream_list) { run_stream_list_ = stream_list; }
   void SetGenStreamIndex(uint32_t stream_id, uint32_t index) { gen_stream_index_map_[stream_id] = index; }
   std::unordered_map<uint32_t, uint32_t> GetGenStreamIndexMap() { return gen_stream_index_map_; }
   uint32_t GetGenStreamIndex(uint32_t stream_id) {
     auto iter = gen_stream_index_map_.find(stream_id);
     if (iter == gen_stream_index_map_.end()) {
-      MS_LOG(EXCEPTION) << "stream_id not in gen_stream_index_map_";
+      MS_LOG(INTERNAL_EXCEPTION) << "Parameter stream_id not in gen_stream_index_map_, id: " << stream_id;
     }
     return iter->second;
   }
-  const std::vector<rtStream_t> &gen_stream_list() const { return gen_stream_list_; }
-  const std::vector<rtStream_t> &run_stream_list() const { return run_stream_list_; }
+  const std::vector<aclrtStream> &gen_stream_list() const { return gen_stream_list_; }
+  const std::vector<aclrtStream> &run_stream_list() const { return run_stream_list_; }
 
  private:
-  std::vector<rtStream_t> gen_stream_list_;
-  std::vector<rtStream_t> run_stream_list_;
+  std::vector<aclrtStream> gen_stream_list_;
+  std::vector<aclrtStream> run_stream_list_;
   std::unordered_map<uint32_t, uint32_t> gen_stream_index_map_;
 };
 }  // namespace kernel
 }  // namespace mindspore
-#endif  // MINDSPORE_CCSRC_KERNEL_TASK_STREAM_H_
+#endif  // MINDSPORE_CCSRC_BACKEND_KERNEL_COMPILER_TASK_STREAM_H_

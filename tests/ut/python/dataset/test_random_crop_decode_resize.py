@@ -1,4 +1,4 @@
-# Copyright 2019 Huawei Technologies Co., Ltd
+# Copyright 2019-2022 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,39 +15,24 @@
 """
 Testing RandomCropDecodeResize op in DE
 """
-import matplotlib.pyplot as plt
-import numpy as np
-import cv2
+import pytest
 
-import mindspore.dataset as ds
-import mindspore.dataset.transforms.vision.c_transforms as vision
 from mindspore import log as logger
+import mindspore.dataset as ds
+import mindspore.dataset.vision as vision
+from util import diff_mse, visualize_image, save_and_check_md5, config_get_set_seed, config_get_set_num_parallel_workers
 
 DATA_DIR = ["../data/dataset/test_tf_file_3_images/train-0000-of-0001.data"]
 SCHEMA_DIR = "../data/dataset/test_tf_file_3_images/datasetSchema.json"
 
+GENERATE_GOLDEN = False
 
-def visualize(a, mse, original):
+
+def test_random_crop_decode_resize_op(plot=False):
     """
-    visualizes the image using DE op and Numpy Op
-    """
-    plt.subplot(141)
-    plt.imshow(original)
-    plt.title("Original image")
-
-    plt.subplot(142)
-    plt.imshow(a)
-    plt.title("DE random_crop_decode_resize image")
-
-    plt.subplot(143)
-    plt.imshow(a - original)
-    plt.title("Difference image, mse : {}".format(mse))
-    plt.show()
-
-
-def test_random_crop_decode_resize_op():
-    """
-    Test RandomCropDecodeResize op
+    Feature: RandomCropDecodeResize op
+    Description: Test RandomCropDecodeResize op basic usgae
+    Expectation: Passes the mse equality check
     """
     logger.info("test_random_decode_resize_op")
 
@@ -55,27 +40,68 @@ def test_random_crop_decode_resize_op():
     data1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
     decode_op = vision.Decode()
     random_crop_decode_resize_op = vision.RandomCropDecodeResize((256, 512), (1, 1), (0.5, 0.5))
-    data1 = data1.map(input_columns=["image"], operations=random_crop_decode_resize_op)
+    data1 = data1.map(operations=random_crop_decode_resize_op, input_columns=["image"])
 
     # Second dataset
     data2 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
-    data2 = data2.map(input_columns=["image"], operations=decode_op)
+    random_crop_resize_op = vision.RandomResizedCrop((256, 512), (1, 1), (0.5, 0.5))
+    data2 = data2.map(operations=decode_op, input_columns=["image"])
+    data2 = data2.map(operations=random_crop_resize_op, input_columns=["image"])
 
     num_iter = 0
-    for item1, item2 in zip(data1.create_dict_iterator(), data2.create_dict_iterator()):
-
+    for item1, item2 in zip(data1.create_dict_iterator(num_epochs=1, output_numpy=True),
+                            data2.create_dict_iterator(num_epochs=1, output_numpy=True)):
         if num_iter > 0:
             break
-        crop_and_resize = item1["image"]
-        original = item2["image"]
-        original = cv2.resize(original, (512, 256))
-        diff = crop_and_resize - original
-        mse = np.sum(np.power(diff, 2))
+        image1 = item1["image"]
+        image2 = item2["image"]
+        mse = diff_mse(image1, image2)
+        assert mse == 0
         logger.info("random_crop_decode_resize_op_{}, mse: {}".format(num_iter + 1, mse))
-        # Uncomment below line if you want to visualize images
-        # visualize(crop_and_resize, mse, original)
+        if plot:
+            visualize_image(image1, image2, mse)
         num_iter += 1
 
 
+def test_random_crop_decode_resize_md5():
+    """
+    Feature: RandomCropDecodeResize op
+    Description: Test RandomCropDecodeResize op with md5 check
+    Expectation: Passes the md5 check test
+    """
+    logger.info("Test RandomCropDecodeResize with md5 check")
+    original_seed = config_get_set_seed(10)
+    original_num_parallel_workers = config_get_set_num_parallel_workers(1)
+
+    # Generate dataset
+    data = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
+    random_crop_decode_resize_op = vision.RandomCropDecodeResize((256, 512), (1, 1), (0.5, 0.5))
+    data = data.map(operations=random_crop_decode_resize_op, input_columns=["image"])
+    # Compare with expected md5 from images
+    filename = "random_crop_decode_resize_01_result.npz"
+    save_and_check_md5(data, filename, generate_golden=GENERATE_GOLDEN)
+
+    # Restore configuration
+    ds.config.set_seed(original_seed)
+    ds.config.set_num_parallel_workers((original_num_parallel_workers))
+
+
+def test_random_crop_decode_resize_invalid():
+    """
+    Feature: RandomCropDecodeResize
+    Description: Test RandomCropDecodeResize with invalid input
+    Expectation: Error is raised as expected
+    """
+    with pytest.raises(ValueError) as error_info:
+        vision.RandomCropDecodeResize((256, 512), (1, 1), (0.5, -1))
+    assert "not within the required interval of (0, 16777216]" in str(error_info.value)
+
+    with pytest.raises(TypeError) as error_info:
+        vision.RandomCropDecodeResize((256, 512), (1, 1), (0.5, 0.5), max_attempts=True)
+    assert "not of type (<class 'int'>,)" in str(error_info.value)
+
+
 if __name__ == "__main__":
-    test_random_crop_decode_resize_op()
+    test_random_crop_decode_resize_op(plot=True)
+    test_random_crop_decode_resize_md5()
+    test_random_crop_decode_resize_invalid()

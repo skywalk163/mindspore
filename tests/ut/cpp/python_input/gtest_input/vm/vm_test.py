@@ -13,19 +13,19 @@
 # limitations under the License.
 # ============================================================================
 """ vm_test """
-from mindspore.ops import Primitive
+from mindspore.ops import functional as F
 
-scala_add = Primitive('scalar_add')
-scala_mul = Primitive('scalar_mul')
-scalar_gt = Primitive('scalar_gt')
+scala_add = F.scalar_add
+scala_mul = F.scalar_mul
+scalar_gt = F.scalar_gt
 
 
-def scalar_add(x, y):
+def ScalarAdd(x, y):
     """Implement `scalar_add`."""
     return scala_add(x, y)
 
 
-def scalar_mul(x, y):
+def ScalarMul(x, y):
     """Implement `scalar_mul`."""
     return scala_mul(x, y)
 

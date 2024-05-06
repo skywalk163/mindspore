@@ -12,24 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ============================================================================
-from dataclasses import dataclass
 import numpy as np
 
 import mindspore as ms
 from mindspore.common.tensor import Tensor
-from mindspore.model_zoo.resnet import resnet50
 from mindspore.ops import Primitive
+from mindspore.ops import functional as F
+from tests.ut.python.model.resnet import resnet50
 
-scala_add = Primitive('scalar_add')
 
-
-@dataclass
-class Point:
-    x: float
-    y: float
-
-    def abs(self):
-        return (self.x ** 2 + self.y ** 2) ** 0.5
+scala_add = F.scalar_add
 
 
 def scalar_add(x, y):
@@ -79,16 +71,6 @@ def test_tuples(x, y):
     tup = scala_add(x, y), x * y
     z = scala_add(tup[0], tup[1])
     return z
-
-
-def test_dataclass(x, y):
-    pt = Point(x, y)
-    return pt.x * pt.y
-
-
-def test_dataclass_2(x, y):
-    pt = Point(x, y)
-    return pt.abs()
 
 
 def test_hof(a, b):

@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 
 from mindspore import Tensor
-from mindspore.nn.metrics import Accuracy
+from mindspore.train import Accuracy
 
 
 def test_classification_accuracy():
@@ -33,6 +33,26 @@ def test_classification_accuracy():
     accuracy2 = metric(x, y2)
     assert math.isclose(accuracy, 2 / 3)
     assert math.isclose(accuracy2, 2 / 3)
+
+
+def test_classification_accuracy_indexes_awareness():
+    """A indexes aware version of test_classification_accuracy"""
+    x = Tensor(np.array([[0.2, 0.5], [0.3, 0.1], [0.9, 0.6]]))
+    y = Tensor(np.array([1, 0, 1]))
+    y2 = Tensor(np.array([0, 0, 1]))
+    metric = Accuracy('classification').set_indexes([0, 2])
+    metric.clear()
+    metric.update(x, y, y2)
+    accuracy = metric.eval()
+    assert math.isclose(accuracy, 1 / 3)
+
+
+@pytest.mark.parametrize('indexes', [0, [0., 2.], [0., 1], ['1', '0']])
+def test_set_indexes(indexes):
+    pat_str = "For 'set_indexes', the argument 'indexes' must be a list and all its elements must " \
+              "be int, please check whether it is correct."
+    with pytest.raises(ValueError, match=pat_str):
+        _ = Accuracy('classification').set_indexes(indexes)
 
 
 def test_multilabel_accuracy():

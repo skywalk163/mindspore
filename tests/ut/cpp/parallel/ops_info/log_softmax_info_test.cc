@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@
 #include <list>
 #include <vector>
 #include "common/common_test.h"
-#include "parallel/strategy.h"
-#include "parallel/ops_info/activation_info.h"
-#include "parallel/device_manager.h"
-#include "parallel/step_parallel.h"
+#include "frontend/parallel/strategy.h"
+#include "frontend/parallel/ops_info/activation_info.h"
+#include "frontend/parallel/device_manager.h"
+#include "frontend/parallel/step_parallel.h"
 
 namespace mindspore {
 namespace parallel {
@@ -38,13 +38,13 @@ class TestLogSoftmaxInfo : public UT::Common {
 };
 
 void TestLogSoftmaxInfo::SetUp() {
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 130; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(128);
   stage_map.push_back(2);
 
@@ -54,8 +54,8 @@ void TestLogSoftmaxInfo::SetUp() {
   g_device_manager = std::make_shared<DeviceManager>();
   g_device_manager->Init(dev_list, local_dev, stage_map, "hccl");
 
-  ValuePtr axis = MakeValue(-2);
-  std::unordered_map<std::string, ValuePtr> attr = {{"axis", axis}};
+  ValuePtr axis = MakeValue(static_cast<int64_t>(-2));
+  mindspore::HashMap<std::string, ValuePtr> attr = {{"axis", axis}};
 
   Shapes inputs_shape = {{2, 4, 8, 16}};
   Shapes outputs_shape = {{2, 4, 8, 16}};
@@ -64,21 +64,21 @@ void TestLogSoftmaxInfo::SetUp() {
 }
 
 TEST_F(TestLogSoftmaxInfo, InferDevMatrixShape1) {
-  std::vector<Dimensions> inputs = {{2, 4, 1, 16}};
+  Strategies inputs = {{2, 4, 1, 16}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  log_softmax->Init(strategy);
-  std::vector<int32_t> dev_matrix_shape = log_softmax->dev_matrix_shape();
+  log_softmax->Init(strategy, nullptr);
+  Shape dev_matrix_shape = log_softmax->dev_matrix_shape();
 
-  std::vector<int32_t> expect = {2, 4, 1, 16};
+  Shape expect = {2, 4, 1, 16};
   ASSERT_EQ(dev_matrix_shape, expect);
 }
 
 TEST_F(TestLogSoftmaxInfo, InferSliceShape1) {
-  std::vector<Dimensions> str = {{2, 4, 1, 16}};
+  Strategies str = {{2, 4, 1, 16}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  log_softmax->Init(strategy);
+  log_softmax->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = log_softmax->inputs_tensor_info();
   std::vector<TensorInfo> outputs = log_softmax->outputs_tensor_info();
 
@@ -96,10 +96,10 @@ TEST_F(TestLogSoftmaxInfo, InferSliceShape1) {
 }
 
 TEST_F(TestLogSoftmaxInfo, GetTensorLayout1) {
-  std::vector<Dimensions> str = {{2, 4, 1, 16}};
+  Strategies str = {{2, 4, 1, 16}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  log_softmax->Init(strategy);
+  log_softmax->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = log_softmax->inputs_tensor_info();
   std::vector<TensorInfo> outputs = log_softmax->outputs_tensor_info();
 
@@ -117,10 +117,10 @@ TEST_F(TestLogSoftmaxInfo, GetTensorLayout1) {
 }
 
 TEST_F(TestLogSoftmaxInfo, GetForwardOp1) {
-  std::vector<Dimensions> inputs = {{2, 4, 1, 16}};
+  Strategies inputs = {{2, 4, 1, 16}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  log_softmax->Init(strategy);
+  log_softmax->Init(strategy, nullptr);
   OperatorVector forward_op = log_softmax->forward_op();
   size_t size = forward_op.size();
 
@@ -128,10 +128,10 @@ TEST_F(TestLogSoftmaxInfo, GetForwardOp1) {
 }
 
 TEST_F(TestLogSoftmaxInfo, GetMirrorOPs1) {
-  std::vector<Dimensions> inputs = {{2, 4, 1, 16}};
+  Strategies inputs = {{2, 4, 1, 16}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  log_softmax->Init(strategy);
+  log_softmax->Init(strategy, nullptr);
   MirrorOps mirror_ops = log_softmax->mirror_ops();
 
   size_t size = mirror_ops.size();
@@ -141,37 +141,37 @@ TEST_F(TestLogSoftmaxInfo, GetMirrorOPs1) {
 
 TEST_F(TestLogSoftmaxInfo, CheckStrategy1) {
   // Success: {{2,4,1,16}}
-  std::vector<Dimensions> inputs = {{2, 2, 8, 16}, {2, 4, 16, 1}};
+  Strategies inputs = {{2, 2, 8, 16}, {2, 4, 16, 1}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = log_softmax->Init(strategy);
+  Status ret = log_softmax->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 
 TEST_F(TestLogSoftmaxInfo, CheckStrategy2) {
   // Success: {{2,4,1,16}}
-  std::vector<Dimensions> inputs = {{2, 4, 8}};
+  Strategies inputs = {{2, 4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = log_softmax->Init(strategy);
+  Status ret = log_softmax->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 
 TEST_F(TestLogSoftmaxInfo, CheckStrategy3) {
   // Success: {{2,4,1,16}}
-  std::vector<Dimensions> inputs = {{2, 4, 8, 16}};
+  Strategies inputs = {{2, 4, 8, 16}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = log_softmax->Init(strategy);
+  Status ret = log_softmax->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 
 TEST_F(TestLogSoftmaxInfo, GetDeviceList1) {
-  std::vector<Dimensions> inputs = {{2, 4, 1, 16}};
+  Strategies inputs = {{2, 4, 1, 16}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  log_softmax->Init(strategy);
-  RankList dev_list = log_softmax->global_device_list();
+  log_softmax->Init(strategy, nullptr);
+  RankList dev_list = log_softmax->stage_device_list();
   ASSERT_EQ(dev_list.size(), 128);
 }
 

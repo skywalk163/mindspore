@@ -15,14 +15,17 @@
  */
 #include <memory>
 
+#include "abstract/abstract_function.h"
+#include "mindspore/core/ops/sequence_ops.h"
+#include "mindspore/core/ops/nn_optimizer_ops.h"
+#include "mindspore/core/ops/framework_ops.h"
 #include "common/common_test.h"
+#include "frontend/operator/composite/composite.h"
+#include "frontend/operator/ops.h"
 #include "ir/anf.h"
 #include "ir/value.h"
-#include "operator/composite/composite.h"
-#include "operator/ops.h"
-#include "pipeline/static_analysis/prim.h"
-#include "pipeline/static_analysis/abstract_function.h"
-#include "debug/trace.h"
+#include "pipeline/jit/ps/debug/trace.h"
+#include "pipeline/jit/ps/static_analysis/prim.h"
 
 namespace mindspore {
 using Shape = abstract::Shape;
@@ -35,12 +38,14 @@ using AbstractSlicePtr = abstract::AbstractSlicePtr;
 
 using AbstractTuple = abstract::AbstractTuple;
 using AbstractTuplePtr = abstract::AbstractTuplePtr;
+using AbstractList = abstract::AbstractList;
+using AbstractListPtr = abstract::AbstractListPtr;
 
 using AbstractTensor = abstract::AbstractTensor;
 using AbstractTensorPtr = abstract::AbstractTensorPtr;
 
 using AbstractNone = abstract::AbstractNone;
-using AbstractAttribute = abstract::AbstractAttribute;
+using AbstractAttribute = abstract::AbstractElementPair;
 using AnalysisEngine = abstract::AnalysisEngine;
 using AnalysisEnginePtr = abstract::AnalysisEnginePtr;
 
@@ -64,8 +69,8 @@ void TestComposite::TearDown() {
 
 class UTCompositeUtils {
  public:
-  static AbstractTensorPtr ArrayInt32Of(std::initializer_list<int> shp) {
-    auto ele = std::make_shared<AbstractScalar>(kAnyValue, kInt32);
+  static AbstractTensorPtr ArrayInt32Of(std::initializer_list<int64_t> shp) {
+    auto ele = std::make_shared<AbstractScalar>(kValueAny, kInt64);
     return std::make_shared<AbstractTensor>(ele, std::make_shared<Shape>(shp));
   }
   static FuncGraphPtr MakeFuncGraph(const MetaFuncGraphPtr &metaFuncGraphPtr, size_t nparam) {
@@ -86,7 +91,8 @@ class UTCompositeUtils {
 };
 
 TEST_F(TestComposite, test_TupleSlice_arg_two_numbers) {
-  MetaFuncGraphPtr tupleSlicePtr = std::make_shared<prim::TupleSlice>("tuple_slice");
+  MetaFuncGraphPtr tupleSlicePtr =
+    std::make_shared<prim::SequenceSliceGetItem>("TupleSlice", "MakeTuple", "TupleGetItem");
   FuncGraphPtr tupleSliceGraphPtr = UTCompositeUtils::MakeFuncGraph(tupleSlicePtr, 3);
 
   AbstractBasePtrList eles;
@@ -96,22 +102,24 @@ TEST_F(TestComposite, test_TupleSlice_arg_two_numbers) {
     eles.push_back(tensor);
   }
   auto tuple_tensor = std::make_shared<AbstractTuple>(eles);
-  auto start_index = std::make_shared<AbstractScalar>(1);
-  auto stop_index = std::make_shared<AbstractScalar>(5);
+  auto start_index = std::make_shared<AbstractScalar>(static_cast<int64_t>(1));
+  auto stop_index = std::make_shared<AbstractScalar>(static_cast<int64_t>(5));
   AbstractBasePtrList args_spec_list = {tuple_tensor, start_index, stop_index};
 
   try {
     engine_->Run(tupleSliceGraphPtr, args_spec_list);
     FAIL() << "Excepted exception :Args type is wrong";
   } catch (std::runtime_error const &err) {
-    ASSERT_TRUE(std::string(err.what()).find("TupleSlice input args size should be 2, but got 3") != std::string::npos);
+    ASSERT_TRUE(std::string(err.what()).find("For 'TupleSlice', the number of input should be 2, but got 3") !=
+                std::string::npos);
   } catch (...) {
     FAIL() << "Excepted exception :Args type is wrong";
   }
 }
 
 TEST_F(TestComposite, test_TupleSlice_arg_one_number) {
-  MetaFuncGraphPtr tupleSlicePtr = std::make_shared<prim::TupleSlice>("tuple_slice");
+  MetaFuncGraphPtr tupleSlicePtr =
+    std::make_shared<prim::SequenceSliceGetItem>("tuple_slice", "MakeTuple", "TupleGetItem");
   FuncGraphPtr tupleSliceGraphPtr = UTCompositeUtils::MakeFuncGraph(tupleSlicePtr, 2);
 
   AbstractBasePtrList eles;
@@ -121,23 +129,30 @@ TEST_F(TestComposite, test_TupleSlice_arg_one_number) {
     eles.push_back(tensor);
   }
   auto tuple_tensor = std::make_shared<AbstractTuple>(eles);
-  auto start_index = std::make_shared<AbstractScalar>(1);
+  auto start_index = std::make_shared<AbstractScalar>(static_cast<int64_t>(1));
   AbstractBasePtrList args_spec_list = {tuple_tensor, start_index};
 
   try {
     trace::ClearTraceStack();
     engine_->Run(tupleSliceGraphPtr, args_spec_list);
-    FAIL() << "Excepted exception :Args type is wrong";
+    FAIL() << "Excepted exception: Args type is wrong";
   } catch (pybind11::type_error const &err) {
     ASSERT_TRUE(true);
+  } catch (std::runtime_error const &err) {
+    if (std::strstr(err.what(), "TypeError") != nullptr) {
+      ASSERT_TRUE(true);
+    } else {
+      FAIL() << "Excepted exception: Args type is wrong, message: " << err.what();
+    }
   } catch (...) {
-    FAIL() << "Excepted exception :Args type is wrong";
+    FAIL() << "Excepted exception: Args type is wrong";
   }
 }
 
 TEST_F(TestComposite, test_TupleSlice_arg_slice) {
-  std::shared_ptr<py::scoped_interpreter> env = parse::python_adapter::set_python_scoped();
-  MetaFuncGraphPtr tupleSlicePtr = std::make_shared<prim::TupleSlice>("tuple_slice");
+  std::shared_ptr<py::scoped_interpreter> env = python_adapter::set_python_scoped();
+  MetaFuncGraphPtr tupleSlicePtr =
+    std::make_shared<prim::SequenceSliceGetItem>("tuple_slice", "MakeTuple", "TupleGetItem");
   FuncGraphPtr tupleSliceGraphPtr = UTCompositeUtils::MakeFuncGraph(tupleSlicePtr, 2);
 
   AbstractBasePtrList eles;
@@ -147,13 +162,14 @@ TEST_F(TestComposite, test_TupleSlice_arg_slice) {
     eles.push_back(tensor);
   }
   auto tuple_tensor = std::make_shared<AbstractTuple>(eles);
-  auto start_index = std::make_shared<AbstractScalar>(1);
-  auto stop_index = std::make_shared<AbstractScalar>(6);
-  auto step = std::make_shared<AbstractScalar>(2);
+  auto start_index = std::make_shared<AbstractScalar>(static_cast<int64_t>(1));
+  auto stop_index = std::make_shared<AbstractScalar>(static_cast<int64_t>(6));
+  auto step = std::make_shared<AbstractScalar>(static_cast<int64_t>(2));
   auto slice = std::make_shared<AbstractSlice>(start_index, stop_index, step);
   AbstractBasePtrList args_spec_list = {tuple_tensor, slice};
 
-  AbstractTuplePtr ret = dyn_cast<AbstractTuple>(engine_->Run(tupleSliceGraphPtr, args_spec_list).inferred->abstract());
+  AbstractTuplePtr ret =
+    dyn_cast<AbstractTuple>(engine_->Run(tupleSliceGraphPtr, args_spec_list).eval_result->abstract());
   if (ret == nullptr) {
     FAIL() << "Cast ret to abstract tuple failed.";
   }
@@ -163,7 +179,8 @@ TEST_F(TestComposite, test_TupleSlice_arg_slice) {
 }
 
 TEST_F(TestComposite, test_TupleSlice_arg_slice_step_none) {
-  MetaFuncGraphPtr tupleSlicePtr = std::make_shared<prim::TupleSlice>("tuple_slice");
+  MetaFuncGraphPtr tupleSlicePtr =
+    std::make_shared<prim::SequenceSliceGetItem>("tuple_slice", "MakeTuple", "TupleGetItem");
   FuncGraphPtr tupleSliceGraphPtr = UTCompositeUtils::MakeFuncGraph(tupleSlicePtr, 2);
 
   AbstractBasePtrList eles;
@@ -173,13 +190,14 @@ TEST_F(TestComposite, test_TupleSlice_arg_slice_step_none) {
     eles.push_back(tensor);
   }
   auto tuple_tensor = std::make_shared<AbstractTuple>(eles);
-  auto start_index = std::make_shared<AbstractScalar>(1);
-  auto stop_index = std::make_shared<AbstractScalar>(5);
+  auto start_index = std::make_shared<AbstractScalar>(static_cast<int64_t>(1));
+  auto stop_index = std::make_shared<AbstractScalar>(static_cast<int64_t>(5));
   auto step = std::make_shared<AbstractNone>();
   auto slice = std::make_shared<AbstractSlice>(start_index, stop_index, step);
   AbstractBasePtrList args_spec_list = {tuple_tensor, slice};
 
-  AbstractTuplePtr ret = dyn_cast<AbstractTuple>(engine_->Run(tupleSliceGraphPtr, args_spec_list).inferred->abstract());
+  AbstractTuplePtr ret =
+    dyn_cast<AbstractTuple>(engine_->Run(tupleSliceGraphPtr, args_spec_list).eval_result->abstract());
   if (ret == nullptr) {
     FAIL() << "Cast ret to abstract tuple failed.";
   }
@@ -189,7 +207,8 @@ TEST_F(TestComposite, test_TupleSlice_arg_slice_step_none) {
 }
 
 TEST_F(TestComposite, test_TupleSlice_arg_slice_step_negative) {
-  MetaFuncGraphPtr tupleSlicePtr = std::make_shared<prim::TupleSlice>("tuple_slice");
+  MetaFuncGraphPtr tupleSlicePtr =
+    std::make_shared<prim::SequenceSliceGetItem>("tuple_slice", "MakeTuple", "TupleGetItem");
   FuncGraphPtr tupleSliceGraphPtr = UTCompositeUtils::MakeFuncGraph(tupleSlicePtr, 2);
 
   AbstractBasePtrList eles;
@@ -201,11 +220,12 @@ TEST_F(TestComposite, test_TupleSlice_arg_slice_step_negative) {
   auto tuple_tensor = std::make_shared<AbstractTuple>(eles);
   auto start_index = std::make_shared<AbstractNone>();
   auto stop_index = std::make_shared<AbstractNone>();
-  auto step = std::make_shared<AbstractScalar>(-1);
+  auto step = std::make_shared<AbstractScalar>(static_cast<int64_t>(-1));
   auto slice = std::make_shared<AbstractSlice>(start_index, stop_index, step);
   AbstractBasePtrList args_spec_list = {tuple_tensor, slice};
 
-  AbstractTuplePtr ret = dyn_cast<AbstractTuple>(engine_->Run(tupleSliceGraphPtr, args_spec_list).inferred->abstract());
+  AbstractTuplePtr ret =
+    dyn_cast<AbstractTuple>(engine_->Run(tupleSliceGraphPtr, args_spec_list).eval_result->abstract());
   if (ret == nullptr) {
     FAIL() << "Cast ret to abstract tuple failed.";
   }
@@ -215,7 +235,8 @@ TEST_F(TestComposite, test_TupleSlice_arg_slice_step_negative) {
 }
 
 TEST_F(TestComposite, test_TupleSlice_arg_slice_step_positive) {
-  MetaFuncGraphPtr tupleSlicePtr = std::make_shared<prim::TupleSlice>("tuple_slice");
+  MetaFuncGraphPtr tupleSlicePtr =
+    std::make_shared<prim::SequenceSliceGetItem>("tuple_slice", "MakeTuple", "TupleGetItem");
   FuncGraphPtr tupleSliceGraphPtr = UTCompositeUtils::MakeFuncGraph(tupleSlicePtr, 2);
 
   AbstractBasePtrList eles;
@@ -225,13 +246,14 @@ TEST_F(TestComposite, test_TupleSlice_arg_slice_step_positive) {
     eles.push_back(tensor);
   }
   auto tuple_tensor = std::make_shared<AbstractTuple>(eles);
-  auto start_index = std::make_shared<AbstractScalar>(-2);
+  auto start_index = std::make_shared<AbstractScalar>(static_cast<int64_t>(-2));
   auto stop_index = std::make_shared<AbstractNone>();
-  auto step = std::make_shared<AbstractScalar>(-1);
+  auto step = std::make_shared<AbstractScalar>(static_cast<int64_t>(-1));
   auto slice = std::make_shared<AbstractSlice>(start_index, stop_index, step);
   AbstractBasePtrList args_spec_list = {tuple_tensor, slice};
 
-  AbstractTuplePtr ret = dyn_cast<AbstractTuple>(engine_->Run(tupleSliceGraphPtr, args_spec_list).inferred->abstract());
+  AbstractTuplePtr ret =
+    dyn_cast<AbstractTuple>(engine_->Run(tupleSliceGraphPtr, args_spec_list).eval_result->abstract());
   if (ret == nullptr) {
     FAIL() << "Cast ret to abstract tuple failed.";
   }
@@ -240,186 +262,160 @@ TEST_F(TestComposite, test_TupleSlice_arg_slice_step_positive) {
   ASSERT_EQ(real, expect);
 }
 
-TEST_F(TestComposite, test_TensorSliceBySlice) {
-  MetaFuncGraphPtr tensorSlicePtr = std::make_shared<prim::TensorSlice>("tensor_slice");
-  FuncGraphPtr tensorSlicePtrGraphPtr = UTCompositeUtils::MakeFuncGraph(tensorSlicePtr, 2);
+/// Feature: Test list slice
+/// Description: The second input is a scalar
+/// Expectation: Throw type error
+TEST_F(TestComposite, test_ListSlice_arg_one_number) {
+  MetaFuncGraphPtr list_slice = std::make_shared<prim::SequenceSliceGetItem>("list_slice", "make_list", "list_getitem");
+  FuncGraphPtr list_graph = UTCompositeUtils::MakeFuncGraph(list_slice, 3);
 
   AbstractBasePtrList eles;
-  AbstractScalarPtr start_index = std::make_shared<AbstractScalar>(1);
-  AbstractScalarPtr stop_index = std::make_shared<AbstractScalar>(6);
-  AbstractScalarPtr step = std::make_shared<AbstractScalar>(2);
-
-  AbstractTensorPtr tensor = UTCompositeUtils::ArrayInt32Of({6, 7, 8});
-  AbstractSlicePtr slice = std::make_shared<AbstractSlice>(start_index, stop_index, step);
-  AbstractBasePtrList args_spec_list = {tensor, slice};
-
-  AbstractTensorPtr ret = dyn_cast<AbstractTensor>(engine_->Run(tensorSlicePtrGraphPtr, args_spec_list).inferred->abstract());
-  if (ret == nullptr) {
-    FAIL() << "Cast ret to abstract array failed.";
-  }
-  AbstractTensorPtr expect = UTCompositeUtils::ArrayInt32Of({3, 7, 8});
-  ASSERT_EQ(*ret, *expect);
-}
-
-TEST_F(TestComposite, test_TensorSliceBySliceTuple) {
-  MetaFuncGraphPtr tensorSlicePtr = std::make_shared<prim::TensorSlice>("tensor_slice");
-  FuncGraphPtr tensorSliceGraphPtr = UTCompositeUtils::MakeFuncGraph(tensorSlicePtr, 2);
-
-  AbstractBasePtrList eles;
-  AbstractScalarPtr start_index = std::make_shared<AbstractScalar>(0);
-  AbstractScalarPtr stop_index = std::make_shared<AbstractScalar>(6);
-  AbstractScalarPtr step = std::make_shared<AbstractScalar>(2);
-  AbstractSlicePtr slice = std::make_shared<AbstractSlice>(start_index, stop_index, step);
-  eles.push_back(slice);
-
-  start_index = std::make_shared<AbstractScalar>(1);
-  stop_index = std::make_shared<AbstractScalar>(5);
-  step = std::make_shared<AbstractScalar>(1);
-  slice = std::make_shared<AbstractSlice>(start_index, stop_index, step);
-  eles.push_back(slice);
-
-  start_index = std::make_shared<AbstractScalar>(2);
-  stop_index = std::make_shared<AbstractScalar>(8);
-  step = std::make_shared<AbstractScalar>(3);
-  slice = std::make_shared<AbstractSlice>(start_index, stop_index, step);
-  eles.push_back(slice);
-
-  AbstractTensorPtr tensor = UTCompositeUtils::ArrayInt32Of({6, 7, 8});
-  AbstractTuplePtr slice_tuple = std::make_shared<AbstractTuple>(eles);
-  AbstractBasePtrList args_spec_list = {tensor, slice_tuple};
-
-  AbstractTensorPtr ret = dyn_cast<AbstractTensor>(engine_->Run(tensorSliceGraphPtr, args_spec_list).inferred->abstract());
-  if (ret == nullptr) {
-    FAIL() << "Cast ret to abstract array failed.";
-  }
-  AbstractTensorPtr expect = UTCompositeUtils::ArrayInt32Of({3, 4, 2});
-  ASSERT_EQ(*ret, *expect);
-}
-
-TEST_F(TestComposite, test_TensorSliceBySliceTupleToReduceDimension) {
-  MetaFuncGraphPtr tensorSlicePtr = std::make_shared<prim::TensorSlice>("tensor_slice");
-  FuncGraphPtr tensorSliceGraphPtr = UTCompositeUtils::MakeFuncGraph(tensorSlicePtr, 2);
-
-  AbstractBasePtrList eles;
-  AbstractScalarPtr start_index = std::make_shared<AbstractScalar>(1);
-  AbstractScalarPtr stop_index = std::make_shared<AbstractScalar>(5);
-  AbstractScalarPtr step = std::make_shared<AbstractScalar>(2);
-  AbstractSlicePtr slice = std::make_shared<AbstractSlice>(start_index, stop_index, step);
-  eles.push_back(slice);
-
-  AbstractScalarPtr elem_index = std::make_shared<AbstractScalar>(1);
-  eles.push_back(elem_index);
-
-  start_index = std::make_shared<AbstractScalar>(2);
-  stop_index = std::make_shared<AbstractScalar>(6);
-  step = std::make_shared<AbstractScalar>(1);
-  slice = std::make_shared<AbstractSlice>(start_index, stop_index, step);
-  eles.push_back(slice);
-
-  AbstractTensorPtr tensor = UTCompositeUtils::ArrayInt32Of({6, 7, 8});
-  AbstractTuplePtr slice_tuple = std::make_shared<AbstractTuple>(eles);
-  AbstractBasePtrList args_spec_list = {tensor, slice_tuple};
-
-  AbstractTensorPtr ret = dyn_cast<AbstractTensor>(engine_->Run(tensorSliceGraphPtr, args_spec_list).inferred->abstract());
-  if (ret == nullptr) {
-    FAIL() << "Cast ret to abstract array failed.";
-  }
-  AbstractTensorPtr expect = UTCompositeUtils::ArrayInt32Of({2, 4});
-  ASSERT_EQ(*ret, *expect);
-}
-
-TEST_F(TestComposite, test_TensorSliceByScalar) {
-  MetaFuncGraphPtr tensorSlicePtr = std::make_shared<prim::TensorSlice>("tensor_slice");
-  FuncGraphPtr tensorSliceGraphPtr = UTCompositeUtils::MakeFuncGraph(tensorSlicePtr, 2);
-
-  AbstractTensorPtr tensor = UTCompositeUtils::ArrayInt32Of({6, 7, 8});
-  AbstractScalarPtr start_index = std::make_shared<AbstractScalar>(2);
-  AbstractBasePtrList args_spec_list = {tensor, start_index};
-
-  AbstractTensorPtr ret = dyn_cast<AbstractTensor>(engine_->Run(tensorSliceGraphPtr, args_spec_list).inferred->abstract());
-  if (ret == nullptr) {
-    FAIL() << "Cast ret to abstract array failed.";
-  }
-  AbstractTensorPtr expect = UTCompositeUtils::ArrayInt32Of({7, 8});
-  ASSERT_EQ(*ret, *expect);
-}
-
-TEST_F(TestComposite, test_TensorSliceByScalarTuple) {
-  MetaFuncGraphPtr tensorSlicePtr = std::make_shared<prim::TensorSlice>("tensor_slice");
-  FuncGraphPtr tensorSliceGraphPtr = UTCompositeUtils::MakeFuncGraph(tensorSlicePtr, 2);
-
-  AbstractBasePtrList eles;
-  AbstractScalarPtr elem_index = std::make_shared<AbstractScalar>(1);
-  eles.push_back(elem_index);
-  elem_index = std::make_shared<AbstractScalar>(3);
-  eles.push_back(elem_index);
-
-  AbstractTensorPtr tensor = UTCompositeUtils::ArrayInt32Of({6, 7, 8});
-  AbstractTuplePtr slice_tuple = std::make_shared<AbstractTuple>(eles);
-  AbstractBasePtrList args_spec_list = {tensor, slice_tuple};
-
-  AbstractTensorPtr ret = dyn_cast<AbstractTensor>(engine_->Run(tensorSliceGraphPtr, args_spec_list).inferred->abstract());
-  if (ret == nullptr) {
-    FAIL() << "Cast ret to abstract array failed.";
-  }
-  AbstractTensorPtr expect = UTCompositeUtils::ArrayInt32Of({8});
-  ASSERT_EQ(*ret, *expect);
-}
-
-TEST_F(TestComposite, test_TensorSliceByScalarTupleToScalar) {
-  MetaFuncGraphPtr tensorSlicePtr = std::make_shared<prim::TensorSlice>("tensor_slice");
-  FuncGraphPtr tensorSliceGraphPtr = UTCompositeUtils::MakeFuncGraph(tensorSlicePtr, 2);
-
-  AbstractBasePtrList eles;
-  AbstractScalarPtr elem_index = std::make_shared<AbstractScalar>(3);
-  eles.push_back(elem_index);
-  elem_index = std::make_shared<AbstractScalar>(0);
-  eles.push_back(elem_index);
-  elem_index = std::make_shared<AbstractScalar>(6);
-  eles.push_back(elem_index);
-
-  AbstractTensorPtr tensor = UTCompositeUtils::ArrayInt32Of({6, 7, 8});
-  AbstractTuplePtr slice_tuple = std::make_shared<AbstractTuple>(eles);
-  AbstractBasePtrList args_spec_list = {tensor, slice_tuple};
-
-  AbstractTensorPtr ret = dyn_cast<AbstractTensor>(engine_->Run(tensorSliceGraphPtr, args_spec_list).inferred->abstract());
-  if (ret == nullptr) {
-    FAIL() << "Cast ret to abstract array failed.";
-  }
-  AbstractTensorPtr expect = UTCompositeUtils::ArrayInt32Of({});
-  ASSERT_EQ(*ret, *expect);
-}
-
-TEST_F(TestComposite, test_UnpackCall_3args) {
-  MetaFuncGraphPtr unPackCallPtr = std::make_shared<prim::UnpackCall>("UnPackCall");
-  FuncGraphPtr unPackCallGraphPtr = UTCompositeUtils::MakeFuncGraph(unPackCallPtr, 3);
-
-  auto fn_arg= std::make_shared<abstract::PrimitiveAbstractClosure>(prim::kPrimMakeTuple);
-  AbstractTensorPtr tensor = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
-  AbstractBasePtrList eles;
-  for (size_t i = 0; i < 6; i++) {
+  auto tensor = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
+  size_t list_size = 6;
+  for (size_t i = 0; i < list_size; i++) {
     eles.push_back(tensor);
   }
-  AbstractTuplePtr tensor_tuple = std::make_shared<AbstractTuple>(eles);
-  AbstractTensorPtr arr_x = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
-  AbstractTensorPtr arr_y = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
-  AbstractTensorPtr arr_z = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
-  std::vector<AbstractAttribute> tensor_map{{"x", arr_x}, {"y", arr_y}, {"z", arr_z}};
-  abstract::AbstractDictionaryPtr tensor_dict = std::make_shared<abstract::AbstractDictionary>(tensor_map);
+  auto list_tensor = std::make_shared<AbstractList>(eles);
+  auto start_index = std::make_shared<AbstractScalar>(static_cast<int64_t>(1));
+  AbstractBasePtrList args_spec_list = {list_tensor, start_index};
 
-  AbstractBasePtrList args_spec_list = {fn_arg, tensor_tuple, tensor_dict};
-  AbstractTuplePtr ret = dyn_cast<AbstractTuple>(engine_->Run(unPackCallGraphPtr, args_spec_list).inferred->abstract());
+  try {
+    trace::ClearTraceStack();
+    engine_->Run(list_graph, args_spec_list);
+    FAIL() << "Excepted exception: Args type is wrong";
+  } catch (pybind11::type_error const &err) {
+    ASSERT_TRUE(true);
+  } catch (std::runtime_error const &err) {
+    if (std::strstr(err.what(), "TypeError") != nullptr) {
+      ASSERT_TRUE(true);
+    } else {
+      FAIL() << "Excepted exception: Args type is wrong, message: " << err.what();
+    }
+  } catch (...) {
+    FAIL() << "Excepted exception: Args type is wrong";
+  }
+}
+
+/// Feature: Test list slice
+/// Description: Test List slice
+/// Expectation: No Expectation
+TEST_F(TestComposite, test_ListSlice_arg_slice) {
+  std::shared_ptr<py::scoped_interpreter> env = python_adapter::set_python_scoped();
+  MetaFuncGraphPtr list_slice = std::make_shared<prim::SequenceSliceGetItem>("list_slice", "make_list", "list_getitem");
+  FuncGraphPtr list_slice_graph = UTCompositeUtils::MakeFuncGraph(list_slice, 2);
+
+  AbstractBasePtrList eles;
+  auto tensor = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
+  size_t list_size = 6;
+  for (size_t i = 0; i < list_size; i++) {
+    eles.push_back(tensor);
+  }
+  auto list_tensor = std::make_shared<AbstractList>(eles);
+  auto start_index = std::make_shared<AbstractScalar>(static_cast<int64_t>(1));
+  auto stop_index = std::make_shared<AbstractScalar>(static_cast<int64_t>(6));
+  auto step = std::make_shared<AbstractScalar>(static_cast<int64_t>(2));
+  auto slice = std::make_shared<AbstractSlice>(start_index, stop_index, step);
+  AbstractBasePtrList args_spec_list = {list_tensor, slice};
+
+  AbstractListPtr ret = dyn_cast<AbstractList>(engine_->Run(list_slice_graph, args_spec_list).eval_result->abstract());
   if (ret == nullptr) {
-    FAIL() << "Cast ret to abstract tuple failed.";
+    FAIL() << "Cast ret to abstract list failed.";
   }
   size_t real = ret->size();
-  size_t expect = 9;
+  size_t expect = 3;
   ASSERT_EQ(real, expect);
 }
 
-TEST_F(TestComposite, test_UnpackCall_5args) {
-  MetaFuncGraphPtr unPackCallPtr = std::make_shared<prim::UnpackCall>("UnPackCall");
-  FuncGraphPtr unPackCallGraphPtr = UTCompositeUtils::MakeFuncGraph(unPackCallPtr, 5);
+/// Feature: Test list slice
+/// Description: Test List slice the step is none
+/// Expectation: No Expectation
+TEST_F(TestComposite, test_ListSlice_arg_slice_step_none) {
+  MetaFuncGraphPtr list_slice = std::make_shared<prim::SequenceSliceGetItem>("list_slice", "make_list", "list_getitem");
+  FuncGraphPtr list_slice_graph = UTCompositeUtils::MakeFuncGraph(list_slice, 2);
+
+  AbstractBasePtrList eles;
+  auto tensor = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
+  size_t list_size = 6;
+  for (size_t i = 0; i < list_size; i++) {
+    eles.push_back(tensor);
+  }
+  auto list_tensor = std::make_shared<AbstractList>(eles);
+  auto start_index = std::make_shared<AbstractScalar>(static_cast<int64_t>(1));
+  auto stop_index = std::make_shared<AbstractScalar>(static_cast<int64_t>(5));
+  auto step = std::make_shared<AbstractNone>();
+  auto slice = std::make_shared<AbstractSlice>(start_index, stop_index, step);
+  AbstractBasePtrList args_spec_list = {list_tensor, slice};
+
+  AbstractListPtr ret = dyn_cast<AbstractList>(engine_->Run(list_slice_graph, args_spec_list).eval_result->abstract());
+  if (ret == nullptr) {
+    FAIL() << "Cast ret to abstract list failed.";
+  }
+  size_t real = ret->size();
+  size_t expect = 4;
+  ASSERT_EQ(real, expect);
+}
+
+/// Feature: Test list slice
+/// Description: Test List slice the step is negative
+/// Expectation: No Expectation
+TEST_F(TestComposite, test_ListSlice_arg_slice_step_negative) {
+  MetaFuncGraphPtr list_slice = std::make_shared<prim::SequenceSliceGetItem>("list_slice", "make_list", "list_getitem");
+  FuncGraphPtr list_slice_graph = UTCompositeUtils::MakeFuncGraph(list_slice, 2);
+
+  AbstractBasePtrList eles;
+  auto tensor = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
+  size_t list_size = 6;
+  for (size_t i = 0; i < list_size; i++) {
+    eles.push_back(tensor);
+  }
+  auto list_tensor = std::make_shared<AbstractList>(eles);
+  auto start_index = std::make_shared<AbstractNone>();
+  auto stop_index = std::make_shared<AbstractNone>();
+  auto step = std::make_shared<AbstractScalar>(static_cast<int64_t>(-1));
+  auto slice = std::make_shared<AbstractSlice>(start_index, stop_index, step);
+  AbstractBasePtrList args_spec_list = {list_tensor, slice};
+
+  AbstractListPtr ret = dyn_cast<AbstractList>(engine_->Run(list_slice_graph, args_spec_list).eval_result->abstract());
+  if (ret == nullptr) {
+    FAIL() << "Cast ret to abstract list failed.";
+  }
+  size_t real = ret->size();
+  size_t expect = 6;
+  ASSERT_EQ(real, expect);
+}
+
+/// Feature: Test list slice
+/// Description: Test List slice the step is positive
+/// Expectation: No Expectation
+TEST_F(TestComposite, test_ListSlice_arg_slice_step_positive) {
+  MetaFuncGraphPtr list_slice = std::make_shared<prim::SequenceSliceGetItem>("list_slice", "make_list", "list_getitem");
+  FuncGraphPtr list_slice_graph = UTCompositeUtils::MakeFuncGraph(list_slice, 2);
+
+  AbstractBasePtrList eles;
+  auto tensor = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
+  size_t list_size = 6;
+  for (size_t i = 0; i < list_size; i++) {
+    eles.push_back(tensor);
+  }
+  auto list_tensor = std::make_shared<AbstractList>(eles);
+  auto start_index = std::make_shared<AbstractScalar>(static_cast<int64_t>(-2));
+  auto stop_index = std::make_shared<AbstractNone>();
+  auto step = std::make_shared<AbstractScalar>(static_cast<int64_t>(-1));
+  auto slice = std::make_shared<AbstractSlice>(start_index, stop_index, step);
+  AbstractBasePtrList args_spec_list = {list_tensor, slice};
+
+  AbstractListPtr ret = dyn_cast<AbstractList>(engine_->Run(list_slice_graph, args_spec_list).eval_result->abstract());
+  if (ret == nullptr) {
+    FAIL() << "Cast ret to abstract list failed.";
+  }
+  size_t real = ret->size();
+  size_t expect = 5;
+  ASSERT_EQ(real, expect);
+}
+
+TEST_F(TestComposite, test_UnpackCall_3args) {
+  MetaFuncGraphPtr unpackCallPtr = std::make_shared<prim::UnpackCall>("UnpackCall");
+  FuncGraphPtr unpackCallGraphPtr = UTCompositeUtils::MakeFuncGraph(unpackCallPtr, 3);
 
   auto fn_arg = std::make_shared<abstract::PrimitiveAbstractClosure>(prim::kPrimMakeTuple);
   AbstractTensorPtr tensor = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
@@ -431,11 +427,46 @@ TEST_F(TestComposite, test_UnpackCall_5args) {
   AbstractTensorPtr arr_x = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
   AbstractTensorPtr arr_y = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
   AbstractTensorPtr arr_z = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
-  std::vector<AbstractAttribute> tensor_map{{"x", arr_x}, {"y", arr_y}, {"z", arr_z}};
+  auto key_x = std::make_shared<AbstractScalar>(static_cast<std::string>("x"));
+  auto key_y = std::make_shared<AbstractScalar>(static_cast<std::string>("y"));
+  auto key_z = std::make_shared<AbstractScalar>(static_cast<std::string>("z"));
+  std::vector<AbstractAttribute> tensor_map{{key_x, arr_x}, {key_y, arr_y}, {key_z, arr_z}};
+  abstract::AbstractDictionaryPtr tensor_dict = std::make_shared<abstract::AbstractDictionary>(tensor_map);
+
+  AbstractBasePtrList args_spec_list = {fn_arg, tensor_tuple, tensor_dict};
+  AbstractTuplePtr ret =
+    dyn_cast<AbstractTuple>(engine_->Run(unpackCallGraphPtr, args_spec_list).eval_result->abstract());
+  if (ret == nullptr) {
+    FAIL() << "Cast ret to abstract tuple failed.";
+  }
+  size_t real = ret->size();
+  size_t expect = 9;
+  ASSERT_EQ(real, expect);
+}
+
+TEST_F(TestComposite, test_UnpackCall_5args) {
+  MetaFuncGraphPtr unpackCallPtr = std::make_shared<prim::UnpackCall>("UnpackCall");
+  FuncGraphPtr unpackCallGraphPtr = UTCompositeUtils::MakeFuncGraph(unpackCallPtr, 5);
+
+  auto fn_arg = std::make_shared<abstract::PrimitiveAbstractClosure>(prim::kPrimMakeTuple);
+  AbstractTensorPtr tensor = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
+  AbstractBasePtrList eles;
+  for (size_t i = 0; i < 6; i++) {
+    eles.push_back(tensor);
+  }
+  AbstractTuplePtr tensor_tuple = std::make_shared<AbstractTuple>(eles);
+  AbstractTensorPtr arr_x = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
+  AbstractTensorPtr arr_y = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
+  AbstractTensorPtr arr_z = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
+  auto key_x = std::make_shared<AbstractScalar>(static_cast<std::string>("x"));
+  auto key_y = std::make_shared<AbstractScalar>(static_cast<std::string>("y"));
+  auto key_z = std::make_shared<AbstractScalar>(static_cast<std::string>("z"));
+  std::vector<AbstractAttribute> tensor_map{{key_x, arr_x}, {key_y, arr_y}, {key_z, arr_z}};
   abstract::AbstractDictionaryPtr tensor_dict = std::make_shared<abstract::AbstractDictionary>(tensor_map);
 
   AbstractBasePtrList args_spec_list = {fn_arg, tensor_dict, tensor_tuple, tensor_dict, tensor_tuple};
-  AbstractTuplePtr ret = dyn_cast<AbstractTuple>(engine_->Run(unPackCallGraphPtr, args_spec_list).inferred->abstract());
+  AbstractTuplePtr ret =
+    dyn_cast<AbstractTuple>(engine_->Run(unpackCallGraphPtr, args_spec_list).eval_result->abstract());
   if (ret == nullptr) {
     FAIL() << "Cast ret to abstract tuple failed.";
   }
@@ -457,12 +488,60 @@ TEST_F(TestComposite, test_ZipOperation) {
   auto tuple = std::make_shared<AbstractTuple>(eles);
   AbstractBasePtrList args_spec_list = {tuple};
 
-  AbstractTuplePtr ret = dyn_cast<AbstractTuple>(engine_->Run(zip_op_graph, args_spec_list).inferred->abstract());
+  AbstractTuplePtr ret = dyn_cast<AbstractTuple>(engine_->Run(zip_op_graph, args_spec_list).eval_result->abstract());
   if (ret == nullptr) {
     FAIL() << "Cast ret to abstract tuple failed.";
   }
   size_t real = ret->size();
   size_t expect = 3;
   ASSERT_EQ(real, expect);
+}
+
+/// Feature: Shard operation.
+/// Description: Test the func_graph generation of Shard op and the inference of the Shard caller.
+/// Expectation: Generate and the infer successfully.
+TEST_F(TestComposite, test_shard) {
+  // Make origin func_graph which includes a relu node.
+  FuncGraphPtr origin_func_graph = std::make_shared<FuncGraph>();
+  std::vector<AnfNodePtr> inputs;
+  inputs.push_back(NewValueNode(prim::kPrimReLU));
+  inputs.push_back(origin_func_graph->add_parameter());
+  CNodePtr relu = origin_func_graph->NewCNode(inputs);
+  inputs.clear();
+  inputs.push_back(NewValueNode(prim::kPrimReturn));
+  inputs.push_back(relu);
+  CNodePtr origin_return = origin_func_graph->NewCNode(inputs);
+  origin_func_graph->set_return(origin_return);
+
+  // Make the func_graph which includes a Shard meta_func_graph.
+  FuncGraphPtr shard_func_graph = std::make_shared<FuncGraph>();
+  MetaFuncGraphPtr shard_op = std::make_shared<prim::Shard>("shard_op");
+  inputs.clear();
+  inputs.push_back(NewValueNode(shard_op));
+  inputs.push_back(NewValueNode(origin_func_graph));
+  for (size_t i = 0; i < 4; ++i) {
+    inputs.push_back(NewValueNode(MakeValue(0)));
+  }
+  CNodePtr shard = shard_func_graph->NewCNode(inputs);
+  inputs.clear();
+  inputs.push_back(shard);
+  inputs.push_back(shard_func_graph->add_parameter());
+  CNodePtr shard_user = shard_func_graph->NewCNode(inputs);
+  inputs.clear();
+  inputs.push_back(NewValueNode(prim::kPrimReturn));
+  inputs.push_back(shard_user);
+  CNodePtr shard_return = shard_func_graph->NewCNode(inputs);
+  shard_func_graph->set_return(shard_return);
+
+  auto tensor = UTCompositeUtils::ArrayInt32Of({2, 3, 4});
+  AbstractBasePtrList args_spec_list = {tensor};
+
+  auto ret = engine_->Run(shard_func_graph, args_spec_list).eval_result->abstract();
+  ASSERT_NE(ret, nullptr);
+  ASSERT_TRUE(ret->isa<abstract::AbstractTensor>());
+  auto build_shape = ret->BuildShape();
+  EXPECT_TRUE(build_shape->isa<abstract::Shape>());
+  auto shape = build_shape->cast<abstract::ShapePtr>();
+  ASSERT_EQ(shape->shape(), std::vector<int64_t>({2, 3, 4}));
 }
 }  // namespace mindspore

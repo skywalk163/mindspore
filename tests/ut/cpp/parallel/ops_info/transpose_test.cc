@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@
 #include <list>
 #include <vector>
 #include "common/common_test.h"
-#include "parallel/strategy.h"
-#include "parallel/ops_info/transpose_info.h"
-#include "parallel/device_manager.h"
-#include "parallel/step_parallel.h"
+#include "frontend/parallel/strategy.h"
+#include "frontend/parallel/ops_info/transpose_info.h"
+#include "frontend/parallel/device_manager.h"
+#include "frontend/parallel/step_parallel.h"
 
 namespace mindspore {
 namespace parallel {
@@ -38,13 +38,13 @@ class TestTransposeInfo : public UT::Common {
 };
 
 void TestTransposeInfo::SetUp() {
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 34; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(32);
   stage_map.push_back(2);
 
@@ -54,11 +54,11 @@ void TestTransposeInfo::SetUp() {
   g_device_manager = std::make_shared<DeviceManager>();
   g_device_manager->Init(dev_list, local_dev, stage_map, "hccl");
 
-  std::unordered_map<std::string, ValuePtr> attr;
+  mindspore::HashMap<std::string, ValuePtr> attr;
 
   Shapes inputs_shape = {{128, 64}};
   Shapes outputs_shape = {{64, 128}};
-  std::vector<int> axis = {1, 0};
+  std::vector<int64_t> axis = {1, 0};
   ValuePtr val0;
   ValuePtr val1 = MakeValue(axis);
   std::vector<ValuePtr> val = {val0, val1};
@@ -68,32 +68,32 @@ void TestTransposeInfo::SetUp() {
 }
 
 TEST_F(TestTransposeInfo, InferDevMatrixShape1) {
-  std::vector<Dimensions> inputs = {{4, 8}};
+  Strategies inputs = {{4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  transpose->Init(strategy);
-  std::vector<int32_t> dev_matrix_shape = transpose->dev_matrix_shape();
+  transpose->Init(strategy, nullptr);
+  Shape dev_matrix_shape = transpose->dev_matrix_shape();
 
-  std::vector<int32_t> expect = {4, 8};
+  Shape expect = {4, 8};
   ASSERT_EQ(dev_matrix_shape, expect);
 }
 
 TEST_F(TestTransposeInfo, InferDevMatrixShape2) {
-  std::vector<Dimensions> inputs = {{4, 1}};
+  Strategies inputs = {{4, 1}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  transpose->Init(strategy);
-  std::vector<int32_t> dev_matrix_shape = transpose->dev_matrix_shape();
+  transpose->Init(strategy, nullptr);
+  Shape dev_matrix_shape = transpose->dev_matrix_shape();
 
-  std::vector<int32_t> expect = {8, 4, 1};
+  Shape expect = {4, 1, 8};
   ASSERT_EQ(dev_matrix_shape, expect);
 }
 
 TEST_F(TestTransposeInfo, InferSliceShape1) {
-  std::vector<Dimensions> str = {{4, 8}};
+  Strategies str = {{4, 8}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  transpose->Init(strategy);
+  transpose->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = transpose->inputs_tensor_info();
   std::vector<TensorInfo> outputs = transpose->outputs_tensor_info();
 
@@ -111,10 +111,10 @@ TEST_F(TestTransposeInfo, InferSliceShape1) {
 }
 
 TEST_F(TestTransposeInfo, GetTensorLayout1) {
-  std::vector<Dimensions> str = {{4, 8}};
+  Strategies str = {{4, 8}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  transpose->Init(strategy);
+  transpose->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = transpose->inputs_tensor_info();
   std::vector<TensorInfo> outputs = transpose->outputs_tensor_info();
 
@@ -132,10 +132,10 @@ TEST_F(TestTransposeInfo, GetTensorLayout1) {
 }
 
 TEST_F(TestTransposeInfo, GetForwardOp1) {
-  std::vector<Dimensions> inputs = {{4, 8}};
+  Strategies inputs = {{4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  transpose->Init(strategy);
+  transpose->Init(strategy, nullptr);
   OperatorVector forward_op = transpose->forward_op();
   size_t size = forward_op.size();
 
@@ -143,10 +143,10 @@ TEST_F(TestTransposeInfo, GetForwardOp1) {
 }
 
 TEST_F(TestTransposeInfo, GetMirrorOPs1) {
-  std::vector<Dimensions> inputs = {{4, 8}};
+  Strategies inputs = {{4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  transpose->Init(strategy);
+  transpose->Init(strategy, nullptr);
   MirrorOps mirror_ops = transpose->mirror_ops();
 
   size_t size = mirror_ops.size();
@@ -155,26 +155,26 @@ TEST_F(TestTransposeInfo, GetMirrorOPs1) {
 }
 
 TEST_F(TestTransposeInfo, CheckStrategy1) {
-  std::vector<Dimensions> inputs = {{1, 4, 8}};
+  Strategies inputs = {{1, 4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = transpose->Init(strategy);
+  Status ret = transpose->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 
 TEST_F(TestTransposeInfo, CheckStrategy2) {
-  std::vector<Dimensions> inputs = {{2, 4, 8}, {2, 4, 8}};
+  Strategies inputs = {{2, 4, 8}, {2, 4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = transpose->Init(strategy);
+  Status ret = transpose->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 
 TEST_F(TestTransposeInfo, CheckStrategy3) {
-  std::vector<Dimensions> inputs = {{4, 8}};
+  Strategies inputs = {{4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = transpose->Init(strategy);
+  Status ret = transpose->Init(strategy, nullptr);
   ASSERT_EQ(ret, SUCCESS);
 }
 

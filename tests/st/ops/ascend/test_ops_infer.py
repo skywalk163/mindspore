@@ -13,7 +13,6 @@
 # limitations under the License.
 # ============================================================================
 """ test nn ops """
-import functools
 import numpy as np
 import mindspore.nn as nn
 import mindspore.common.dtype as mstype
@@ -22,7 +21,7 @@ from mindspore import Tensor
 from mindspore.ops import operations as P
 from mindspore import context
 
-context.set_context(mode=context.GRAPH_MODE, save_graphs=True)
+context.set_context(mode=context.GRAPH_MODE)
 
 
 def test_cast_op_attr():

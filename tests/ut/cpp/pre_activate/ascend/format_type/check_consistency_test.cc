@@ -16,18 +16,17 @@
 #include "common/common_test.h"
 #include "common/py_func_graph_fetcher.h"
 #include "common/backend_common_test.h"
-#include "session/ascend_session.h"
-#include "session/anf_runtime_algorithm.h"
-#include "pipeline/resource.h"
-#include "pipeline/action.h"
-#include "operator/ops.h"
+#include "include/backend/anf_runtime_algorithm.h"
+#include "pipeline/jit/ps/resource.h"
+#include "pipeline/jit/ps/action.h"
+#include "frontend/operator/ops.h"
 #include "ir/tensor.h"
 #include "ir/manager.h"
-#include "debug/anf_ir_dump.h"
-#include "utils/utils.h"
+#include "include/common/debug/anf_ir_dump.h"
+#include "include/common/utils/utils.h"
 #include "kernel/kernel_build_info.h"
-#include "pre_activate/common/optimizer.h"
-#include "pre_activate/ascend/format_type/check_consistency.h"
+#include "include/backend/optimizer/optimizer.h"
+#include "plugin/device/ascend/optimizer/format_type/check_consistency.h"
 
 namespace mindspore {
 namespace opt {
@@ -45,7 +44,7 @@ TEST_F(TestHWCheckConsistency, test_check_consistency_for_format) {
   get_py_fun_.SetDoResolve(true);
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_check_consistency", "graph");
   // renormalize func_graph to infer and set shape and type information.
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   g->parameters()[0]->set_abstract(x_abstract);
   auto g_cast = g->get_return()->input(1);
@@ -106,7 +105,7 @@ TEST_F(TestHWCheckConsistency, test_check_consistency_for_dtype) {
   get_py_fun_.SetDoResolve(true);
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_check_consistency", "graph");
   // Renormalize func_graph to infer and set shape and type information.
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   g->parameters()[0]->set_abstract(x_abstract);
   auto g_cast = g->get_return()->input(1);

@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,14 @@
  */
 
 #include "common/common.h"
-#include "dataset/core/client.h"
-#include "dataset/core/global_context.h"
-#include "dataset/engine/datasetops/source/sampler/distributed_sampler.h"
-#include "dataset/engine/datasetops/source/sampler/random_sampler.h"
-#include "dataset/engine/datasetops/source/sampler/sampler.h"
-#include "dataset/engine/datasetops/source/sampler/sequential_sampler.h"
-#include "dataset/util/de_error.h"
-#include "dataset/util/status.h"
+#include "minddata/dataset/core/client.h"
+#include "minddata/dataset/core/global_context.h"
+#include "minddata/dataset/engine/datasetops/source/sampler/distributed_sampler.h"
+#include "minddata/dataset/engine/datasetops/source/sampler/random_sampler.h"
+#include "minddata/dataset/engine/datasetops/source/sampler/sampler.h"
+#include "minddata/dataset/engine/datasetops/source/sampler/sequential_sampler.h"
+#include "minddata/dataset/engine/datasetops/source/sampler/skip_first_epoch_sampler.h"
+#include "minddata/dataset/util/status.h"
 #include "gtest/gtest.h"
 #include "utils/log_adapter.h"
 #include "securec.h"
@@ -31,11 +31,8 @@ using namespace mindspore::dataset;
 
 Status CreateINT64Tensor(std::shared_ptr<Tensor> *sample_ids, int64_t num_elements, unsigned char *data = nullptr) {
   TensorShape shape(std::vector<int64_t>(1, num_elements));
-  RETURN_IF_NOT_OK(Tensor::CreateTensor(sample_ids, TensorImpl::kFlexible, shape,
-                                        DataType(DataType::DE_INT64), data));
-  if (data == nullptr) {
-    (*sample_ids)->GetMutableBuffer();  // allocate memory in case user forgets!
-  }
+  RETURN_IF_NOT_OK(Tensor::CreateFromMemory(shape, DataType(DataType::DE_INT64), data, sample_ids));
+
   return Status::OK();
 }
 
@@ -43,48 +40,46 @@ class MindDataTestStandAloneSampler : public UT::DatasetOpTesting {
  protected:
   class MockStorageOp : public RandomAccessOp {
    public:
-    MockStorageOp(int64_t val) : m_val_(val) {}
-
-    Status GetNumSamples(int64_t *ptr) const override {
-      (*ptr) = m_val_;
-      return Status::OK();
+    MockStorageOp(int64_t val) {
+      // row count is in base class as protected member
+      // GetNumRowsInDataset does not need an override, the default from base class is fine.
+      num_rows_ = val;
     }
-
-    Status GetNumRowsInDataset(int64_t *ptr) const override {
-      (*ptr) = m_val_;
-      return Status::OK();
-    }
-
-   private:
-    int64_t m_val_;
   };
 };
 
+/// Feature: MindData RT DistributedSampler Support
+/// Description: Test MindData RT DistributedlSampler HandshakeRandomAccessOp and GetNextSampler
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestStandAloneSampler, TestDistributedSampler) {
   std::vector<std::shared_ptr<Tensor>> row;
   uint64_t res[6][7] = {{0, 3, 6, 9, 12, 15, 18},  {1, 4, 7, 10, 13, 16, 19}, {2, 5, 8, 11, 14, 17, 0},
                         {0, 17, 4, 10, 14, 8, 15}, {13, 9, 16, 3, 2, 19, 12}, {1, 11, 6, 18, 7, 5, 0}};
   for (int i = 0; i < 6; i++) {
     std::shared_ptr<Tensor> t;
-    Tensor::CreateTensor(&t, TensorImpl::kFlexible, TensorShape({7}),
-                         DataType(DataType::DE_INT64), (unsigned char *)(res[i]));
+    Tensor::CreateFromMemory(TensorShape({7}), DataType(DataType::DE_INT64), (unsigned char *)(res[i]), &t);
     row.push_back(t);
   }
   MockStorageOp mock(20);
-  std::unique_ptr<DataBuffer> db;
   std::shared_ptr<Tensor> tensor;
+  int64_t num_samples = 0;
+  TensorRow sample_row;
   for (int i = 0; i < 6; i++) {
-    std::unique_ptr<Sampler> sampler = std::make_unique<DistributedSampler>(3, i % 3, (i < 3 ? false : true));
+    std::shared_ptr<SamplerRT> sampler =
+      std::make_shared<DistributedSamplerRT>(3, i % 3, (i < 3 ? false : true), num_samples);
     sampler->HandshakeRandomAccessOp(&mock);
-    sampler->GetNextBuffer(&db);
-    db->GetTensor(&tensor, 0, 0);
+    sampler->GetNextSample(&sample_row);
+    tensor = sample_row[0];
     MS_LOG(DEBUG) << (*tensor);
-    if(i < 3) {  // This is added due to std::shuffle()
+    if (i < 3) {  // This is added due to std::shuffle()
       EXPECT_TRUE((*tensor) == (*row[i]));
     }
   }
 }
 
+/// Feature: MindData RT SequentialSampler Support
+/// Description: Test MindData RT SequentialSampler HandshakeRandomAccessOp, GetNextSample, and ResetSampler
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestStandAloneSampler, TestStandAoneSequentialSampler) {
   std::vector<std::shared_ptr<Tensor>> row;
   MockStorageOp mock(5);
@@ -92,21 +87,67 @@ TEST_F(MindDataTestStandAloneSampler, TestStandAoneSequentialSampler) {
   std::shared_ptr<Tensor> label1, label2;
   CreateINT64Tensor(&label1, 3, reinterpret_cast<unsigned char *>(res));
   CreateINT64Tensor(&label2, 2, reinterpret_cast<unsigned char *>(res + 3));
-  std::shared_ptr<Sampler> sampler = std::make_shared<SequentialSampler>(3);
-  std::unique_ptr<DataBuffer> db;
+  int64_t num_samples = 0;
+  int64_t start_index = 0;
+  std::shared_ptr<SamplerRT> sampler = std::make_shared<SequentialSamplerRT>(start_index, num_samples, 3);
+
   std::shared_ptr<Tensor> tensor;
+  TensorRow sample_row;
   sampler->HandshakeRandomAccessOp(&mock);
-  sampler->GetNextBuffer(&db);
-  db->GetTensor(&tensor, 0, 0);
+  sampler->GetNextSample(&sample_row);
+  tensor = sample_row[0];
   EXPECT_TRUE((*tensor) == (*label1));
-  sampler->GetNextBuffer(&db);
-  db->GetTensor(&tensor, 0, 0);
+  sampler->GetNextSample(&sample_row);
+  tensor = sample_row[0];
   EXPECT_TRUE((*tensor) == (*label2));
-  sampler->Reset();
-  sampler->GetNextBuffer(&db);
-  db->GetTensor(&tensor, 0, 0);
+  sampler->ResetSampler();
+  sampler->GetNextSample(&sample_row);
+  tensor = sample_row[0];
   EXPECT_TRUE((*tensor) == (*label1));
-  sampler->GetNextBuffer(&db);
-  db->GetTensor(&tensor, 0, 0);
+  sampler->GetNextSample(&sample_row);
+  tensor = sample_row[0];
   EXPECT_TRUE((*tensor) == (*label2));
+}
+
+/// Feature: MindData RT SkipFirstEpochSampler Support
+/// Description: Test MindData RT SkipFirstEpochSampler by Checking Sample Outputs
+/// Expectation: Results are successfully outputted.
+TEST_F(MindDataTestStandAloneSampler, TestStandAloneSkipFirstEpochSampler) {
+  MS_LOG(INFO) << "Doing MindDataTestStandAloneSampler-TestStandAloneSkipFirstEpochSampler.";
+  std::vector<std::shared_ptr<Tensor>> row;
+  MockStorageOp mock(5);
+  uint64_t res[5] = {0, 1, 2, 3, 4};
+  std::shared_ptr<Tensor> label, label1, label2;
+  CreateINT64Tensor(&label, 5, reinterpret_cast<unsigned char *>(res));
+  CreateINT64Tensor(&label1, 3, reinterpret_cast<unsigned char *>(res));
+  CreateINT64Tensor(&label2, 2, reinterpret_cast<unsigned char *>(res + 3));
+  int64_t num_samples = 0;
+  int64_t start_index = 0;
+  std::shared_ptr<SamplerRT> sampler = std::make_shared<SkipFirstEpochSamplerRT>(start_index, num_samples, 3);
+
+  std::shared_ptr<Tensor> tensor;
+  TensorRow sample_row;
+  sampler->HandshakeRandomAccessOp(&mock);
+  sampler->GetNextSample(&sample_row);
+  tensor = sample_row[0];
+  EXPECT_TRUE((*tensor) == (*label1));
+
+  sampler->GetNextSample(&sample_row);
+  tensor = sample_row[0];
+  EXPECT_TRUE((*tensor) == (*label2));
+
+  // Test output after Reset
+  sampler->ResetSampler();
+  sampler->GetNextSample(&sample_row);
+  tensor = sample_row[0];
+  EXPECT_TRUE((*tensor) == (*label));
+
+  // Test different start index
+  start_index = 2;
+  CreateINT64Tensor(&label, 3, reinterpret_cast<unsigned char *>(res + 2));
+  sampler = std::make_shared<SkipFirstEpochSamplerRT>(start_index, num_samples, 3);
+  sampler->HandshakeRandomAccessOp(&mock);
+  sampler->GetNextSample(&sample_row);
+  tensor = sample_row[0];
+  EXPECT_TRUE((*tensor) == (*label));
 }

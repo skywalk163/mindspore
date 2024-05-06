@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,12 @@
  */
 
 #include "common/common_test.h"
-#include "parallel/device_manager.h"
-#include "parallel/auto_parallel/graph_costmodel.h"
-#include "parallel/ops_info/matmul_info.h"
-#include "parallel/ops_info/activation_info.h"
-#include "parallel/ops_info/tmp_identity_info.h"
-#include "parallel/auto_parallel/dp_algo_costmodel.h"
+#include "frontend/parallel/device_manager.h"
+#include "frontend/parallel/auto_parallel/graph_costmodel.h"
+#include "frontend/parallel/ops_info/matmul_info.h"
+#include "frontend/parallel/ops_info/activation_info.h"
+#include "frontend/parallel/ops_info/tmp_identity_info.h"
+#include "frontend/parallel/auto_parallel/dp_algo_costmodel.h"
 
 namespace mindspore {
 namespace parallel {
@@ -153,14 +153,13 @@ class TestDPAlgo : public UT::Common {
 
 void TestDPAlgo::SetUp() {
   cost_graph = std::make_shared<CostGraph>();
-  cost_graph->SetDeviceMemoryAndCostParameter();
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 10; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(8);
   stage_map.push_back(2);
 
@@ -173,7 +172,7 @@ void TestDPAlgo::SetUp() {
   // matmul0
   ValuePtr transpose_a_0 = MakeValue(false);
   ValuePtr transpose_b_0 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_0 = {{"transpose_a", transpose_a_0}, {"transpose_b", transpose_b_0}};
+  mindspore::HashMap<std::string, ValuePtr> attr_0 = {{"transpose_a", transpose_a_0}, {"transpose_b", transpose_b_0}};
   Shapes inputs_shape_0 = {{128, 1024}, {1024, 4096}};
   Shapes outputs_shape_0 = {{4096, 1024}};
   matmul0 = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_0, outputs_shape_0, attr_0);
@@ -183,7 +182,7 @@ void TestDPAlgo::SetUp() {
   // matmul1
   ValuePtr transpose_a_1 = MakeValue(false);
   ValuePtr transpose_b_1 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_1 = {{"transpose_a", transpose_a_1}, {"transpose_b", transpose_b_1}};
+  mindspore::HashMap<std::string, ValuePtr> attr_1 = {{"transpose_a", transpose_a_1}, {"transpose_b", transpose_b_1}};
   Shapes inputs_shape_1 = {{128, 1024}, {1024, 4096}};
   Shapes outputs_shape_1 = {{128, 4096}};
   matmul1 = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_1, outputs_shape_1, attr_1);
@@ -193,7 +192,7 @@ void TestDPAlgo::SetUp() {
   // matmul2
   ValuePtr transpose_a_2 = MakeValue(false);
   ValuePtr transpose_b_2 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_2 = {{"transpose_a", transpose_a_2}, {"transpose_b", transpose_b_2}};
+  mindspore::HashMap<std::string, ValuePtr> attr_2 = {{"transpose_a", transpose_a_2}, {"transpose_b", transpose_b_2}};
   Shapes inputs_shape_2 = {{128, 4096}, {4096, 1024}};
   Shapes outputs_shape_2 = {{128, 1024}};
   matmul2 = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_2, outputs_shape_2, attr_2);
@@ -203,7 +202,7 @@ void TestDPAlgo::SetUp() {
   // matmul3
   ValuePtr transpose_a_3 = MakeValue(false);
   ValuePtr transpose_b_3 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_3 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_3}};
+  mindspore::HashMap<std::string, ValuePtr> attr_3 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_3}};
   Shapes inputs_shape_3 = {{1024, 128}, {128, 4096}};
   Shapes outputs_shape_3 = {{1024, 4096}};
   matmul3 = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_3, outputs_shape_3, attr_3);
@@ -213,7 +212,7 @@ void TestDPAlgo::SetUp() {
   // matmul4
   ValuePtr transpose_a_4 = MakeValue(false);
   ValuePtr transpose_b_4 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_4 = {{"transpose_a", transpose_a_4}, {"transpose_b", transpose_b_4}};
+  mindspore::HashMap<std::string, ValuePtr> attr_4 = {{"transpose_a", transpose_a_4}, {"transpose_b", transpose_b_4}};
   Shapes inputs_shape_4 = {{128, 1024}, {1024, 4096}};
   Shapes outputs_shape_4 = {{128, 4096}};
   matmul4 = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_4, outputs_shape_4, attr_4);
@@ -223,7 +222,7 @@ void TestDPAlgo::SetUp() {
   // matmul5
   ValuePtr transpose_a_5 = MakeValue(false);
   ValuePtr transpose_b_5 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_5 = {{"transpose_a", transpose_a_5}, {"transpose_b", transpose_b_5}};
+  mindspore::HashMap<std::string, ValuePtr> attr_5 = {{"transpose_a", transpose_a_5}, {"transpose_b", transpose_b_5}};
   Shapes inputs_shape_5 = {{128, 4096}, {4096, 4096}};
   Shapes outputs_shape_5 = {{128, 4096}};
   matmul5 = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_5, outputs_shape_5, attr_5);
@@ -233,7 +232,7 @@ void TestDPAlgo::SetUp() {
   // matmul6
   ValuePtr transpose_a_6 = MakeValue(false);
   ValuePtr transpose_b_6 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_6 = {{"transpose_a", transpose_a_6}, {"transpose_b", transpose_b_6}};
+  mindspore::HashMap<std::string, ValuePtr> attr_6 = {{"transpose_a", transpose_a_6}, {"transpose_b", transpose_b_6}};
   Shapes inputs_shape_6 = {{4096, 128}, {128, 1024}};
   Shapes outputs_shape_6 = {{4096, 1024}};
   matmul6 = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_6, outputs_shape_6, attr_6);
@@ -243,7 +242,7 @@ void TestDPAlgo::SetUp() {
   // matmul7
   ValuePtr transpose_a_7 = MakeValue(false);
   ValuePtr transpose_b_7 = MakeValue(true);
-  std::unordered_map<std::string, ValuePtr> attr_7 = {{"transpose_a", transpose_a_7}, {"transpose_b", transpose_b_7}};
+  mindspore::HashMap<std::string, ValuePtr> attr_7 = {{"transpose_a", transpose_a_7}, {"transpose_b", transpose_b_7}};
   Shapes inputs_shape_7 = {{64, 128}, {4096, 128}};
   Shapes outputs_shape_7 = {{64, 4096}};
   matmul7 = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_7, outputs_shape_7, attr_7);
@@ -253,7 +252,7 @@ void TestDPAlgo::SetUp() {
   // matmul8
   ValuePtr transpose_a_8 = MakeValue(false);
   ValuePtr transpose_b_8 = MakeValue(true);
-  std::unordered_map<std::string, ValuePtr> attr_8 = {{"transpose_a", transpose_a_8}, {"transpose_b", transpose_b_8}};
+  mindspore::HashMap<std::string, ValuePtr> attr_8 = {{"transpose_a", transpose_a_8}, {"transpose_b", transpose_b_8}};
   Shapes inputs_shape_8 = {{64, 4096}, {40960, 4096}};
   Shapes outputs_shape_8 = {{64, 40960}};
   matmul8 = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_8, outputs_shape_8, attr_8);
@@ -282,7 +281,7 @@ void TestDPAlgo::ConstructBatmanGraph() {
   std::string edge_matmul_matmul_name = "MatMul-MatMul";
   std::string edge_iden_matmul_name = "TmpIdentity-MatMul";
 
-  std::unordered_map<std::string, ValuePtr> attr = {};
+  mindspore::HashMap<std::string, ValuePtr> attr = {};
   Shapes inputs_shape = {{64, 64}};
   Shapes outputs_shape = {{64, 64}};
   tmp_identity_ptr1 = std::make_shared<TmpIdentityInfo>(inputs_shape, outputs_shape, attr);
@@ -300,7 +299,7 @@ void TestDPAlgo::ConstructBatmanGraph() {
   // mm1_ptr
   ValuePtr transpose_a_1 = MakeValue(false);
   ValuePtr transpose_b_1 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_1 = {{"transpose_a", transpose_a_1}, {"transpose_b", transpose_b_1}};
+  mindspore::HashMap<std::string, ValuePtr> attr_1 = {{"transpose_a", transpose_a_1}, {"transpose_b", transpose_b_1}};
   Shapes inputs_shape_1 = {{64, 64}, {64, 64}};
   Shapes outputs_shape_1 = {{64, 64}};
   mm1_ptr = std::make_shared<MatMulInfo>("matmul_info1", inputs_shape_1, outputs_shape_1, attr_1);
@@ -309,7 +308,7 @@ void TestDPAlgo::ConstructBatmanGraph() {
   // mm2_ptr
   ValuePtr transpose_a_2 = MakeValue(false);
   ValuePtr transpose_b_2 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_2 = {{"transpose_a", transpose_a_2}, {"transpose_b", transpose_b_2}};
+  mindspore::HashMap<std::string, ValuePtr> attr_2 = {{"transpose_a", transpose_a_2}, {"transpose_b", transpose_b_2}};
   Shapes inputs_shape_2 = {{64, 64}, {64, 64}};
   Shapes outputs_shape_2 = {{64, 64}};
   mm2_ptr = std::make_shared<MatMulInfo>("matmul_info2", inputs_shape_2, outputs_shape_2, attr_2);
@@ -318,7 +317,7 @@ void TestDPAlgo::ConstructBatmanGraph() {
   // mm3_ptr
   ValuePtr transpose_a_3 = MakeValue(false);
   ValuePtr transpose_b_3 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_3 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_3}};
+  mindspore::HashMap<std::string, ValuePtr> attr_3 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_3}};
   Shapes inputs_shape_3 = {{64, 64}, {64, 64}};
   Shapes outputs_shape_3 = {{64, 64}};
   mm3_ptr = std::make_shared<MatMulInfo>("matmul_info3", inputs_shape_3, outputs_shape_3, attr_3);
@@ -327,7 +326,7 @@ void TestDPAlgo::ConstructBatmanGraph() {
   // mm4_ptr
   ValuePtr transpose_a_4 = MakeValue(false);
   ValuePtr transpose_b_4 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_4 = {{"transpose_a", transpose_a_4}, {"transpose_b", transpose_b_4}};
+  mindspore::HashMap<std::string, ValuePtr> attr_4 = {{"transpose_a", transpose_a_4}, {"transpose_b", transpose_b_4}};
   Shapes inputs_shape_4 = {{64, 64}, {64, 64}};
   Shapes outputs_shape_4 = {{64, 64}};
   mm4_ptr = std::make_shared<MatMulInfo>("matmul_info4", inputs_shape_4, outputs_shape_4, attr_4);
@@ -336,7 +335,7 @@ void TestDPAlgo::ConstructBatmanGraph() {
   // mm5_ptr
   ValuePtr transpose_a_5 = MakeValue(false);
   ValuePtr transpose_b_5 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_5 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_5}};
+  mindspore::HashMap<std::string, ValuePtr> attr_5 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_5}};
   Shapes inputs_shape_5 = {{64, 64}, {64, 64}};
   Shapes outputs_shape_5 = {{64, 64}};
   mm5_ptr = std::make_shared<MatMulInfo>("matmul_info5", inputs_shape_5, outputs_shape_5, attr_5);
@@ -345,7 +344,7 @@ void TestDPAlgo::ConstructBatmanGraph() {
   // mm6_ptr
   ValuePtr transpose_a_6 = MakeValue(false);
   ValuePtr transpose_b_6 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_6 = {{"transpose_a", transpose_a_6}, {"transpose_b", transpose_b_6}};
+  mindspore::HashMap<std::string, ValuePtr> attr_6 = {{"transpose_a", transpose_a_6}, {"transpose_b", transpose_b_6}};
   Shapes inputs_shape_6 = {{64, 64}, {64, 64}};
   Shapes outputs_shape_6 = {{64, 64}};
   mm6_ptr = std::make_shared<MatMulInfo>("matmul_info6", inputs_shape_6, outputs_shape_6, attr_6);
@@ -354,7 +353,7 @@ void TestDPAlgo::ConstructBatmanGraph() {
   // mm7_ptr
   ValuePtr transpose_a_7 = MakeValue(false);
   ValuePtr transpose_b_7 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_7 = {{"transpose_a", transpose_a_7}, {"transpose_b", transpose_a_7}};
+  mindspore::HashMap<std::string, ValuePtr> attr_7 = {{"transpose_a", transpose_a_7}, {"transpose_b", transpose_a_7}};
   Shapes inputs_shape_7 = {{64, 64}, {64, 64}};
   Shapes outputs_shape_7 = {{64, 64}};
   mm7_ptr = std::make_shared<MatMulInfo>("matmul_info7", inputs_shape_7, outputs_shape_7, attr_7);
@@ -465,7 +464,7 @@ void TestDPAlgo::ConstructBatmanGraph() {
 }
 
 void TestDPAlgo::ConstructTriangleGraph() {
-  std::unordered_map<std::string, ValuePtr> attr = {};
+  mindspore::HashMap<std::string, ValuePtr> attr = {};
   Shapes inputs_shape = {{64, 64}};
   Shapes outputs_shape = {{64, 64}};
   tmp_identity_ptr1 = std::make_shared<TmpIdentityInfo>(inputs_shape, outputs_shape, attr);
@@ -475,7 +474,7 @@ void TestDPAlgo::ConstructTriangleGraph() {
   // mm6_ptr
   ValuePtr transpose_a_6 = MakeValue(false);
   ValuePtr transpose_b_6 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_6 = {{"transpose_a", transpose_a_6}, {"transpose_b", transpose_b_6}};
+  mindspore::HashMap<std::string, ValuePtr> attr_6 = {{"transpose_a", transpose_a_6}, {"transpose_b", transpose_b_6}};
   Shapes inputs_shape_6 = {{64, 64}, {64, 64}};
   Shapes outputs_shape_6 = {{64, 64}};
   mm6_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_6, outputs_shape_6, attr_6);
@@ -488,7 +487,7 @@ void TestDPAlgo::ConstructTriangleGraph() {
   // mm1_ptr
   ValuePtr transpose_a_1 = MakeValue(false);
   ValuePtr transpose_b_1 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_1 = {{"transpose_a", transpose_a_1}, {"transpose_b", transpose_b_1}};
+  mindspore::HashMap<std::string, ValuePtr> attr_1 = {{"transpose_a", transpose_a_1}, {"transpose_b", transpose_b_1}};
   Shapes inputs_shape_1 = {{64, 64}, {64, 64}};
   Shapes outputs_shape_1 = {{64, 64}};
   mm1_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_1, outputs_shape_1, attr_1);
@@ -497,7 +496,7 @@ void TestDPAlgo::ConstructTriangleGraph() {
   // mm2_ptr
   ValuePtr transpose_a_2 = MakeValue(false);
   ValuePtr transpose_b_2 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_2 = {{"transpose_a", transpose_a_2}, {"transpose_b", transpose_b_2}};
+  mindspore::HashMap<std::string, ValuePtr> attr_2 = {{"transpose_a", transpose_a_2}, {"transpose_b", transpose_b_2}};
   Shapes inputs_shape_2 = {{64, 64}, {64, 64}};
   Shapes outputs_shape_2 = {{64, 64}};
   mm2_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_2, outputs_shape_2, attr_2);
@@ -506,7 +505,7 @@ void TestDPAlgo::ConstructTriangleGraph() {
   // mm3_ptr
   ValuePtr transpose_a_3 = MakeValue(false);
   ValuePtr transpose_b_3 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_3 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_3}};
+  mindspore::HashMap<std::string, ValuePtr> attr_3 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_3}};
   Shapes inputs_shape_3 = {{64, 64}, {64, 64}};
   Shapes outputs_shape_3 = {{64, 64}};
   mm3_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_3, outputs_shape_3, attr_3);
@@ -515,7 +514,7 @@ void TestDPAlgo::ConstructTriangleGraph() {
   // mm4_ptr
   ValuePtr transpose_a_4 = MakeValue(false);
   ValuePtr transpose_b_4 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_4 = {{"transpose_a", transpose_a_4}, {"transpose_b", transpose_b_4}};
+  mindspore::HashMap<std::string, ValuePtr> attr_4 = {{"transpose_a", transpose_a_4}, {"transpose_b", transpose_b_4}};
   Shapes inputs_shape_4 = {{64, 64}, {64, 64}};
   Shapes outputs_shape_4 = {{64, 64}};
   mm4_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_4, outputs_shape_4, attr_4);
@@ -524,7 +523,7 @@ void TestDPAlgo::ConstructTriangleGraph() {
   // mm5_ptr
   ValuePtr transpose_a_5 = MakeValue(false);
   ValuePtr transpose_b_5 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_5 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_5}};
+  mindspore::HashMap<std::string, ValuePtr> attr_5 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_5}};
   Shapes inputs_shape_5 = {{64, 64}, {64, 64}};
   Shapes outputs_shape_5 = {{64, 64}};
   mm5_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_5, outputs_shape_5, attr_5);
@@ -606,7 +605,7 @@ void TestDPAlgo::ConstructTriangleGraph() {
 }
 
 void TestDPAlgo::ConstructTriangleGraph2() {
-  std::unordered_map<std::string, ValuePtr> attr = {};
+  mindspore::HashMap<std::string, ValuePtr> attr = {};
   Shapes inputs_shape = {{64, 64}};
   Shapes outputs_shape = {{64, 64}};
   tmp_identity_ptr1 = std::make_shared<TmpIdentityInfo>(inputs_shape, outputs_shape, attr);
@@ -616,7 +615,7 @@ void TestDPAlgo::ConstructTriangleGraph2() {
   // mm1_ptr
   ValuePtr transpose_a_1 = MakeValue(false);
   ValuePtr transpose_b_1 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_1 = {{"transpose_a", transpose_a_1}, {"transpose_b", transpose_b_1}};
+  mindspore::HashMap<std::string, ValuePtr> attr_1 = {{"transpose_a", transpose_a_1}, {"transpose_b", transpose_b_1}};
   Shapes inputs_shape_1 = {{64, 64}, {64, 64}};
   Shapes outputs_shape_1 = {{64, 64}};
   mm1_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_1, outputs_shape_1, attr_1);
@@ -625,7 +624,7 @@ void TestDPAlgo::ConstructTriangleGraph2() {
   // mm2_ptr
   ValuePtr transpose_a_2 = MakeValue(false);
   ValuePtr transpose_b_2 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_2 = {{"transpose_a", transpose_a_2}, {"transpose_b", transpose_b_2}};
+  mindspore::HashMap<std::string, ValuePtr> attr_2 = {{"transpose_a", transpose_a_2}, {"transpose_b", transpose_b_2}};
   Shapes inputs_shape_2 = {{64, 64}, {64, 64}};
   Shapes outputs_shape_2 = {{64, 64}};
   mm2_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_2, outputs_shape_2, attr_2);
@@ -634,7 +633,7 @@ void TestDPAlgo::ConstructTriangleGraph2() {
   // mm3_ptr
   ValuePtr transpose_a_3 = MakeValue(false);
   ValuePtr transpose_b_3 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_3 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_3}};
+  mindspore::HashMap<std::string, ValuePtr> attr_3 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_3}};
   Shapes inputs_shape_3 = {{64, 64}, {64, 64}};
   Shapes outputs_shape_3 = {{64, 64}};
   mm3_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_3, outputs_shape_3, attr_3);
@@ -980,7 +979,7 @@ void TestDPAlgo::ConstructMMRGraph() {
   // mm1_ptr
   ValuePtr transpose_a_1 = MakeValue(false);
   ValuePtr transpose_b_1 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_1 = {{"transpose_a", transpose_a_1}, {"transpose_b", transpose_b_1}};
+  mindspore::HashMap<std::string, ValuePtr> attr_1 = {{"transpose_a", transpose_a_1}, {"transpose_b", transpose_b_1}};
   Shapes inputs_shape_1 = {{32, 16}, {16, 32}};
   Shapes outputs_shape_1 = {{32, 32}};
   mm1_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_1, outputs_shape_1, attr_1);
@@ -989,7 +988,7 @@ void TestDPAlgo::ConstructMMRGraph() {
   // mm2_ptr
   ValuePtr transpose_a_2 = MakeValue(false);
   ValuePtr transpose_b_2 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_2 = {{"transpose_a", transpose_a_2}, {"transpose_b", transpose_b_2}};
+  mindspore::HashMap<std::string, ValuePtr> attr_2 = {{"transpose_a", transpose_a_2}, {"transpose_b", transpose_b_2}};
   Shapes inputs_shape_2 = {{8, 32}, {32, 32}};
   Shapes outputs_shape_2 = {{8, 32}};
   mm2_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_2, outputs_shape_2, attr_2);
@@ -998,7 +997,7 @@ void TestDPAlgo::ConstructMMRGraph() {
   // mm3_ptr
   ValuePtr transpose_a_3 = MakeValue(false);
   ValuePtr transpose_b_3 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_3 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_3}};
+  mindspore::HashMap<std::string, ValuePtr> attr_3 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_3}};
   Shapes inputs_shape_3 = {{32, 32}, {32, 64}};
   Shapes outputs_shape_3 = {{32, 64}};
   mm3_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_3, outputs_shape_3, attr_3);
@@ -1007,7 +1006,7 @@ void TestDPAlgo::ConstructMMRGraph() {
   // mm4_ptr
   ValuePtr transpose_a_4 = MakeValue(false);
   ValuePtr transpose_b_4 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_4 = {{"transpose_a", transpose_a_4}, {"transpose_b", transpose_b_4}};
+  mindspore::HashMap<std::string, ValuePtr> attr_4 = {{"transpose_a", transpose_a_4}, {"transpose_b", transpose_b_4}};
   Shapes inputs_shape_4 = {{64, 32}, {32, 32}};
   Shapes outputs_shape_4 = {{64, 32}};
   mm4_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_4, outputs_shape_4, attr_4);
@@ -1016,7 +1015,7 @@ void TestDPAlgo::ConstructMMRGraph() {
   // mm5_ptr
   ValuePtr transpose_a_5 = MakeValue(false);
   ValuePtr transpose_b_5 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_5 = {{"transpose_a", transpose_a_5}, {"transpose_b", transpose_b_5}};
+  mindspore::HashMap<std::string, ValuePtr> attr_5 = {{"transpose_a", transpose_a_5}, {"transpose_b", transpose_b_5}};
   Shapes inputs_shape_5 = {{8, 32}, {32, 64}};
   Shapes outputs_shape_5 = {{8, 64}};
   mm5_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_5, outputs_shape_5, attr_5);
@@ -1025,14 +1024,14 @@ void TestDPAlgo::ConstructMMRGraph() {
   // mm5_ptr
   ValuePtr transpose_a_6 = MakeValue(false);
   ValuePtr transpose_b_6 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_6 = {{"transpose_a", transpose_a_6}, {"transpose_b", transpose_b_6}};
+  mindspore::HashMap<std::string, ValuePtr> attr_6 = {{"transpose_a", transpose_a_6}, {"transpose_b", transpose_b_6}};
   Shapes inputs_shape_6 = {{8, 64}, {64, 32}};
   Shapes outputs_shape_6 = {{8, 32}};
   mm6_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_6, outputs_shape_6, attr_6);
   mm6_ptr->set_outputs_type({kFloat32});
 
   ValuePtr relu = MakeValue(std::string("relu"));
-  std::unordered_map<std::string, ValuePtr> relu_attr = {{"activation_type", relu}};
+  mindspore::HashMap<std::string, ValuePtr> relu_attr = {{"activation_type", relu}};
 
   // relu1_ptr
   Shapes relu1_inputs_shape = {{8, 32}};
@@ -1172,7 +1171,7 @@ void TestDPAlgo::ConstructMMRGraph() {
 }
 
 void TestDPAlgo::ConstructIdentityDiamondGraph() {
-  std::unordered_map<std::string, ValuePtr> attr = {};
+  mindspore::HashMap<std::string, ValuePtr> attr = {};
   Shapes inputs_shape = {{32, 64}};
   Shapes outputs_shape = {{32, 64}};
   tmp_identity_ptr = std::make_shared<TmpIdentityInfo>(inputs_shape, outputs_shape, attr);
@@ -1181,7 +1180,7 @@ void TestDPAlgo::ConstructIdentityDiamondGraph() {
   // mm1_ptr
   ValuePtr transpose_a_1 = MakeValue(false);
   ValuePtr transpose_b_1 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_1 = {{"transpose_a", transpose_a_1}, {"transpose_b", transpose_b_1}};
+  mindspore::HashMap<std::string, ValuePtr> attr_1 = {{"transpose_a", transpose_a_1}, {"transpose_b", transpose_b_1}};
   Shapes inputs_shape_1 = {{32, 64}, {64, 128}};
   Shapes outputs_shape_1 = {{32, 128}};
   mm1_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_1, outputs_shape_1, attr_1);
@@ -1190,7 +1189,7 @@ void TestDPAlgo::ConstructIdentityDiamondGraph() {
   // mm2_ptr
   ValuePtr transpose_a_2 = MakeValue(false);
   ValuePtr transpose_b_2 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_2 = {{"transpose_a", transpose_a_2}, {"transpose_b", transpose_b_2}};
+  mindspore::HashMap<std::string, ValuePtr> attr_2 = {{"transpose_a", transpose_a_2}, {"transpose_b", transpose_b_2}};
   Shapes inputs_shape_2 = {{128, 32}, {32, 64}};
   Shapes outputs_shape_2 = {{128, 64}};
   mm2_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_2, outputs_shape_2, attr_2);
@@ -1199,7 +1198,7 @@ void TestDPAlgo::ConstructIdentityDiamondGraph() {
   // mm3_ptr
   ValuePtr transpose_a_3 = MakeValue(false);
   ValuePtr transpose_b_3 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_3 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_3}};
+  mindspore::HashMap<std::string, ValuePtr> attr_3 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_3}};
   Shapes inputs_shape_3 = {{32, 128}, {128, 64}};
   Shapes outputs_shape_3 = {{32, 64}};
   mm3_ptr = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_3, outputs_shape_3, attr_3);
@@ -1327,8 +1326,8 @@ TEST_F(TestDPAlgo, test_GetStrategy_for_DoubleStarGraph) {
 
   for (auto &op : cost_graph->GetOperators()) {
     StrategyPtr s_strategy = op->selected_strategy();
-    std::vector<int32_t> strategy_0 = s_strategy->GetInputDim()[0];
-    std::vector<int32_t> strategy_1 = s_strategy->GetInputDim()[1];
+    Dimensions strategy_0 = s_strategy->GetInputDim()[0];
+    Dimensions strategy_1 = s_strategy->GetInputDim()[1];
 
     std::string string_strategy_0 = "[";
     for (size_t i = 0; i < strategy_0.size(); ++i) {

@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,20 @@
  * limitations under the License.
  */
 #include "common/common_test.h"
-#include "parallel/step_parallel.h"
-#include "parallel/graph_util/generate_graph.h"
+#include "mindspore/core/ops/math_ops.h"
+#include "mindspore/core/ops/array_ops.h"
+#include "mindspore/core/ops/framework_ops.h"
+#include "frontend/parallel/step_parallel.h"
+#include "frontend/parallel/step_parallel_utils.h"
+#include "frontend/parallel/graph_util/generate_graph.h"
 #include "common/py_func_graph_fetcher.h"
-#include "debug/draw.h"
-#include "operator/ops.h"
-#include "pipeline/static_analysis/static_analysis.h"
+#include "include/common/debug/draw.h"
+#include "frontend/operator/ops.h"
+#include "pipeline/jit/ps/static_analysis/static_analysis.h"
+#include "include/common/utils/convert_utils_py.h"
+#include "utils/ms_context.h"
+
+using namespace pybind11::literals;
 
 namespace mindspore {
 namespace parallel {
@@ -31,16 +39,14 @@ class TestStepParallel : public UT::Common {
   void TearDown() {}
 };
 
-void TestStepParallel::SetUp() { UT::InitPythonPath(); }
-
 void Init_Device_Manager() {
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 20; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(16);
   stage_map.push_back(4);
 
@@ -51,7 +57,14 @@ void Init_Device_Manager() {
   g_device_manager->Init(dev_list, local_dev, stage_map, "hccl");
 }
 
-CNodePtr Make_Node(Shape x, Shape y, Shape out, int condition = 0) {
+void TestStepParallel::SetUp() {
+  auto ms_context = MsContext::GetInstance();
+  ms_context->set_param<int>(MS_CTX_EXECUTION_MODE, kGraphMode);
+  UT::InitPythonPath();
+  Init_Device_Manager();
+}
+
+CNodePtr Make_Node(Shape x, Shape y, Shape out, int64_t condition = 0) {
   FuncGraphPtr func_graph = std::make_shared<FuncGraph>();
   ParameterPtr param1 = func_graph->add_parameter();
   ParameterPtr param2 = func_graph->add_parameter();
@@ -60,15 +73,9 @@ CNodePtr Make_Node(Shape x, Shape y, Shape out, int condition = 0) {
   BaseShapePtr shape1 = std::make_shared<abstract::Shape>(x);
   BaseShapePtr shape2 = std::make_shared<abstract::Shape>(y);
   BaseShapePtr shape3 = std::make_shared<abstract::Shape>(out);
-  std::shared_ptr<tensor::Tensor> inputs_x = std::make_shared<tensor::Tensor>();
-  inputs_x->set_data_type(kNumberTypeInt32);
-  inputs_x->set_shape(x);
-  std::shared_ptr<tensor::Tensor> inputs_y = std::make_shared<tensor::Tensor>();
-  inputs_y->set_data_type(kNumberTypeInt32);
-  inputs_y->set_shape(y);
-  std::shared_ptr<tensor::Tensor> inputs_out = std::make_shared<tensor::Tensor>();
-  inputs_out->set_data_type(kNumberTypeInt32);
-  inputs_out->set_shape(out);
+  std::shared_ptr<tensor::Tensor> inputs_x = std::make_shared<tensor::Tensor>(kNumberTypeInt32, x);
+  std::shared_ptr<tensor::Tensor> inputs_y = std::make_shared<tensor::Tensor>(kNumberTypeInt32, y);
+  std::shared_ptr<tensor::Tensor> inputs_out = std::make_shared<tensor::Tensor>(kNumberTypeInt32, out);
   AbstractBasePtr abstract1 = abstract::FromValue(inputs_x, true);
   AbstractBasePtr abstract2 = abstract::FromValue(inputs_y, true);
   AbstractBasePtr abstract3 = abstract::FromValue(inputs_out, true);
@@ -82,8 +89,7 @@ CNodePtr Make_Node(Shape x, Shape y, Shape out, int condition = 0) {
       break;
     }
     case 1: {
-      abstract1->set_shape(nullptr);
-      param1->set_abstract(abstract1);
+      // Don't set abstract of param1, expecting a exception raised.
       param2->set_abstract(abstract2);
       break;
     }
@@ -92,7 +98,7 @@ CNodePtr Make_Node(Shape x, Shape y, Shape out, int condition = 0) {
       abstract2->set_shape(shape2);
       param1->set_abstract(abstract1);
       param2->set_abstract(abstract2);
-      abstract3 = abstract::FromValue(1, false);
+      abstract3 = abstract::FromValue(static_cast<int64_t>(1), false);
       break;
     }
     case 3: {
@@ -117,31 +123,21 @@ CNodePtr Make_Node(Shape x, Shape y, Shape out, int condition = 0) {
   return node;
 }
 
-FuncGraphManagerPtr Make_Manager(int condition = 0) {
-  Shape inputs_x = {64, 32};
-  Shape inputs_y = {32, 64};
-  Shape inputs_z = {64, 128};
-  Shape outputs_1 = {64, 64};
-  Shape outputs_2 = {64, 128};
+FuncGraphManagerPtr Make_Manager(int64_t condition = 0) {
+  std::vector<int64_t> inputs_x = {64, 32};
+  std::vector<int64_t> inputs_y = {32, 64};
+  std::vector<int64_t> inputs_z = {64, 128};
+  std::vector<int64_t> outputs_1 = {64, 64};
+  std::vector<int64_t> outputs_2 = {64, 128};
   FuncGraphPtr func_graph = std::make_shared<FuncGraph>();
   ParameterPtr param1 = func_graph->add_parameter();
   ParameterPtr param2 = func_graph->add_parameter();
   ParameterPtr param3 = func_graph->add_parameter();
-  std::shared_ptr<tensor::Tensor> inputs_x_dim = std::make_shared<tensor::Tensor>();
-  inputs_x_dim->set_data_type(kNumberTypeInt32);
-  inputs_x_dim->set_shape(inputs_x);
-  std::shared_ptr<tensor::Tensor> inputs_y_dim = std::make_shared<tensor::Tensor>();
-  inputs_y_dim->set_data_type(kNumberTypeInt32);
-  inputs_y_dim->set_shape(inputs_y);
-  std::shared_ptr<tensor::Tensor> inputs_z_dim = std::make_shared<tensor::Tensor>();
-  inputs_z_dim->set_data_type(kNumberTypeInt32);
-  inputs_z_dim->set_shape(inputs_z);
-  std::shared_ptr<tensor::Tensor> inputs_out1_dim = std::make_shared<tensor::Tensor>();
-  inputs_out1_dim->set_data_type(kNumberTypeInt32);
-  inputs_out1_dim->set_shape(outputs_1);
-  std::shared_ptr<tensor::Tensor> inputs_out2_dim = std::make_shared<tensor::Tensor>();
-  inputs_out2_dim->set_data_type(kNumberTypeInt32);
-  inputs_out2_dim->set_shape(outputs_2);
+  std::shared_ptr<tensor::Tensor> inputs_x_dim = std::make_shared<tensor::Tensor>(kNumberTypeInt32, inputs_x);
+  std::shared_ptr<tensor::Tensor> inputs_y_dim = std::make_shared<tensor::Tensor>(kNumberTypeInt32, inputs_y);
+  std::shared_ptr<tensor::Tensor> inputs_z_dim = std::make_shared<tensor::Tensor>(kNumberTypeInt32, inputs_z);
+  std::shared_ptr<tensor::Tensor> inputs_out1_dim = std::make_shared<tensor::Tensor>(kNumberTypeInt32, outputs_1);
+  std::shared_ptr<tensor::Tensor> inputs_out2_dim = std::make_shared<tensor::Tensor>(kNumberTypeInt32, outputs_2);
   AbstractBasePtr abstract_x = abstract::FromValue(inputs_x_dim, true);
   AbstractBasePtr abstract_y = abstract::FromValue(inputs_y_dim, true);
   AbstractBasePtr abstract_z = abstract::FromValue(inputs_z_dim, true);
@@ -150,8 +146,8 @@ FuncGraphManagerPtr Make_Manager(int condition = 0) {
   param1->set_abstract(abstract_x);
   param2->set_abstract(abstract_y);
   param3->set_abstract(abstract_z);
-  std::vector<int> v1 = {2, 2};
-  std::vector<int> v2 = {2, 4};
+  Dimensions v1 = {2, 2};
+  Dimensions v2 = {2, 4};
   std::vector<ValuePtr> elements = {MakeValue(v1), MakeValue(v2)};
   ValueTuplePtr var = std::make_shared<ValueTuple>(elements);
   std::vector<AnfNodePtr> inputs;
@@ -167,10 +163,10 @@ FuncGraphManagerPtr Make_Manager(int condition = 0) {
   prim1->AddAttr("transpose_a", transpose_a);
   prim1->AddAttr("transpose_b", transpose_b);
   prim1->AddAttr("instance_name", MakeValue("matmul1"));
-  prim1->AddAttr("strategy", var);
+  prim1->AddAttr("in_strategy", var);
   inputs.clear();
-  std::vector<int> v3 = {2, 2};
-  std::vector<int> v4 = {2, 4};
+  Dimensions v3 = {2, 2};
+  Dimensions v4 = {2, 4};
   std::vector<ValuePtr> elements2 = {MakeValue(v3), MakeValue(v4)};
   ValueTuplePtr var2 = std::make_shared<ValueTuple>(elements2);
   inputs.push_back(NewValueNode(prim::kPrimMatMul));
@@ -189,24 +185,24 @@ FuncGraphManagerPtr Make_Manager(int condition = 0) {
   prim2->AddAttr("transpose_a", transpose_a);
   prim2->AddAttr("transpose_b", transpose_b);
   prim2->AddAttr("instance_name", MakeValue("matmul2"));
-  prim2->AddAttr("strategy", var2);
+  prim2->AddAttr("in_strategy", var2);
   switch (condition) {
     case 1: {
-      prim1->set_attr("strategy", MakeValue(0));
+      prim1->set_attr("in_strategy", MakeValue(static_cast<int64_t>(0)));
       break;
     }
     case 2: {
-      std::vector<ValuePtr> elements_t = {MakeValue(0)};
+      std::vector<ValuePtr> elements_t = {MakeValue(static_cast<int64_t>(0))};
       ValueTuplePtr var_t = std::make_shared<ValueTuple>(elements_t);
-      prim1->set_attr("strategy", var_t);
+      prim1->set_attr("in_strategy", var_t);
       break;
     }
     case 3: {
-      std::vector<int> vt1 = {2, 4};
-      std::vector<int> vt2 = {2, 4};
+      Dimensions vt1 = {2, 4};
+      Dimensions vt2 = {2, 4};
       std::vector<ValuePtr> elements_t2 = {MakeValue(vt1), MakeValue(vt2)};
       ValueTuplePtr var_t2 = std::make_shared<ValueTuple>(elements_t2);
-      prim1->set_attr("strategy", var_t2);
+      prim1->set_attr("in_strategy", var_t2);
       break;
     }
   }
@@ -216,37 +212,49 @@ FuncGraphManagerPtr Make_Manager(int condition = 0) {
   return manager;
 }
 
+/// Feature: test get python path
+/// Description:
+/// Expectation: the python path is right
 TEST_F(TestStepParallel, GetPythonPath1) {
-  OperatorName operator_name = "AllReduce";
+  const char *operator_name = "AllReduce";
   const std::string expect = "mindspore.ops.operations";
-  auto temp = parallel::GetOpPythonPath(operator_name);
+  std::string temp = parallel::GetOpPythonPath(operator_name);
   ASSERT_EQ(temp, expect);
 }
 
+/// Feature: test get python path
+/// Description:
+/// Expectation: the python path is right
 TEST_F(TestStepParallel, GetPythonPath2) {
-  OperatorName operator_name = "TensorAdd";
+  const char *operator_name = "Add";
   const std::string expect = "mindspore.ops.operations";
-  auto temp = parallel::GetOpPythonPath(operator_name);
+  std::string temp = parallel::GetOpPythonPath(operator_name);
   ASSERT_EQ(temp, expect);
 }
 
+/// Feature: test extract strategy
+/// Description:
+/// Expectation: the strategy is right
 TEST_F(TestStepParallel, ExtractStrategy) {
   Dimensions v1 = {2, 2};
   Dimensions v2 = {4, 4};
-  std::unordered_map<std::string, ValuePtr> attrs;
+  mindspore::HashMap<std::string, ValuePtr> attrs;
   // stage
   ValuePtr val1 = MakeValue(v1);
   ValuePtr val2 = MakeValue(v2);
   std::vector<ValuePtr> elements = {val1, val2};
   ValueTuplePtr strategy_tuple = std::make_shared<ValueTuple>(elements);
-  attrs["strategy"] = strategy_tuple;
-  std::vector<Dimensions> strategy_expect = {v1, v2};
-  StrategyPtr strategy = ExtractStrategy(attrs);
-  std::vector<Dimensions> strategy_test = strategy->GetInputDim();
+  attrs["in_strategy"] = strategy_tuple;
+  Strategies strategy_expect = {v1, v2};
+  StrategyPtr strategy = ExtractStrategy(attrs["in_strategy"]);
+  Strategies strategy_test = strategy->GetInputDim();
 
   ASSERT_EQ(strategy_expect, strategy_test);
 }
 
+/// Feature: test extract shape
+/// Description:
+/// Expectation: the shape is right
 TEST_F(TestStepParallel, ExtractShape) {
   Shape inputs_x_dims = {64, 32};
   Shape inputs_y_dims = {32, 64};
@@ -255,6 +263,9 @@ TEST_F(TestStepParallel, ExtractShape) {
   EXPECT_THROW({ ExtractShape(node); }, std::runtime_error);
 }
 
+/// Feature: test extract shape
+/// Description:
+/// Expectation: the shape is right
 TEST_F(TestStepParallel, ExtractShape1) {
   Shape inputs_x_dims = {64, 32};
   Shape inputs_y_dims = {32, 64};
@@ -267,6 +278,9 @@ TEST_F(TestStepParallel, ExtractShape1) {
   ASSERT_EQ(shape_test, shape_expect);
 }
 
+/// Feature: test extract shape
+/// Description:
+/// Expectation: the shape is right
 TEST_F(TestStepParallel, ExtractShape2) {
   Shape inputs_x_dims = {64, 32};
   Shape inputs_y_dims = {32, 64};
@@ -275,6 +289,9 @@ TEST_F(TestStepParallel, ExtractShape2) {
   EXPECT_THROW({ ExtractShape(node); }, std::runtime_error);
 }
 
+/// Feature: test extract shape
+/// Description:
+/// Expectation: the shape is right
 TEST_F(TestStepParallel, ExtractShape3) {
   Shape inputs_x_dims = {64, 32};
   Shape inputs_y_dims = {32, 64};
@@ -286,16 +303,10 @@ TEST_F(TestStepParallel, ExtractShape3) {
   ASSERT_EQ(shape_test, shape_expect);
 }
 
-TEST_F(TestStepParallel, ExtractShape4) {
-  Shape inputs_x_dims = {64, 32};
-  Shape inputs_y_dims = {32, 64};
-  Shape outputs_dims = {64, 64};
-  CNodePtr node = Make_Node(inputs_x_dims, inputs_y_dims, outputs_dims, 2);
-  Shapes inputs_shape = std::vector<Shape>{inputs_x_dims, inputs_y_dims};
-  EXPECT_THROW({ ExtractShape(node); }, std::runtime_error);
-}
-
-TEST_F(TestStepParallel, CreatOpInstance) {
+/// Feature: test CreateOpInstance in auto parallel.
+/// Description: net with MicroBatchInterleaved in semi auto parallel.
+/// Expectation: success.
+TEST_F(TestStepParallel, CreateOpInstance) {
   ValuePtr attr0_value = MakeValue(REDUCE_OP_SUM);
   ValuePtr attr1_value = MakeValue("0-1-2");
   Attr attr0 = std::make_pair("op", attr0_value);
@@ -303,25 +314,24 @@ TEST_F(TestStepParallel, CreatOpInstance) {
   OperatorAttrs attrs = {attr0, attr1};
   OperatorName op_name = "AllReduce";
   OperatorParams operator_param;
+  py::object context = py::module::import("mindspore.context");
+  py::object set_context = context.attr("set_context");
+  set_context("mode"_a = kGraphMode);
   OperatorArgs args = std::make_pair(attrs, operator_param);
-  auto op_instance = CreatOpInstance(args.first, op_name, "test");
+  auto op_instance = CreateOpInstance(args.first, op_name, "test");
   ASSERT_TRUE(op_instance);
   PrimitivePyPtr allreduce_ptr = dyn_cast<PrimitivePy>(op_instance);
   ASSERT_TRUE(allreduce_ptr);
   if (nullptr != allreduce_ptr) {
     MS_LOG(INFO) << "Get PrimitivePyPtr: " << allreduce_ptr->name();
-    auto func = allreduce_ptr->GetComputeFunction();
-    if (py::isinstance<py::none>(func)) {
-      MS_LOG(EXCEPTION) << "" << allreduce_ptr->name() << "'s compute function is not implemented";
-    }
 
     std::vector<py::object> arglist;
     (void)std::transform(attrs.begin(), attrs.end(), std::back_inserter(arglist),
-                         [](Attr attr) { return ValuePtrToPyData(attr.second); });
-    py::object allreduce_pyobj = parse::python_adapter::CallPyFn(
-      "mindspore.parallel._utils", "_get_python_op", "AllReduce", "mindspore.ops.operations", "test", arglist);
+                         [](Attr attr) { return ValueToPyData(attr.second); });
+    py::object allreduce_pyobj = python_adapter::CallPyFn("mindspore.parallel._utils", "_get_python_op", "AllReduce",
+                                                          "mindspore.ops.operations", "test", arglist);
     py::dict opAttr = py::getattr(allreduce_pyobj, "attrs");
-    std::unordered_map<std::string, ValuePtr> attributes{};
+    mindspore::HashMap<std::string, ValuePtr> attributes{};
     for (auto item : opAttr) {
       if (!py::isinstance<py::str>(item.first)) {
         MS_LOG(EXCEPTION) << "type error in py dict convert";
@@ -343,6 +353,12 @@ TEST_F(TestStepParallel, CreatOpInstance) {
         } else if (name == "instance_name") {
           parse::ConvertData(py::cast<py::object>(item.second), &converted_ret);
           ASSERT_EQ(converted_ret->ToString(), "test");
+        } else if (name == "index") {
+          parse::ConvertData(py::cast<py::object>(item.second), &converted_ret);
+          ASSERT_EQ(converted_ret->ToString(), "0");
+        } else if (name == "no_eliminate") {
+          parse::ConvertData(py::cast<py::object>(item.second), &converted_ret);
+          ASSERT_EQ(converted_ret->ToString(), "true");
         } else {
           MS_LOG(EXCEPTION) << "Test failed";
         }
@@ -352,40 +368,47 @@ TEST_F(TestStepParallel, CreatOpInstance) {
   }
 }
 
-TEST_F(TestStepParallel, CreatOpInstance1) {
+/// Feature: test CreateOpInstance in auto parallel.
+/// Description: net with MicroBatchInterleaved in semi auto parallel.
+/// Expectation: success.
+TEST_F(TestStepParallel, CreateOpInstance1) {
   OperatorAttrs attrs;
   OperatorName op_name = "ABC";
   OperatorParams operator_param;
   OperatorArgs args = std::make_pair(attrs, operator_param);
-  EXPECT_THROW({ CreatOpInstance(args.first, op_name, "test"); }, std::runtime_error);
+  EXPECT_THROW({ CreateOpInstance(args.first, op_name, "test"); }, std::runtime_error);
 }
 
+/// Feature: test OperatorInstance in auto parallel.
+/// Description:
+/// Expectation: success.
 TEST_F(TestStepParallel, OperatorInstance) {
-  Init_Device_Manager();
-  // creat attrs and prim
+  // create  attrs and prim
   PrimitivePtr prim = NewValueNode(prim::kPrimMatMul)->value()->cast<PrimitivePtr>();
   ValuePtr transpose_a = MakeValue(false);
   ValuePtr transpose_b = MakeValue(false);
   prim->set_attr("transpose_a", transpose_a);
   prim->set_attr("transpose_b", transpose_b);
   auto attrs = prim->attrs();
-  // creat strategy
-  std::vector<Dimensions> strategy = {{2, 2}, {2, 4}};
+  // create  strategy
+  Strategies strategy = {{2, 2}, {2, 4}};
   StrategyPtr strategyPtr = parallel::NewStrategy(0, strategy);
-  // creat shape
+  // create  shape
   Shapes inputs_shape = std::vector<Shape>{{64, 32}, {32, 64}};
   Shapes outputs_shape = std::vector<Shape>{{64, 64}};
   std::vector<Shapes> shape = {inputs_shape, outputs_shape};
   TOTAL_OPS = 0;
   OperatorInfoPtr matmul_info = OperatorInstance(prim, attrs, shape);
-  matmul_info->Init(strategyPtr);
+  matmul_info->Init(strategyPtr, nullptr);
   std::string name_expect = "MatMulInfo00";
   std::string name_test = matmul_info->name();
   ASSERT_EQ(name_expect, name_test);
 }
 
+/// Feature: test ExtractInformation in auto parallel.
+/// Description:
+/// Expectation: success.
 TEST_F(TestStepParallel, ExtractInformation) {
-  Init_Device_Manager();
   FuncGraphManagerPtr manager = Make_Manager();
   FuncGraphSet graphs = manager->func_graphs();
   FuncGraphPtr graph = *graphs.begin();
@@ -394,8 +417,10 @@ TEST_F(TestStepParallel, ExtractInformation) {
   ExtractInformation(all_nodes);
 }
 
+/// Feature: test ExtractInformation in auto parallel.
+/// Description:
+/// Expectation: success.
 TEST_F(TestStepParallel, ExtractInformation2) {
-  Init_Device_Manager();
   FuncGraphManagerPtr manager = Make_Manager(2);
   FuncGraphSet graphs = manager->func_graphs();
   FuncGraphPtr graph = *graphs.begin();
@@ -404,8 +429,10 @@ TEST_F(TestStepParallel, ExtractInformation2) {
   EXPECT_THROW({ ExtractInformation(all_nodes); }, std::runtime_error);
 }
 
+/// Feature: test ExtractInformation in auto parallel.
+/// Description:
+/// Expectation: success.
 TEST_F(TestStepParallel, ExtractInformation3) {
-  Init_Device_Manager();
   FuncGraphManagerPtr manager = Make_Manager(3);
   FuncGraphSet graphs = manager->func_graphs();
   FuncGraphPtr graph = *graphs.begin();
@@ -414,8 +441,10 @@ TEST_F(TestStepParallel, ExtractInformation3) {
   EXPECT_THROW({ ExtractInformation(all_nodes); }, std::runtime_error);
 }
 
+/// Feature: test ForwardCommunication.
+/// Description:
+/// Expectation: success.
 TEST_F(TestStepParallel, ForwardCommunication1) {
-  Init_Device_Manager();
   ValuePtr attr0_value = MakeValue(REDUCE_OP_SUM);
   ValuePtr attr1_value = MakeValue("0-1-2");
   Attr attr0 = std::make_pair("op", attr0_value);
@@ -426,6 +455,9 @@ TEST_F(TestStepParallel, ForwardCommunication1) {
   OperatorArgs args = std::make_pair(attrs, operator_param);
   Operator op = std::make_pair(op_name, args);
   OperatorVector op_list = {op, op};
+  py::object context = py::module::import("mindspore.context");
+  py::object set_context = context.attr("set_context");
+  set_context("mode"_a = kGraphMode);
   FuncGraphManagerPtr manager = Make_Manager();
   FuncGraphSet graphs = manager->func_graphs();
   FuncGraphPtr graph = *graphs.begin();
@@ -441,7 +473,6 @@ TEST_F(TestStepParallel, ForwardCommunication1) {
     PrimitivePtr prim = cnode->input(0)->cast<ValueNodePtr>()->value()->cast<PrimitivePtr>();
     if (prim->name() == "MatMul") {
       ForwardCommunication(op_list, cnode);
-      draw::Draw("./forwardcommunication.dot", func_graph);
     }
   }
   AnfNodeSet after_nodes = manager->all_nodes();
@@ -451,7 +482,7 @@ TEST_F(TestStepParallel, ForwardCommunication1) {
     }
     auto &inputs = node->cast<CNodePtr>()->inputs();
     PrimitivePtr prim = inputs[0]->cast<ValueNodePtr>()->value()->cast<PrimitivePtr>();
-    if (prim->name() == "return" || prim->name() == "MatMul") {
+    if (prim->name() == "Return" || prim->name() == "MatMul") {
       if (!inputs[1]->isa<Parameter>()) {
         CNodePtr pre_node = inputs[1]->cast<CNodePtr>();
         PrimitivePtr pre_prim = pre_node->input(0)->cast<ValueNodePtr>()->value()->cast<PrimitivePtr>();
@@ -464,6 +495,9 @@ TEST_F(TestStepParallel, ForwardCommunication1) {
   }
 }
 
+/// Feature: test ForwardCommunication.
+/// Description:
+/// Expectation: success.
 TEST_F(TestStepParallel, ForwardCommunication2) {
   OperatorVector op_list;
   FuncGraphManagerPtr manager = Make_Manager();
@@ -487,6 +521,9 @@ TEST_F(TestStepParallel, ForwardCommunication2) {
   }
 }
 
+/// Feature: test ForwardCommunication.
+/// Description:
+/// Expectation: success.
 TEST_F(TestStepParallel, ForwardCommunication3) {
   OperatorVector op_list;
   FuncGraphManagerPtr manager = Make_Manager();
@@ -514,9 +551,11 @@ TEST_F(TestStepParallel, ForwardCommunication3) {
   }
 }
 
+/// Feature: test GetTensorInLayout.
+/// Description:
+/// Expectation: success.
 TEST_F(TestStepParallel, GetTensorInLayout) {
-  Init_Device_Manager();
-  // creat attrs and prim
+  // create  attrs and prim
   FuncGraphPtr func_graph = std::make_shared<FuncGraph>();
   Shape inputs_x_dims = {64, 32};
   Shape inputs_y_dims = {32, 64};
@@ -524,29 +563,49 @@ TEST_F(TestStepParallel, GetTensorInLayout) {
   CNodePtr node = Make_Node(inputs_x_dims, inputs_y_dims, outputs_dims);
   std::vector<AnfNodePtr> inputs(node->inputs());
   CNodePtr node1 = func_graph->NewCNode(inputs);
+  node1->set_in_forward_flag(true);
   PrimitivePtr prim = node1->input(0)->cast<ValueNodePtr>()->value()->cast<PrimitivePtr>();
   ValuePtr transpose_a = MakeValue(false);
   ValuePtr transpose_b = MakeValue(false);
   prim->set_attr("transpose_a", transpose_a);
   prim->set_attr("transpose_b", transpose_b);
   auto attrs = prim->attrs();
-  // creat strategy
-  std::vector<Dimensions> strategy = {{2, 2}, {2, 4}};
+  // create  strategy
+  Strategies strategy = {{2, 2}, {2, 4}};
   StrategyPtr strategyPtr = parallel::NewStrategy(0, strategy);
-  // creat shape
+  // create  shape
   Shapes inputs_shape = std::vector<Shape>{{64, 32}, {32, 64}};
   Shapes outputs_shape = std::vector<Shape>{{64, 64}};
   std::vector<Shapes> shape = {inputs_shape, outputs_shape};
   OperatorInfoPtr matmul_info = OperatorInstance(prim, attrs, shape);
-  matmul_info->Init(strategyPtr);
-  node->set_operator_info(matmul_info);
-  OperatorInfoPtr distribute_operator_pre = node->operator_info();
+  matmul_info->Init(strategyPtr, nullptr);
+  node1->set_user_data<OperatorInfo>(matmul_info);
   TensorLayout tensorlayout_e;
-  std::vector<int32_t> array = {64, 64};
-  TensorLayout tensorlayout = GetTensorInLayout(node1, prim, distribute_operator_pre);
-  std::vector<int32_t> tensor_shape_test = tensorlayout.tensor_shape().array();
+  Shape array = {64, 64};
+  TensorLayout tensorlayout = GetTensorInLayout(node1, -1);
+  Shape tensor_shape_test = tensorlayout.tensor_shape().array();
   ASSERT_EQ(array, tensor_shape_test);
 }
 
+/// Feature: test update micro batch interleaved status
+/// Description:
+/// Expectation: the status is correct
+TEST_F(TestStepParallel, UpdateMicroBatchInterleavedStatus) {
+  std::vector<AnfNodePtr> inputs;
+  FuncGraphPtr func_graph = std::make_shared<FuncGraph>();
+
+  ValueNodePtr stridedSlicePtr = NewValueNode(prim::kPrimStridedSlice);
+  PrimitivePtr prim = stridedSlicePtr->value()->cast<PrimitivePtr>();
+  prim->AddAttr(FUNC_GRAPH_FLAG_STRIDED_SLICE, MakeValue(true));
+  prim->AddAttr(INTERLEAVED_NUM, MakeValue((int64_t(2))));
+
+  inputs.push_back(stridedSlicePtr);
+  CNodePtr node1 = func_graph->NewCNode(inputs);
+
+  inputs.push_back(node1);
+  UpdateMicroBatchInterleavedStatus(inputs);
+  EXPECT_EQ(inputs.back()->cast<CNodePtr>()->HasAttr(INTERLEAVED_NUM), true);
+  EXPECT_EQ(GetValue<int64_t>(inputs.back()->cast<CNodePtr>()->GetAttr(INTERLEAVED_NUM)), 2);
+}
 }  // namespace parallel
 }  // namespace mindspore

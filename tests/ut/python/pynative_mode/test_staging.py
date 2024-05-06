@@ -20,10 +20,9 @@ import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common import MetaTensor
+from mindspore._c_expression import MetaTensor
 from mindspore.common import dtype
-from mindspore.common.api import ms_function
-from mindspore.common.dtype import get_py_obj_dtype
+from mindspore.common.api import jit
 from mindspore.ops import functional as F
 from mindspore.ops import operations as P
 from ..ut_filter import non_graph_engine
@@ -33,14 +32,14 @@ def setup_module(module):
     context.set_context(mode=context.PYNATIVE_MODE)
 
 
-@ms_function
+@jit
 def tensor_add_func_inner(x, y):
     """ tensor_add_func_inner """
     z = F.tensor_add(x, y)
     return z
 
 
-@ms_function
+@jit
 def tensor_add_func(x, y):
     """ tensor_add_func """
     z = tensor_add_func_inner(x, y)
@@ -48,13 +47,13 @@ def tensor_add_func(x, y):
     return z
 
 
-@ms_function
+@jit
 def scalar_add(x, y):
     """ scalar_add """
     return x + y
 
 
-@ms_function
+@jit
 def scalar_add_if(x, y):
     """ scalar_add_if """
     if x > y:
@@ -62,7 +61,7 @@ def scalar_add_if(x, y):
     return x + y + 20
 
 
-@ms_function
+@jit
 def scalar_mul_while(x):
     """ scalar_mul_while """
     rv = x
@@ -71,7 +70,7 @@ def scalar_mul_while(x):
     return rv
 
 
-@ms_function(input_signature=(MetaTensor(dtype.float32, (1, 1, 3, 3)),
+@jit(input_signature=(MetaTensor(dtype.float32, (1, 1, 3, 3)),
                               MetaTensor(dtype.float32, (1, 1, 3, 3))))
 def tensor_add_test(x, y):
     """ tensor_add_test """
@@ -84,15 +83,15 @@ class TensorAddMulNet(nn.Cell):
 
     def __init__(self):
         super(TensorAddMulNet, self).__init__()
-        self.add = P.TensorAdd()
+        self.add = P.Add()
 
-    @ms_function
+    @jit
     def add_stage0(self, x, y):
         z = self.add(x, y)
         z = self.add(x, z)
         return z
 
-    @ms_function
+    @jit
     def add_stage1(self, x, y):
         z = self.add(x, y)
         z = self.add(x, z)
@@ -111,9 +110,9 @@ class TensorAddNet(nn.Cell):
 
     def __init__(self):
         super(TensorAddNet, self).__init__()
-        self.add = P.TensorAdd()
+        self.add = P.Add()
 
-    @ms_function
+    @jit
     def compute(self, x, y):
         return self.add(x, y)
 
@@ -185,9 +184,9 @@ def test_input_signature():
 def test_scalar_cast():
     """ test_scalar_cast """
     input_x = 8.5
-    input_t = get_py_obj_dtype(ms.int64)
+    input_t = ms.int64
 
-    @ms_function
+    @jit
     def fn_cast(x, t):
         output = F.scalar_cast(x, t)
         return output

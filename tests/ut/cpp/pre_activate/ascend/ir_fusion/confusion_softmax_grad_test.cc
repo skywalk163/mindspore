@@ -15,9 +15,10 @@
  */
 #include "common/backend_common_test.h"
 #include "common/py_func_graph_fetcher.h"
-#include "pre_activate/common/optimizer.h"
-#include "pre_activate/ascend/ir_fusion/confusion_softmax_grad_rule.h"
-#include "debug/anf_ir_dump.h"
+#include "include/backend/optimizer/optimizer.h"
+#include "plugin/device/ascend/optimizer/mindir/ascend_vm_op_adapter.h"
+#include "plugin/device/ascend/optimizer/ir_fusion/confusion_softmax_grad_rule.h"
+#include "include/common/debug/anf_ir_dump.h"
 
 namespace mindspore {
 namespace opt {
@@ -33,7 +34,7 @@ class TestHWOptimizeConfusionSoftmaxGradRule : public BackendCommon {
 TEST_F(TestHWOptimizeConfusionSoftmaxGradRule, test_confusion_softmax_grad_rule) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_confusion_softmax_grad_rule", "before");
   EXPECT_NE(g, nullptr);
-  std::vector<int> shp{1, 1, 1, 1};
+  std::vector<int64_t> shp{1, 1, 1, 1};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list;
   for (size_t i = 0; i < 2; ++i) {

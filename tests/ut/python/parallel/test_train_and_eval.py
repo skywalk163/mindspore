@@ -16,16 +16,20 @@ import numpy as np
 
 import mindspore as ms
 from mindspore import context, Tensor, Parameter
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.nn import Cell
 from mindspore.ops import operations as P
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
 
 
 class Net(Cell):
     def __init__(self, mul_weight, strategy1=None, strategy2=None):
         super().__init__()
-        self.mul = P.Mul().set_strategy(strategy1)
-        self.neg = P.Neg().set_strategy(strategy2)
+        self.mul = P.Mul().shard(strategy1)
+        self.neg = P.Neg().shard(strategy2)
         self.mul_weight = Parameter(mul_weight, "w1")
 
     def construct(self, x, b):
@@ -38,7 +42,7 @@ class EvalNet(Cell):
     def __init__(self, network, strategy2=None):
         super().__init__()
         self.network = network
-        self.relu = P.ReLU().set_strategy(strategy2)
+        self.relu = P.ReLU().shard(strategy2)
 
     def construct(self, x, b):
         out = self.network(x, b)
@@ -46,24 +50,26 @@ class EvalNet(Cell):
         return out
 
 
-_x = Tensor(np.ones([8, 8]), dtype=ms.float32)
-_w1 = Tensor(np.ones([8, 8]), dtype=ms.float32)
-_b = Tensor(np.ones([8, 8]), dtype=ms.float32)
+def compile_net(net, input_data, label, is_train=True):
+    net.set_train(mode=is_train)
+    phase = "train" if is_train else "eval"
+    _cell_graph_executor.compile(net, input_data, label, phase=phase)
 
 
 def test_train_and_eval():
-    context.set_context(save_graphs=True, mode=0)
+    """
+    Feature: test train and eval in semi auto parallel.
+    Description: train and eval net in auto parallel.
+    Expectation: compile done without error.
+    """
     context.set_auto_parallel_context(parallel_mode="semi_auto_parallel", device_num=16)
     strategy1 = ((4, 4), (4, 4))
     strategy2 = ((4, 4),)
-    net = Net(_w1, strategy1, strategy2)
+    x = Tensor(np.ones([64, 64]), dtype=ms.float32)
+    w1 = Tensor(np.ones([64, 64]), dtype=ms.float32)
+    b = Tensor(np.ones([64, 64]), dtype=ms.float32)
+    net = Net(w1, strategy1, strategy2)
     eval_net = EvalNet(net, strategy2=strategy2)
-    net.set_train()
-    net.set_auto_parallel()
-    _executor.compile(net, _x, _b, phase='train', auto_parallel_mode=True)
-
-    eval_net.set_train(mode=False)
-    eval_net.set_auto_parallel()
-    _executor.compile(eval_net, _x, _b, phase='eval', auto_parallel_mode=True)
-
+    compile_net(net, x, b)
+    compile_net(eval_net, x, b, is_train=False)
     context.reset_auto_parallel_context()

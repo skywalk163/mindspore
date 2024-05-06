@@ -14,16 +14,19 @@
  * limitations under the License.
  */
 #include "common/common_test.h"
+#include "mindspore/core/ops/sequence_ops.h"
+#include "mindspore/core/ops/math_ops.h"
+#include "mindspore/core/ops/arithmetic_ops.h"
+#include "mindspore/core/ops/framework_ops.h"
 #include "common/py_func_graph_fetcher.h"
 #include "ir/dtype.h"
 #include "ir/manager.h"
 #include "ir/func_graph_cloner.h"
-#include "pipeline/parse/parse.h"
-#include "operator/ops.h"
+#include "pipeline/jit/ps/parse/parse.h"
+#include "frontend/operator/ops.h"
 #include "utils/log_adapter.h"
-#include "debug/draw.h"
-#include "debug/label.h"
-#include "./common.h"
+#include "include/common/debug/draw.h"
+#include "utils/label.h"
 
 namespace mindspore {
 
@@ -68,9 +71,9 @@ class Stage {
 
   ~Stage() {}
 
-  std::map<std::string, std::string>& subs() { return subs_; }
+  std::map<std::string, std::string> &subs() { return subs_; }
 
-  void set_subs(const std::map<std::string, std::string>& subs) { subs_ = subs; }
+  void set_subs(const std::map<std::string, std::string> &subs) { subs_ = subs; }
 
  private:
   std::string ToFullString(std::string s) {
@@ -91,12 +94,12 @@ class Stage {
 
 class NestingSpecs {
  public:
-  NestingSpecs(Stage* stage, std::string specs) : stage_(stage) { ParseSpecs(specs); }
+  NestingSpecs(Stage *stage, std::string specs) : stage_(stage) { ParseSpecs(specs); }
 
   ~NestingSpecs() {}
 
   std::string Name(Any node) {
-    std::string name = label_manage::Label(node.cast<AnfNodePtr>()->debug_info());
+    std::string name = trace::Label(node.cast<AnfNodePtr>()->debug_info());
     if (stage_->subs().find(name) != stage_->subs().end()) {
       return stage_->subs()[name];
     }
@@ -104,7 +107,7 @@ class NestingSpecs {
     return name;
   }
 
-  void Check(std::shared_ptr<FuncGraphAnalysis> results) {
+  void Check(std::shared_ptr<DepComputer> results) {
     if (expected_.empty() && expected_recursive_.empty()) {
       return;
     }
@@ -118,18 +121,6 @@ class NestingSpecs {
     auto recursive = dynamic_pointer_cast<RecursiveComputer>(results);
     if (recursive != nullptr) {
       CheckRecursive(recursive);
-      return;
-    }
-
-    auto counter_g = dynamic_pointer_cast<CounterFuncGraphCollector>(results);
-    if (counter_g != nullptr) {
-      CheckGraphCounter(counter_g);
-      return;
-    }
-
-    auto counter_p = dynamic_pointer_cast<CounterAnfNodeCollector<AnfNodePtr>>(results);
-    if (counter_p != nullptr) {
-      CheckAnfNodeCounter(counter_p);
       return;
     }
   }
@@ -172,7 +163,7 @@ class NestingSpecs {
 
   void CheckParent(std::shared_ptr<ParentComputer> results) {
     std::map<std::string, std::set<std::string>> clean_results;
-    for (auto& iter : results->parent_analysis()) {
+    for (auto &iter : results->parent_analysis()) {
       auto key = iter.first;
       auto value = iter.second;
       if (key == nullptr) {
@@ -183,59 +174,6 @@ class NestingSpecs {
       std::set<std::string> v;
       if (value != nullptr && !Name(value).empty()) {
         v.insert(Name(value));
-      }
-
-      if (!v.empty()) {
-        clean_results[k] = v;
-      }
-    }
-
-    ASSERT_EQ(clean_results, expected_);
-  }
-
-  // Add CheckNesting function
-  void CheckAnfNodeCounter(std::shared_ptr<CounterAnfNodeCollector<AnfNodePtr>> results) {
-    std::map<std::string, std::set<std::string>> clean_results;
-    for (auto& iter : results->count_nodes_map()) {
-      auto key = iter.first;
-      auto value = iter.second;
-      if (key == nullptr) {
-        continue;
-      }
-      std::string k = Name(key);
-
-      std::set<std::string> v;
-      for (auto& node : value) {
-        auto fg = node.first;
-        if (!Name(fg).empty()) {
-          v.insert(Name(fg));
-        }
-      }
-
-      if (!v.empty()) {
-        clean_results[k] = v;
-      }
-    }
-
-    ASSERT_EQ(clean_results, expected_);
-  }
-
-  void CheckGraphCounter(std::shared_ptr<CounterFuncGraphCollector> results) {
-    std::map<std::string, std::set<std::string>> clean_results;
-    for (auto& iter : results->count_func_graphs_map()) {
-      auto key = iter.first;
-      auto value = iter.second;
-      if (key == nullptr) {
-        continue;
-      }
-      std::string k = Name(key);
-
-      std::set<std::string> v;
-      for (auto& node : value) {
-        auto fg = node.first;
-        if (!Name(fg).empty()) {
-          v.insert(Name(fg));
-        }
       }
 
       if (!v.empty()) {
@@ -263,7 +201,7 @@ class NestingSpecs {
   }
 
  private:
-  Stage* stage_;
+  Stage *stage_;
   std::map<std::string, std::set<std::string>> expected_;
   std::map<std::string, bool> expected_recursive_;
 };
@@ -271,7 +209,7 @@ class NestingSpecs {
 bool CheckUsers(std::shared_ptr<FuncGraphManager> manager) {
   for (auto node : manager->all_nodes()) {
     if (node->isa<CNode>()) {
-      auto& inputs = node->cast<CNodePtr>()->inputs();
+      auto &inputs = node->cast<CNodePtr>()->inputs();
       for (size_t i = 0; i < inputs.size(); ++i) {
         auto inp = inputs[i];
         if (!manager->all_nodes().contains(inp)) {
@@ -457,8 +395,8 @@ TEST_F(TestManager, test_nested_manual) {
   ASSERT_EQ(2, f->nodes().size());
   ASSERT_EQ(1, g->nodes().size());
 
-  auto users = mng->node_users();
-  for (auto& iter : users) {
+  auto &users = mng->node_users();
+  for (auto &iter : users) {
     ASSERT_EQ(1, iter.second.size());
   }
 
@@ -685,6 +623,147 @@ TEST_F(TestManager, test_keep_roots_recursion) {
 
   mng->KeepRoots();
   ASSERT_EQ(mng->func_graphs().size(), 1);
+}
+
+TEST_F(TestManager, test_add_edge_replace) {
+  // fg(x, y, u):
+  //    x1 = load(x, u)
+  //    a = add(x1, y)
+  //    u1 = update_state(u, x1);
+  //    out = depend(a, u1)
+  //    return out
+  FuncGraphPtr fg = std::make_shared<FuncGraph>();
+  auto x = fg->add_parameter();
+  auto y = fg->add_parameter();
+  auto u = fg->add_parameter();
+  auto x1 = fg->NewCNode({NewValueNode(prim::kPrimLoad), x, u});
+  auto a = fg->NewCNode({NewValueNode(prim::kPrimAdd), x1, y});
+  auto u1 = fg->NewCNode({NewValueNode(prim::kPrimUpdateState), u, x1});
+  auto out = fg->NewCNode({NewValueNode(prim::kPrimDepend), a, u1});
+  fg->set_output(out);
+
+  // Create manager.
+  auto mgr = Manage(fg);
+  ASSERT_NE(mgr, nullptr);
+
+  // Before AddEdge.
+  //    a = add(x1, y)
+  //    u1 = update_state(u, x1);
+  //    out = depend(a, u1)
+  auto a_users = mgr->node_users()[a];
+  ASSERT_EQ(a_users.size(), 1);
+
+  mgr->AddEdge(u1, a);
+
+  // After AddEdge.
+  //    a = add(x1, y)
+  //    u1 = update_state(u, x1, a);
+  //    out = depend(a, u1)
+  a_users = mgr->node_users()[a];
+  ASSERT_EQ(a_users.size(), 2);
+
+  // Remove edge by replace update_state.
+  auto u2 = fg->NewCNode({NewValueNode(prim::kPrimUpdateState), u, x1});
+  mgr->Replace(u1, u2);
+
+  // After replace update_state.
+  //    a = add(x1, y)
+  //    u2 = update_state(u, x1);
+  //    out = depend(a, u2)
+  a_users = mgr->node_users()[a];
+  ASSERT_EQ(a_users.size(), 1);
+
+  mgr->AddEdge(u2, a);
+
+  // After AddEdge to u2.
+  //    a = add(x1, y)
+  //    u2 = update_state(u, x1, a);
+  //    out = depend(a, u2)
+  a_users = mgr->node_users()[a];
+  ASSERT_EQ(a_users.size(), 2);
+}
+
+TEST_F(TestManager, test_add_edge_replace_new) {
+  // fg(x, y, u):
+  //    x1 = load(x, u)
+  //    a = add(x1, y)
+  //    u1 = update_state(u, x1);
+  //    out = depend(a, u1)
+  //    return out
+  FuncGraphPtr fg = std::make_shared<FuncGraph>();
+  auto x = fg->add_parameter();
+  auto y = fg->add_parameter();
+  auto u = fg->add_parameter();
+  auto x1 = fg->NewCNode({NewValueNode(prim::kPrimLoad), x, u});
+  auto a = fg->NewCNode({NewValueNode(prim::kPrimAdd), x1, y});
+  auto u1 = fg->NewCNode({NewValueNode(prim::kPrimUpdateState), u, x1});
+  auto out = fg->NewCNode({NewValueNode(prim::kPrimDepend), a, u1});
+  fg->set_output(out);
+
+  // Create manager.
+  auto mgr = Manage(fg);
+  ASSERT_NE(mgr, nullptr);
+
+  auto new_add = fg->NewCNode({NewValueNode(prim::kPrimAdd), x1, y});
+  mgr->AddEdge(u1, new_add);
+
+  //    x1 = load(x, u)
+  //    a = add(x1, y)
+  //    new_add = add(x1, y)
+  //    u1 = update_state(u, x1, new_add);
+  //    out = depend(a, u1)
+  //    return out
+  ASSERT_EQ(mgr->node_users()[x1].size(), 3);
+  ASSERT_EQ(mgr->node_users()[y].size(), 2);
+  ASSERT_EQ(mgr->node_users()[new_add].size(), 1);
+
+  auto new_add1 = fg->NewCNode({NewValueNode(prim::kPrimAdd), y, y});
+  mgr->Replace(new_add, new_add1);
+
+  //    x1 = load(x, u)
+  //    a = add(x1, y)
+  //    new_add1 = add(y, y)
+  //    u1 = update_state(u, x1, new_add1);
+  //    out = depend(a, u1)
+  //    return out
+  ASSERT_EQ(mgr->node_users()[x1].size(), 2);
+  ASSERT_EQ(mgr->node_users()[y].size(), 3);
+  ASSERT_EQ(mgr->node_users()[new_add].size(), 0);
+  ASSERT_EQ(mgr->node_users()[new_add1].size(), 1);
+}
+
+TEST_F(TestManager, test_set_edge) {
+  // fg(x, y, u):
+  //    t = make_tuple(x, y)
+  //    d = depend(t, u);
+  //    get_item = tuple_get_item(d, 0)
+  //    return get_item
+  FuncGraphPtr fg = std::make_shared<FuncGraph>();
+  auto x = fg->add_parameter();
+  auto y = fg->add_parameter();
+  auto u = fg->add_parameter();
+  auto t = fg->NewCNode({NewValueNode(prim::kPrimMakeTuple), x, y});
+  auto d = fg->NewCNode({NewValueNode(prim::kPrimDepend), t, u});
+  auto get_item = fg->NewCNode({NewValueNode(prim::kPrimTupleGetItem), d, NewValueNode(0)});
+  fg->set_output(get_item);
+
+  // Create manager.
+  auto mgr = Manage(fg);
+  ASSERT_NE(mgr, nullptr);
+
+  // Before SetEdge.
+  ASSERT_EQ(mgr->node_users()[t].size(), 1);
+  ASSERT_EQ(mgr->node_users()[d].size(), 1);
+
+  auto depend = get_item->input(1)->cast<CNodePtr>();
+  mgr->SetEdge(get_item, 1, depend->input(1));
+
+  // After SetEdge.
+  ASSERT_EQ(get_item->input(1), t);
+  ASSERT_EQ(depend->input(1), t);
+  ASSERT_EQ(mgr->node_users()[d].size(), 0);
+  ASSERT_EQ(mgr->node_users()[t].size(), 1);  // depend removed.
+  ASSERT_EQ(mgr->node_users()[t].front().first, get_item);
 }
 
 }  // namespace mindspore

@@ -15,7 +15,7 @@
  */
 #include "common/backend_common_test.h"
 #include "common/py_func_graph_fetcher.h"
-#include "pre_activate/ascend/ir_fusion/lamb_next_right_rule.h"
+#include "plugin/device/ascend/optimizer/ir_fusion/lamb_next_right_rule.h"
 
 namespace mindspore {
 namespace opt {
@@ -42,7 +42,7 @@ TEST_F(TestHWLambNextRightRule, test_lamb_next_right_rule_matched) {
    * return output
    */
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_lamb_next_right_rule", "before");
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list;
   for (size_t i = 0; i < 6; ++i) {
@@ -74,7 +74,7 @@ TEST_F(TestHWLambNextRightRule, test_lamb_next_right_rule_unmatched) {
    * return output
    */
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_lamb_next_right_rule", "before_unmatched");
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list;
   for (size_t i = 0; i < 6; ++i) {

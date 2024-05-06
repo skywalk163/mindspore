@@ -14,13 +14,14 @@
 # ============================================================================
 from mindspore.ops import Primitive
 from mindspore.ops import operations as P
+from mindspore.ops import _constants as Constants
 
 Mul = P.Mul()
-ReduceSum = P.ReduceSum()
+ReduceSum = P.ReduceSum(keep_dims=True)
 Sub = P.Sub()
 SoftmaxGradExt = Primitive('SoftmaxGradExt')
-MakeTuple = Primitive('make_tuple')
-TupleGetItem = Primitive('tuple_getitem')
+MakeTuple = Primitive('MakeTuple')
+TupleGetItem = Primitive(Constants.kTupleGetItem)
 axes = (2, 3)
 
 
@@ -46,6 +47,46 @@ def test_softmax_grad_ext_fusion(tag):
         sub = Sub(input0, reduce_sum)
         mul1 = Mul(input2, input1)
         mul_grad = Mul(mul1, sub)
+        return mul_grad
+
+    @fns
+    def after(input0, input1, input2):
+        res = SoftmaxGradExt(input0, input1, input2)
+        return MakeTuple(res)
+
+    return fns[tag]
+
+
+def test_softmax_grad_ext_fusion_v2(tag):
+    fns = FnDict()
+
+    @fns
+    def before(input0, input1, input2):
+        mul = Mul(input1, input0)
+        reduce_sum = ReduceSum(mul, axes)
+        sub = Sub(input0, reduce_sum)
+        mul1 = Mul(input1, sub)
+        mul_grad = Mul(input2, mul1)
+        return mul_grad
+
+    @fns
+    def after(input0, input1, input2):
+        res = SoftmaxGradExt(input0, input1, input2)
+        return MakeTuple(res)
+
+    return fns[tag]
+
+
+def test_softmax_grad_ext_fusion_v3(tag):
+    fns = FnDict()
+
+    @fns
+    def before(input0, input1, input2):
+        mul = Mul(input1, input0)
+        reduce_sum = ReduceSum(mul, axes)
+        sub = Sub(input0, reduce_sum)
+        mul1 = Mul(input1, sub)
+        mul_grad = Mul(mul1, input2)
         return mul_grad
 
     @fns

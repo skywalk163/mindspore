@@ -21,7 +21,7 @@ import pytest
 import mindspore.common.dtype as mstype
 import mindspore.nn as nn
 from mindspore import Tensor
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 
 
 class SSIMNet(nn.Cell):
@@ -35,17 +35,9 @@ class SSIMNet(nn.Cell):
 
 def test_compile():
     net = SSIMNet()
-    img1 = Tensor(np.random.random((8, 3, 16, 16)))
-    img2 = Tensor(np.random.random((8, 3, 16, 16)))
-    _executor.compile(net, img1, img2)
-
-
-def test_compile_grayscale():
-    max_val = 255
-    net = SSIMNet(max_val=max_val)
-    img1 = Tensor(np.random.randint(0, 256, (8, 1, 16, 16), np.uint8))
-    img2 = Tensor(np.random.randint(0, 256, (8, 1, 16, 16), np.uint8))
-    _executor.compile(net, img1, img2)
+    img1 = Tensor(np.random.random((8, 3, 16, 16)), mstype.float32)
+    img2 = Tensor(np.random.random((8, 3, 16, 16)), mstype.float32)
+    _cell_graph_executor.compile(net, img1, img2)
 
 
 def test_ssim_max_val_negative():
@@ -86,34 +78,14 @@ def test_ssim_filter_sigma_negative():
         _ = SSIMNet(filter_sigma=-0.1)
 
 
-def test_ssim_k1_k2_wrong_value():
-    with pytest.raises(ValueError):
-        _ = SSIMNet(k1=1.1)
-    with pytest.raises(ValueError):
-        _ = SSIMNet(k1=1.0)
-    with pytest.raises(ValueError):
-        _ = SSIMNet(k1=0.0)
-    with pytest.raises(ValueError):
-        _ = SSIMNet(k1=-1.0)
-
-    with pytest.raises(ValueError):
-        _ = SSIMNet(k2=1.1)
-    with pytest.raises(ValueError):
-        _ = SSIMNet(k2=1.0)
-    with pytest.raises(ValueError):
-        _ = SSIMNet(k2=0.0)
-    with pytest.raises(ValueError):
-        _ = SSIMNet(k2=-1.0)
-
-
 def test_ssim_different_shape():
     shape_1 = (8, 3, 16, 16)
     shape_2 = (8, 3, 8, 8)
     img1 = Tensor(np.random.random(shape_1))
     img2 = Tensor(np.random.random(shape_2))
     net = SSIMNet()
-    with pytest.raises(ValueError):
-        _executor.compile(net, img1, img2)
+    with pytest.raises(TypeError):
+        _cell_graph_executor.compile(net, img1, img2)
 
 
 def test_ssim_different_dtype():
@@ -123,7 +95,7 @@ def test_ssim_different_dtype():
     img2 = Tensor(np.random.random((8, 3, 16, 16)), dtype=dtype_2)
     net = SSIMNet()
     with pytest.raises(TypeError):
-        _executor.compile(net, img1, img2)
+        _cell_graph_executor.compile(net, img1, img2)
 
 
 def test_ssim_invalid_5d_input():
@@ -136,9 +108,9 @@ def test_ssim_invalid_5d_input():
     invalid_img2 = Tensor(np.random.random(invalid_shape))
 
     net = SSIMNet()
-    with pytest.raises(ValueError):
-        _executor.compile(net, invalid_img1, img2)
-    with pytest.raises(ValueError):
-        _executor.compile(net, img1, invalid_img2)
-    with pytest.raises(ValueError):
-        _executor.compile(net, invalid_img1, invalid_img2)
+    with pytest.raises(TypeError):
+        _cell_graph_executor.compile(net, invalid_img1, img2)
+    with pytest.raises(TypeError):
+        _cell_graph_executor.compile(net, img1, invalid_img2)
+    with pytest.raises(TypeError):
+        _cell_graph_executor.compile(net, invalid_img1, invalid_img2)

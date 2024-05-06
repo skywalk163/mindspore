@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,17 @@
  */
 #include <string>
 #include <random>
-#include "dataset/util/task_manager.h"
-#include "dataset/util/circular_pool.h"
-#include "dataset/util/services.h"
+#include "minddata/dataset/util/task_manager.h"
+#include "minddata/dataset/util/circular_pool.h"
+#include "minddata/dataset/util/services.h"
 #include "common/common.h"
-#include "common/utils.h"
+#include "utils/ms_utils.h"
 #include "utils/log_adapter.h"
 #include "./securec.h"
 
 namespace common = mindspore::common;
 
 using namespace mindspore::dataset;
-using mindspore::MsLogLevel::INFO;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::LogStream;
 
 class MindDataTestCircularPool : public UT::Common {
  public:
@@ -68,6 +65,9 @@ Status TestMem(MindDataTestCircularPool *tp, int32_t num_iterations) {
   return Status::OK();
 }
 
+/// Feature: CircularPool
+/// Description: Test CircularPool basic usage
+/// Expectation: Runs successfully
 TEST_F(MindDataTestCircularPool, TestALLFunction) {
   const int32_t iteration = 100;
   Services::CreateInstance();

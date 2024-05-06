@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,34 +14,32 @@
  * limitations under the License.
  */
 #include "common/common.h"
-#include "dataset/kernels/data/one_hot_op.h"
+#include "minddata/dataset/kernels/data/one_hot_op.h"
 #include "utils/log_adapter.h"
 
 using namespace mindspore::dataset;
-using mindspore::MsLogLevel::INFO;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::LogStream;
 
 class MindDataTestOneHotOp : public UT::Common {
  protected:
-    MindDataTestOneHotOp() {}
+  MindDataTestOneHotOp() {}
 };
 
+/// Feature: OneHot op
+/// Description: Test OneHotOp basic usage
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestOneHotOp, TestOp) {
   MS_LOG(INFO) << "Doing MindDataTestOneHotOp.";
-  uint64_t labels[3] = {0, 1, 2};
-  TensorShape shape({3});
-  std::shared_ptr<Tensor> input = std::make_shared<Tensor>(shape, DataType(DataType::DE_UINT64),
-                                                           reinterpret_cast <unsigned char *>(labels));
+  std::vector<uint64_t> labels = {0, 1, 2};
+  std::shared_ptr<Tensor> input;
+  Tensor::CreateFromVector(labels, &input);
   std::shared_ptr<Tensor> output;
 
-  std::unique_ptr<OneHotOp> op(new OneHotOp(5));
+  std::unique_ptr<OneHotOp> op = std::make_unique<OneHotOp>(5, 0);
   Status s = op->Compute(input, &output);
-  uint64_t out[15] = {1, 0, 0, 0, 0,
-                      0, 1, 0, 0, 0,
-                      0, 0, 1, 0, 0};
-  std::shared_ptr<Tensor> expected = std::make_shared<Tensor>(TensorShape{3, 5}, DataType(DataType::DE_UINT64),
-                                                              reinterpret_cast <unsigned char *>(out));
+  std::vector<uint64_t> out = {1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0};
+  std::shared_ptr<Tensor> expected;
+  Tensor::CreateFromVector(out, TensorShape{3, 5}, &expected);
+
   EXPECT_TRUE(s.IsOk());
   ASSERT_TRUE(output->shape() == expected->shape());
   ASSERT_TRUE(output->type() == expected->type());

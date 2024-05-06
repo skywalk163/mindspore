@@ -21,6 +21,10 @@ from mindspore import context
 from mindspore.ops import operations as P
 
 
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
 class NetWithLoss(nn.Cell):
     def __init__(self, network):
         super(NetWithLoss, self).__init__()
@@ -37,7 +41,7 @@ def test_parameter_init():
         def __init__(self, strategy1, weight):
             super().__init__()
             self.weight = Parameter(weight, "w1")
-            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).set_strategy(strategy1)
+            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).shard(strategy1)
 
         def construct(self, x):
             out = self.matmul(x, self.weight)
@@ -52,7 +56,7 @@ def test_parameter_init():
     weight = Tensor(np.ones([64, 32]), dtype=ms.float32)
 
     net = Net(strategy1, weight)
-    net(x,)
+    net(x, )
 
 
 if __name__ == '__main__':

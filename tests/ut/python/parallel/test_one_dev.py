@@ -19,13 +19,16 @@ import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
+import mindspore.common.dtype as mstype
+from mindspore.common.api import _cell_graph_executor
 from mindspore.common.parameter import Parameter
-from mindspore.nn.loss import SoftmaxCrossEntropyWithLogits
+from mindspore.nn.loss.loss import LossBase
 from mindspore.nn.optim.momentum import Momentum
 from mindspore.ops import operations as P
+from mindspore.ops import functional as F
 from mindspore.parallel._utils import _reset_op_id
-from mindspore.train import Model, ParallelMode
+from mindspore.train import Model
+from mindspore.context import ParallelMode
 from tests.dataset_mock import MindData
 
 context.set_context(mode=context.GRAPH_MODE)
@@ -65,6 +68,33 @@ class AllToAllNet(nn.Cell):
         return x
 
 
+class SoftmaxCrossEntropyWithLogits(LossBase):
+    def __init__(self,
+                 sparse=False,
+                 reduction='none'):
+        super(SoftmaxCrossEntropyWithLogits, self).__init__(reduction)
+        self.sparse = sparse
+        self.reduction = reduction
+        self.softmax_cross_entropy = P.SoftmaxCrossEntropyWithLogits()
+        self.one_hot = P.OneHot()
+        self.on_value = Tensor(1.0, mstype.float32)
+        self.off_value = Tensor(0., mstype.float32)
+        self.is_cpugpu = context.get_context('device_target') in ["CPU", "GPU"]
+
+        if self.is_cpugpu:
+            self.sparse_softmax_cross_entropy = P.SparseSoftmaxCrossEntropyWithLogits()
+
+    def construct(self, logits, labels):
+        if self.is_cpugpu and self.sparse and self.reduction == 'mean':
+            x = self.sparse_softmax_cross_entropy(logits, labels)
+            return x
+
+        if self.sparse:
+            labels = self.one_hot(labels, F.shape(logits)[-1], self.on_value, self.off_value)
+        x = self.softmax_cross_entropy(logits, labels)[0]
+        return self.get_loss(x)
+
+
 def all_to_all_net():
     return AllToAllNet()
 
@@ -75,18 +105,19 @@ def all_to_all_common():
     epoch_size = 2
 
     context.reset_auto_parallel_context()
-    context.set_auto_parallel_context(parallel_mode=ParallelMode.AUTO_PARALLEL, device_num=1, global_rank=0)
+    context.set_auto_parallel_context(parallel_mode=ParallelMode.AUTO_PARALLEL, search_mode="dynamic_programming", 
+                                      device_num=1, global_rank=0)
     predict = Tensor(np.ones([32, 128]), dtype=ms.float32)
     label = Tensor(np.ones([32]), dtype=ms.int32)
     dataset = Dataset(predict, label, 2)
     net = all_to_all_net()
 
-    loss = SoftmaxCrossEntropyWithLogits(is_grad=False, sparse=True)
+    loss = SoftmaxCrossEntropyWithLogits(sparse=True, reduction='mean')
     opt = Momentum(net.trainable_params(), learning_rate, momentum)
     model = Model(net, loss, opt)
 
     model.train(epoch_size, dataset, dataset_sink_mode=False)
-    strategys = _executor._get_strategy(model._train_network)
+    strategys = _cell_graph_executor._get_shard_strategy(model._train_network)
     return strategys
 
 

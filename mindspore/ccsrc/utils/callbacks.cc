@@ -14,21 +14,18 @@
  * limitations under the License.
  */
 
-#include "utils/callbacks.h"
+#include "include/common/utils/callbacks.h"
 #include <map>
 #include <string>
 #include <memory>
-#include <vector>
 #include "pybind11/pybind11.h"
-#include "pipeline/parse/data_converter.h"
-#include "pipeline/parse/python_adapter.h"
-#include "utils/visible.h"
+#include "include/common/utils/python_adapter.h"
 
 namespace mindspore {
 namespace callbacks {
-const char PYTHON_MOD_CALLBACK_MODULE[] = "mindspore.train.callback";
-const char PYTHON_FUN_PROCESS_CHECKPOINT[] = "_checkpoint_cb_for_save_op";
-const char PYTHON_FUN_PROCESS_SUMMARY[] = "_summary_cb_for_save_op";
+const char PYTHON_MOD_CALLBACK_MODULE[] = "mindspore.train.callback._callback";
+const char PYTHON_FUN_PROCESS_CHECKPOINT[] = "checkpoint_cb_for_save_op";
+const char PYTHON_FUN_PROCESS_SUMMARY[] = "summary_cb_for_save_op";
 const char kSummary[] = "Summary";
 const char kCheckPoint[] = "Save";
 const int ONE_SHAPE = 1;
@@ -36,7 +33,7 @@ const int ONE_SHAPE = 1;
 // Cache the summary callback data from ME session
 // Remove the GE module on new architecture
 // Output Format: [{"name": tag_name, "data": tensor}, {"name": tag_name, "data": tensor},...]
-uint32_t MS_EXPORT SummarySaveCallback(uint32_t graph_id, const std::map<std::string, TensorPtr> &params_list) {
+uint32_t SummarySaveCallback(uint32_t graph_id, const std::map<std::string, TensorPtr> &params_list) {
   // Acquire GIL before calling Python code
   py::gil_scoped_acquire acquire;
   py::list summary_list = py::list();
@@ -55,7 +52,7 @@ uint32_t MS_EXPORT SummarySaveCallback(uint32_t graph_id, const std::map<std::st
     summary_list.append(summary_value_dict);
   }
 
-  py::bool_ ret = parse::python_adapter::CallPyFn(PYTHON_MOD_CALLBACK_MODULE, PYTHON_FUN_PROCESS_SUMMARY, summary_list);
+  py::bool_ ret = python_adapter::CallPyFn(PYTHON_MOD_CALLBACK_MODULE, PYTHON_FUN_PROCESS_SUMMARY, summary_list);
   auto bool_ret = py::cast<bool>(ret);
   if (!bool_ret) {
     MS_LOG(ERROR) << "Python checkpoint return false during callback";

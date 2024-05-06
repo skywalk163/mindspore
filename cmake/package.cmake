@@ -5,45 +5,43 @@ include(GNUInstallDirs)
 # set package information
 set(CPACK_PACKAGE_NAME ${PROJECT_NAME})
 set(CPACK_GENERATOR "External")
+set(CPACK_CMAKE_GENERATOR "Ninja")
 set(CPACK_EXTERNAL_PACKAGE_SCRIPT ${CMAKE_SOURCE_DIR}/cmake/package_script.cmake)
 set(CPACK_EXTERNAL_ENABLE_STAGING true)
-set(CPACK_TEMPORARY_PACKAGE_FILE_NAME ${CMAKE_SOURCE_DIR}/build/package/mindspore)
-set(CPACK_TEMPORARY_INSTALL_DIRECTORY ${CMAKE_SOURCE_DIR}/build/package/mindspore)
-if (ENABLE_GE)
-    set(CPACK_MS_BACKEND "ge")
-    set(CPACK_MS_PACKAGE_NAME "mindspore")
-elseif (ENABLE_GPU)
+set(CPACK_TEMPORARY_PACKAGE_FILE_NAME ${BUILD_PATH}/package/mindspore)
+set(CPACK_TEMPORARY_INSTALL_DIRECTORY ${BUILD_PATH}/package/mindspore)
+set(CPACK_PACK_ROOT_DIR ${BUILD_PATH}/package/)
+set(CPACK_CMAKE_SOURCE_DIR ${CMAKE_SOURCE_DIR})
+set(CPACK_ENABLE_SYM_FILE ${ENABLE_SYM_FILE})
+set(CPACK_CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE})
+set(CPACK_PYTHON_EXE ${Python3_EXECUTABLE})
+set(CPACK_PYTHON_VERSION ${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR})
+
+if(ENABLE_GPU)
     set(CPACK_MS_BACKEND "ms")
-    set(CPACK_MS_PACKAGE_NAME "mindspore-gpu")
-elseif (ENABLE_D)
+elseif(ENABLE_D)
     set(CPACK_MS_BACKEND "ms")
-    set(CPACK_MS_PACKAGE_NAME "mindspore-ascend")
-elseif (ENABLE_CPU)
+elseif(ENABLE_CPU)
     set(CPACK_MS_BACKEND "ms")
-    set(CPACK_MS_PACKAGE_NAME "mindspore")
-else ()
+else()
     set(CPACK_MS_BACKEND "debug")
+endif()
+if(BUILD_DEV_MODE)
+    # providing cuda11 version of dev package only
+    set(CPACK_MS_PACKAGE_NAME "mindspore-dev")
+else()
     set(CPACK_MS_PACKAGE_NAME "mindspore")
-endif ()
+endif()
 include(CPack)
 
 # set install path
 set(INSTALL_LIB_DIR ${CMAKE_INSTALL_LIBDIR} CACHE PATH "Installation directory for libraries")
 set(INSTALL_PY_DIR ".")
 set(INSTALL_BASE_DIR ".")
-
-if (CMAKE_SYSTEM_NAME MATCHES "Windows")
-    set(INSTALL_LIB_DIR ".")
-    set(onednn_LIBPATH ${onednn_LIBPATH}/../bin/)
-    set(glog_LIBPATH ${glog_LIBPATH}/../bin/)
-    set(opencv_LIBPATH ${opencv_LIBPATH}/../bin/)
-    set(jpeg_turbo_LIBPATH ${jpeg_turbo_LIBPATH}/../bin/)
-    set(sqlite_LIBPATH ${sqlite_LIBPATH}/../bin/)
-    set(tinyxml2_LIBPATH ${tinyxml2_LIBPATH}/../bin/)
-else ()
-    set(INSTALL_LIB_DIR "lib")
-endif ()
-
+set(INSTALL_BIN_DIR "bin")
+set(INSTALL_CFG_DIR "config")
+set(INSTALL_LIB_DIR "lib")
+set(INSTALL_PLUGIN_DIR "${INSTALL_LIB_DIR}/plugin")
 # set package files
 install(
     TARGETS _c_expression
@@ -51,116 +49,213 @@ install(
     COMPONENT mindspore
 )
 
+if(ENABLE_DEBUGGER)
+    install(
+        TARGETS _mindspore_offline_debug
+        DESTINATION ${INSTALL_BASE_DIR}
+        COMPONENT mindspore
+    )
+endif()
+
 install(
-    TARGETS mindspore_gvar
+    TARGETS mindspore_shared_lib
     DESTINATION ${INSTALL_LIB_DIR}
     COMPONENT mindspore
 )
 
-if (USE_GLOG)
-    file(GLOB_RECURSE GLOG_LIB_LIST ${glog_LIBPATH}/libglog*)
+if(ENABLE_D OR ENABLE_GPU)
     install(
-        FILES ${GLOG_LIB_LIST}
-        DESTINATION ${INSTALL_LIB_DIR}
-        COMPONENT mindspore
+            TARGETS api_lib
+            DESTINATION ${INSTALL_LIB_DIR}
+            COMPONENT mindspore
     )
-endif ()
+endif()
 
-if (ENABLE_MINDDATA)
+install(
+    TARGETS mindspore_core mindspore_common mindspore_backend
+    DESTINATION ${INSTALL_LIB_DIR}
+    COMPONENT mindspore
+)
+
+if(ENABLE_D)
+    install(
+        TARGETS mindspore_ascend LIBRARY
+        DESTINATION ${INSTALL_PLUGIN_DIR}
+        COMPONENT mindspore
+        NAMELINK_SKIP
+    )
+endif()
+
+if(ENABLE_GPU)
+    install(
+            TARGETS mindspore_gpu LIBRARY
+            DESTINATION ${INSTALL_PLUGIN_DIR}
+            COMPONENT mindspore
+            NAMELINK_SKIP
+    )
+endif()
+
+if(USE_GLOG)
+    install(FILES ${glog_LIBPATH}/libmindspore_glog.so.0.4.0
+      DESTINATION ${INSTALL_LIB_DIR} RENAME libmindspore_glog.so.0 COMPONENT mindspore)
+endif()
+
+if(ENABLE_MINDDATA)
     install(
         TARGETS _c_dataengine _c_mindrecord
         DESTINATION ${INSTALL_BASE_DIR}
         COMPONENT mindspore
     )
+    if(CMAKE_SYSTEM_NAME MATCHES "Linux")
+        install(
+            TARGETS cache_admin cache_server
+            OPTIONAL
+            DESTINATION ${INSTALL_BIN_DIR}
+            COMPONENT mindspore
+        )
+    endif()
+    install(FILES ${opencv_LIBPATH}/libopencv_core.so.4.5.2
+      DESTINATION ${INSTALL_LIB_DIR} RENAME libopencv_core.so.4.5 COMPONENT mindspore)
+    install(FILES ${opencv_LIBPATH}/libopencv_imgcodecs.so.4.5.2
+      DESTINATION ${INSTALL_LIB_DIR} RENAME libopencv_imgcodecs.so.4.5 COMPONENT mindspore)
+    install(FILES ${opencv_LIBPATH}/libopencv_imgproc.so.4.5.2
+      DESTINATION ${INSTALL_LIB_DIR} RENAME libopencv_imgproc.so.4.5 COMPONENT mindspore)
+    install(FILES ${tinyxml2_LIBPATH}/libtinyxml2.so.8.0.0
+      DESTINATION ${INSTALL_LIB_DIR} RENAME libtinyxml2.so.8 COMPONENT mindspore)
 
-    file(GLOB_RECURSE OPENCV_LIB_LIST
-            ${opencv_LIBPATH}/libopencv_core*
-            ${opencv_LIBPATH}/libopencv_imgcodecs*
-            ${opencv_LIBPATH}/libopencv_imgproc*
-    )
-    install(
-        FILES ${OPENCV_LIB_LIST}
-        DESTINATION ${INSTALL_LIB_DIR}
-        COMPONENT mindspore
-    )
-    file(GLOB_RECURSE TINYXML2_LIB_LIST
-	    ${tinyxml2_LIBPATH}/libtinyxml2*
-    )
-    install(
-	FILES ${TINYXML2_LIB_LIST}
-        DESTINATION ${INSTALL_LIB_DIR}
-        COMPONENT mindspore
-    )
+    install(FILES ${icu4c_LIBPATH}/libicuuc.so.69.1
+      DESTINATION ${INSTALL_LIB_DIR} RENAME libicuuc.so.69 COMPONENT mindspore)
+    install(FILES ${icu4c_LIBPATH}/libicudata.so.69.1
+      DESTINATION ${INSTALL_LIB_DIR} RENAME libicudata.so.69 COMPONENT mindspore)
+    install(FILES ${icu4c_LIBPATH}/libicui18n.so.69.1
+      DESTINATION ${INSTALL_LIB_DIR} RENAME libicui18n.so.69 COMPONENT mindspore)
+    install(FILES ${jemalloc_LIBPATH}/libjemalloc.so.2 DESTINATION ${INSTALL_LIB_DIR} COMPONENT mindspore)
+endif()
 
-endif ()
-
-if (ENABLE_CPU)
-    if (CMAKE_SYSTEM_NAME MATCHES "Linux")
-        file(GLOB_RECURSE DNNL_LIB_LIST ${onednn_LIBPATH}/libdnnl${CMAKE_SHARED_LIBRARY_SUFFIX}*)
-    elseif (CMAKE_SYSTEM_NAME MATCHES "Darwin")
+if(ENABLE_CPU)
+    if(CMAKE_SYSTEM_NAME MATCHES "Linux")
+        install(FILES ${onednn_LIBPATH}/libdnnl.so.2.2
+          DESTINATION ${INSTALL_LIB_DIR} RENAME libdnnl.so.2 COMPONENT mindspore)
+    elseif(CMAKE_SYSTEM_NAME MATCHES "Darwin")
         file(GLOB_RECURSE DNNL_LIB_LIST ${onednn_LIBPATH}/libdnnl*${CMAKE_SHARED_LIBRARY_SUFFIX}*)
-    elseif (CMAKE_SYSTEM_NAME MATCHES "Windows")
-        file(GLOB_RECURSE DNNL_LIB_LIST ${onednn_LIBPATH}/dnnl.dll)
-    endif ()
+        install(
+            FILES ${DNNL_LIB_LIST}
+            DESTINATION ${INSTALL_LIB_DIR}
+            COMPONENT mindspore
+        )
+    endif()
     install(
-        FILES ${DNNL_LIB_LIST}
+        TARGETS nnacl
         DESTINATION ${INSTALL_LIB_DIR}
         COMPONENT mindspore
     )
-endif ()
+endif()
 
-if (ENABLE_GPU)
-    if (ENABLE_MPI)
+if(ENABLE_MPI)
+    if(ENABLE_CPU)
         install(
-            TARGETS _ms_mpi
-            DESTINATION ${INSTALL_BASE_DIR}
-            COMPONENT mindspore
-        )
-        install(
-            TARGETS gpu_collective
+            TARGETS mpi_adapter
             DESTINATION ${INSTALL_LIB_DIR}
             COMPONENT mindspore
         )
-    endif ()
+        install(
+          TARGETS mpi_collective
+          DESTINATION ${INSTALL_LIB_DIR}
+          COMPONENT mindspore
+        )
+    endif()
+    if(ENABLE_D)
+        install(
+                TARGETS _ascend_mpi
+                DESTINATION ${INSTALL_BASE_DIR}
+                COMPONENT mindspore
+        )
+    endif()
+endif()
+
+if(ENABLE_GPU)
+    if(ENABLE_MPI)
+        install(
+          TARGETS nvidia_collective
+          DESTINATION ${INSTALL_PLUGIN_DIR}/gpu${CUDA_VERSION}
+          COMPONENT mindspore
+        )
+        if(CMAKE_SYSTEM_NAME MATCHES "Linux" AND GPU_BACKEND_CUDA)
+            install(FILES ${nccl_LIBPATH}/libnccl.so.2.16.5 DESTINATION ${INSTALL_PLUGIN_DIR}/gpu${CUDA_VERSION}
+                    RENAME libnccl.so.2 COMPONENT mindspore)
+        endif()
+    endif()
     install(
-        TARGETS gpu_queue
+            TARGETS cuda_ops LIBRARY
+            DESTINATION ${INSTALL_PLUGIN_DIR}/gpu${CUDA_VERSION}
+            COMPONENT mindspore
+            NAMELINK_SKIP
+    )
+endif()
+
+if(ENABLE_D)
+    if(ENABLE_MPI)
+        install(
+                TARGETS ascend_collective
+                DESTINATION ${INSTALL_PLUGIN_DIR}/ascend
+                COMPONENT mindspore
+        )
+        if(DEFINED ENV{MS_INTERNAL_KERNEL_HOME})
+            install(
+                    TARGETS lowlatency_collective
+                    DESTINATION ${INSTALL_PLUGIN_DIR}/ascend
+                    COMPONENT mindspore
+            )
+        endif()
+    endif()
+endif()
+
+if(ENABLE_CPU AND NOT WIN32)
+    install(
+        TARGETS ps_cache
         DESTINATION ${INSTALL_LIB_DIR}
         COMPONENT mindspore
     )
-endif ()
+endif()
 
-if (NOT ENABLE_GE)
-    if (ENABLE_D)
-        if (DEFINED ENV{ASCEND_CUSTOM_PATH})
-            set(ASCEND_PATH $ENV{ASCEND_CUSTOM_PATH})
-        else ()
-            set(ASCEND_PATH /usr/local/Ascend)
-        endif ()
-        set(ASCEND_DRIVER_PATH ${ASCEND_PATH}/driver/lib64/common)
+if(ENABLE_D OR ENABLE_ACL)
+    if(DEFINED ENV{ASCEND_CUSTOM_PATH})
+        set(ASCEND_PATH $ENV{ASCEND_CUSTOM_PATH})
+    else()
+        set(ASCEND_PATH /usr/local/Ascend)
+    endif()
+    set(ASCEND_DRIVER_PATH ${ASCEND_PATH}/driver/lib64/common)
 
+    if(ENABLE_D)
         install(
-            FILES
-                ${CMAKE_BINARY_DIR}/graphengine/src/common/graph/libgraph.so
-                ${CMAKE_BINARY_DIR}/graphengine/src/ge/common/libge_common.so
-                ${CMAKE_BINARY_DIR}/graphengine/src/ge/ge_runtime/libge_runtime.so
-                ${ASCEND_DRIVER_PATH}/libslog.so
-                ${ASCEND_DRIVER_PATH}/libc_sec.so
-            DESTINATION ${INSTALL_LIB_DIR}
-            COMPONENT mindspore
+          TARGETS hccl_plugin
+          DESTINATION ${INSTALL_PLUGIN_DIR}/ascend
+          COMPONENT mindspore
         )
-    elseif (ENABLE_TESTCASES)
+    endif()
+    if(ENABLE_ACL)
         install(
-            FILES
-                ${CMAKE_BINARY_DIR}/graphengine/src/common/graph/libgraph.so
-                ${CMAKE_SOURCE_DIR}/graphengine/third_party/prebuild/${CMAKE_HOST_SYSTEM_PROCESSOR}/libslog.so
-                ${CMAKE_SOURCE_DIR}/build/graphengine/libc_sec.so
-            DESTINATION ${INSTALL_LIB_DIR}
-            COMPONENT mindspore
+                TARGETS dvpp_utils
+                DESTINATION ${INSTALL_PLUGIN_DIR}/ascend
+                COMPONENT mindspore
         )
-    endif ()
-endif ()
+    endif()
+endif()
 
-if (CMAKE_SYSTEM_NAME MATCHES "Windows")
+if(MS_BUILD_GRPC)
+    install(FILES ${grpc_LIBPATH}/libmindspore_grpc++.so.1.36.1
+      DESTINATION ${INSTALL_LIB_DIR} RENAME libmindspore_grpc++.so.1 COMPONENT mindspore)
+    install(FILES ${grpc_LIBPATH}/libmindspore_grpc.so.15.0.0
+      DESTINATION ${INSTALL_LIB_DIR} RENAME libmindspore_grpc.so.15 COMPONENT mindspore)
+    install(FILES ${grpc_LIBPATH}/libmindspore_gpr.so.15.0.0
+      DESTINATION ${INSTALL_LIB_DIR} RENAME libmindspore_gpr.so.15 COMPONENT mindspore)
+    install(FILES ${grpc_LIBPATH}/libmindspore_upb.so.15.0.0
+      DESTINATION ${INSTALL_LIB_DIR} RENAME libmindspore_upb.so.15 COMPONENT mindspore)
+    install(FILES ${grpc_LIBPATH}/libmindspore_address_sorting.so.15.0.0
+      DESTINATION ${INSTALL_LIB_DIR} RENAME libmindspore_address_sorting.so.15 COMPONENT mindspore)
+endif()
+
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
     get_filename_component(CXX_DIR ${CMAKE_CXX_COMPILER} PATH)
     file(GLOB CXX_LIB_LIST ${CXX_DIR}/*.dll)
 
@@ -174,58 +269,155 @@ if (CMAKE_SYSTEM_NAME MATCHES "Windows")
         DESTINATION ${INSTALL_LIB_DIR}
         COMPONENT mindspore
     )
-endif ()
+endif()
 
 # set python files
-file(GLOB MS_PY_LIST ${CMAKE_SOURCE_DIR}/mindspore/*.py)
+file(GLOB MS_PY_LIST ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/*.py)
 install(
     FILES ${MS_PY_LIST}
     DESTINATION ${INSTALL_PY_DIR}
     COMPONENT mindspore
 )
 
+file(GLOB NOTICE ${CMAKE_SOURCE_DIR}/Third_Party_Open_Source_Software_Notice)
+install(
+    FILES ${NOTICE}
+    DESTINATION ${INSTALL_PY_DIR}
+    COMPONENT mindspore
+)
 install(
     DIRECTORY
-        ${CMAKE_SOURCE_DIR}/mindspore/nn
-        ${CMAKE_SOURCE_DIR}/mindspore/_extends
-        ${CMAKE_SOURCE_DIR}/mindspore/parallel
-        ${CMAKE_SOURCE_DIR}/mindspore/mindrecord
-        ${CMAKE_SOURCE_DIR}/mindspore/train
-        ${CMAKE_SOURCE_DIR}/mindspore/model_zoo
-        ${CMAKE_SOURCE_DIR}/mindspore/common
-        ${CMAKE_SOURCE_DIR}/mindspore/ops
-        ${CMAKE_SOURCE_DIR}/mindspore/communication
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/nn
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/_extends
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/parallel
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/mindrecord
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/numpy
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/scipy
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/train
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/boost
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/common
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/ops
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/ops_generate
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/communication
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/profiler
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/rewrite
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/safeguard
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/run_check
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/experimental
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/multiprocessing
+        ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/hal
     DESTINATION ${INSTALL_PY_DIR}
     COMPONENT mindspore
 )
 
-if (ENABLE_GPU)
+if(ENABLE_AKG AND CMAKE_SYSTEM_NAME MATCHES "Linux")
+    set (AKG_PATH ${BUILD_PATH}/mindspore/akg)
+    file(REMOVE_RECURSE ${AKG_PATH}/_akg)
+    file(MAKE_DIRECTORY ${AKG_PATH}/_akg)
+    file(TOUCH ${AKG_PATH}/_akg/__init__.py)
+    install(DIRECTORY "${AKG_PATH}/akg" DESTINATION "${AKG_PATH}/_akg")
     install(
-        DIRECTORY ${CMAKE_SOURCE_DIR}/mindspore/_akg
-        DESTINATION ${INSTALL_PY_DIR}/../
+        DIRECTORY
+            ${AKG_PATH}/_akg
+        DESTINATION ${INSTALL_PY_DIR}/
         COMPONENT mindspore
     )
-    if (EXISTS ${incubator_tvm_gpu_ROOT})
-        file(GLOB_RECURSE GLOG_LIB_LIST ${incubator_tvm_gpu_LIBPATH}/lib*)
+    if(ENABLE_CPU AND NOT ENABLE_GPU AND NOT ENABLE_D)
         install(
-                FILES ${GLOG_LIB_LIST}
-                DESTINATION ${INSTALL_LIB_DIR}
+                TARGETS akg
+                DESTINATION ${INSTALL_PLUGIN_DIR}/cpu
                 COMPONENT mindspore
         )
+    endif()
+
+    if(ENABLE_GPU)
         install(
-            DIRECTORY
-                ${incubator_tvm_gpu_ROOT}/topi/python/topi
-                ${incubator_tvm_gpu_ROOT}/python/tvm
-            DESTINATION ${INSTALL_PY_DIR}/../_akg
+                TARGETS akg
+                DESTINATION ${INSTALL_PLUGIN_DIR}/gpu${CUDA_VERSION}
+                COMPONENT mindspore
+        )
+    endif()
+
+    if(ENABLE_D)
+        install(
+                TARGETS akg
+                DESTINATION ${INSTALL_PLUGIN_DIR}/ascend
+                COMPONENT mindspore
+        )
+    endif()
+endif()
+
+if(ENABLE_D)
+    if(DEFINED ENV{MS_INTERNAL_KERNEL_HOME})
+        set(_MS_INTERNAL_KERNEL_HOME $ENV{MS_INTERNAL_KERNEL_HOME})
+        install(
+            DIRECTORY ${_MS_INTERNAL_KERNEL_HOME}
+            DESTINATION ${INSTALL_PLUGIN_DIR}/ascend
             COMPONENT mindspore
         )
-    endif ()
-endif ()
+    endif()
+endif()
 
-if (EXISTS ${CMAKE_SOURCE_DIR}/mindspore/dataset)
+if(EXISTS ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/dataset)
     install(
-        DIRECTORY ${CMAKE_SOURCE_DIR}/mindspore/dataset
+        DIRECTORY ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/dataset
         DESTINATION ${INSTALL_PY_DIR}
         COMPONENT mindspore
     )
-endif ()
+endif()
+
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+    message("offline debugger does not support windows system temporarily")
+else()
+    if(EXISTS ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/offline_debug)
+        install(
+            DIRECTORY ${CMAKE_SOURCE_DIR}/mindspore/python/mindspore/offline_debug
+            DESTINATION ${INSTALL_PY_DIR}
+            COMPONENT mindspore
+        )
+    endif()
+endif()
+
+## Public header files
+install(
+    DIRECTORY ${CMAKE_SOURCE_DIR}/include
+    DESTINATION ${INSTALL_BASE_DIR}
+    COMPONENT mindspore
+)
+
+## Public header files for minddata
+install(
+    FILES ${CMAKE_SOURCE_DIR}/mindspore/ccsrc/minddata/dataset/include/dataset/config.h
+          ${CMAKE_SOURCE_DIR}/mindspore/ccsrc/minddata/dataset/include/dataset/constants.h
+          ${CMAKE_SOURCE_DIR}/mindspore/ccsrc/minddata/dataset/include/dataset/execute.h
+          ${CMAKE_SOURCE_DIR}/mindspore/ccsrc/minddata/dataset/include/dataset/text.h
+          ${CMAKE_SOURCE_DIR}/mindspore/ccsrc/minddata/dataset/include/dataset/transforms.h
+          ${CMAKE_SOURCE_DIR}/mindspore/ccsrc/minddata/dataset/include/dataset/vision.h
+          ${CMAKE_SOURCE_DIR}/mindspore/ccsrc/minddata/dataset/include/dataset/vision_lite.h
+          ${CMAKE_SOURCE_DIR}/mindspore/ccsrc/minddata/dataset/include/dataset/vision_ascend.h
+    DESTINATION ${INSTALL_BASE_DIR}/include/dataset
+    COMPONENT mindspore
+)
+
+install(
+    FILES
+        ${CMAKE_SOURCE_DIR}/mindspore/core/mindapi/base/format.h
+        ${CMAKE_SOURCE_DIR}/mindspore/core/mindapi/base/type_id.h
+        ${CMAKE_SOURCE_DIR}/mindspore/core/mindapi/base/types.h
+    DESTINATION ${INSTALL_BASE_DIR}/include/mindapi/base
+    COMPONENT mindspore)
+
+## config files
+install(
+    FILES ${CMAKE_SOURCE_DIR}/config/op_info.config
+    DESTINATION ${INSTALL_CFG_DIR}
+    COMPONENT mindspore
+)
+
+if(ENABLE_AIO)
+    install(
+        TARGETS aio_plugin
+        DESTINATION ${INSTALL_LIB_DIR}
+        COMPONENT mindspore
+    )
+endif()

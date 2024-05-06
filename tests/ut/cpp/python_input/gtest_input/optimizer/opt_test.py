@@ -16,9 +16,13 @@
 import numpy as np
 
 from mindspore import Tensor
+from mindspore import dtype as mstype
 from mindspore.ops import Primitive
+from mindspore.ops import _constants as Constants
 from mindspore.ops import operations as P
+from mindspore.ops import functional as F
 from mindspore.ops.operations import _grad_ops as G
+from mindspore.ops import auto_generate as gen
 
 # pylint: disable=unused-variable
 
@@ -26,10 +30,10 @@ from mindspore.ops.operations import _grad_ops as G
 # pylint: disable=unused-argument
 # pylint: disable=redefined-outer-name
 
-scalar_add = Primitive('scalar_add')
-scalar_mul = Primitive('scalar_mul')
-tuple_getitem = Primitive('tuple_getitem')
-switch = Primitive('switch')
+scalar_add = F.scalar_add
+scalar_mul = F.scalar_mul
+tuple_getitem = Primitive(Constants.kTupleGetItem)
+switch = Primitive('Switch')
 
 
 def test_sexp_conversion():
@@ -67,8 +71,12 @@ def test_add_zero(tag):
     return fns[tag]
 
 
-def test_elimR(tag):
-    """ test_elimR """
+def test_elim_r(tag):
+    """
+    Feature: optimizer.
+    Description: test elimi R.
+    Expectation: run case with no exception.
+    """
     R = Primitive('R')
 
     fns = FnDict()
@@ -132,8 +140,8 @@ def cost(x):
 J = Primitive('J')
 
 
-def test_expendJ(x):
-    """ test_expendJ """
+def test_expandJ(x):
+    """ test_expandJ """
     return J(cost)(x)
 
 
@@ -347,7 +355,7 @@ def test_inline_while(tag):
 def test_cse(tag):
     """ test_cse """
     fns = FnDict()
-    scalar_div = Primitive('scalar_div')
+    scalar_div = F.scalar_div
 
     @fns
     def test_f1(x, y):
@@ -367,22 +375,29 @@ def test_cse(tag):
     return fns[tag]
 
 
+def test_no_grad(tag):
+    """
+    Feature: test no grad input net.
+    Description: test no grad input net.
+    Expectation: No exception.
+    """
+    fns = FnDict()
+    mul = Primitive('Mul')
+    make_tuple = Primitive('MakeTuple')
+
+    @fns
+    def test_f1(x, y):
+        x1 = mul(x, 2)
+        y1 = mul(y, 2)
+        return make_tuple(x1, y1)
+
+    return fns[tag]
+
+
 def test_arithmetic(tag):
     """ test_arithmetic """
     fns = FnDict()
     identity = Primitive('identity')
-
-    @fns
-    def multiply_by_zero_l(x):
-        return scalar_mul(x, 0)
-
-    @fns
-    def multiply_by_zero_r(x):
-        return scalar_mul(0, x)
-
-    @fns
-    def after_0(x):
-        return 0
 
     @fns
     def multiply_by_one_l(x):
@@ -462,22 +477,6 @@ def elim_two_reshape(tag):
     return fns[tag]
 
 
-def elim_two_cast(tag):
-    """ elim_two_cast """
-    fns = FnDict()
-    cast = P.Cast()
-
-    @fns
-    def before(x, a, b):
-        return cast(cast(x, a), b)
-
-    @fns
-    def after(x, a, b):
-        return cast(x, b)
-
-    return fns[tag]
-
-
 def test_elim_transpose(tag):
     """ test_elim_transpose """
     fns = FnDict()
@@ -487,6 +486,22 @@ def test_elim_transpose(tag):
     @fns
     def before(x):
         return transpose(x, perm)
+
+    @fns
+    def after(x):
+        return x
+
+    return fns[tag]
+
+
+def test_elim_depend_value(tag):
+    """ test_elim_depend_value """
+    fns = FnDict()
+    depend = P.Depend()
+
+    @fns
+    def before(x):
+        return depend(x, None)
 
     @fns
     def after(x):
@@ -563,7 +578,7 @@ def test_elim_sum_shape_one(tag):
 def test_tuple_getitem(tag):
     """ test_tuple_getitem """
     fns = FnDict()
-    make_tuple = Primitive('make_tuple')
+    make_tuple = Primitive('MakeTuple')
 
     @fns
     def make_get_0(x, y):
@@ -587,7 +602,7 @@ def test_tuple_getitem(tag):
 def test_tuple_setitem(tag):
     """ test_tuple_setitem """
     fns = FnDict()
-    make_tuple = Primitive('make_tuple')
+    make_tuple = Primitive('MakeTuple')
     tuple_setitem = Primitive('tuple_setitem')
 
     @fns
@@ -636,7 +651,7 @@ def test_tuple_get_set_item(tag):
 def test_partial(tag):
     """ test_partial """
     fns = FnDict()
-    partail = Primitive('partial')
+    partail = P.Partial()
 
     def f(x, y):
         return scalar_add(x, y)
@@ -655,7 +670,7 @@ def test_partial(tag):
 def test_replace_applicator(tag):
     """ test_replace_applicator """
     fns = FnDict()
-    partail = Primitive('partial')
+    partail = P.Partial()
 
     def app1(x, y):
         return scalar_add(x, y)
@@ -748,7 +763,7 @@ def test_incorporate_getitem(tag):
 def test_incorporate_getitem_through_switch(tag):
     """ test_incorporate_getitem_through_switch """
     fns = FnDict()
-    scalar_gt = Primitive('scalar_gt')
+    scalar_gt = F.scalar_gt
 
     @fns
     def before(x, y):
@@ -808,7 +823,7 @@ def test_incorporate_call_through_switch(tag):
     fns = FnDict()
     f1 = Primitive('f1')
     f2 = Primitive('f2')
-    scalar_gt = Primitive('scalar_gt')
+    scalar_gt = F.scalar_gt
     identity = Primitive('identity')
 
     @fns
@@ -843,7 +858,7 @@ def test_incorporate_call_through_switch(tag):
 def test_float_tuple_getitem_through_switch(tag):
     """ test_float_tuple_getitem_through_switch """
     fns = FnDict()
-    scalar_gt = Primitive('scalar_gt')
+    scalar_gt = F.scalar_gt
 
     @fns
     def before(x, y):
@@ -860,7 +875,6 @@ def test_merge_addn(tag):
     """ test_merge_addn """
     fns = FnDict()
     addn = P.AddN()
-    AddN = P.AddN
 
     @fns
     def before(x, y, z, a):
@@ -868,7 +882,7 @@ def test_merge_addn(tag):
 
     @fns
     def after(x, y, z, a):
-        return AddN()((a, x, y, z))
+        return addn((a, x, y, z))
 
     return fns[tag]
 
@@ -877,8 +891,7 @@ def test_addn_zero(tag):
     """ test_addn_zero """
     fns = FnDict()
     addn = P.AddN()
-    AddN = P.AddN
-    zero_tensor = Primitive('zeros_like_tensor')
+    zero_tensor = Primitive('ZerosLike')
 
     @fns
     def before_1(x, y, z, a):
@@ -886,7 +899,7 @@ def test_addn_zero(tag):
 
     @fns
     def after(x, y, z, a):
-        return AddN()((a, z))
+        return addn((a, z))
 
     @fns
     def before_2(x, y, z, a):
@@ -907,10 +920,10 @@ def test_convert_switch_ops(tag):
     fns = FnDict()
     ge_switch = Primitive('GeSwitch')
     merge = Primitive('Merge')
-    add = Primitive('TensorAdd')
+    add = F.scalar_add
     neg = Primitive('Neg')
-    tuple_getitem = Primitive('tuple_getitem')
-    make_tuple = Primitive('make_tuple')
+    tuple_getitem = Primitive(Constants.kTupleGetItem)
+    make_tuple = Primitive('MakeTuple')
 
     @fns
     def before(cond, x, y):
@@ -941,7 +954,7 @@ def test_convert_switch_ops(tag):
 def test_minmax_grad(tag):
     """ test_minmax_grad """
     fns = FnDict()
-    min_grad = G.MinimumGrad()
+    min_grad = gen.MinimumGrad()
 
     @fns
     def before_11(x, y, dout):
@@ -1018,7 +1031,7 @@ def test_reducesum_one(tag):
 def test_print_tuple_wrapper(tag):
     fns = FnDict()
     print_ = Primitive('Print')
-    make_tuple = Primitive('make_tuple')
+    make_tuple = Primitive('MakeTuple')
 
     @fns
     def before1(x, y):
@@ -1046,8 +1059,8 @@ def test_print_tuple_wrapper(tag):
 # pylint: disable=unnecessary-semicolon
 def test_constant_duplicate_mul(tag):
     fns = FnDict()
-    Mul = Primitive('Mul');
-    Sqrt = Primitive('Sqrt');
+    Mul = Primitive('Mul')
+    Sqrt = Primitive('Sqrt')
 
     x = Tensor(np.array([[2, 2], [2, 3]]).astype('float32'))
     tensor1 = Tensor(np.array([[1.2, 2.1], [2.2, 3.2]]).astype('float32'))
@@ -1072,5 +1085,241 @@ def test_constant_duplicate_mul(tag):
     @fns
     def after():
         return Mul(Sqrt(x), Mul(tensor1, tensor2))
+
+    return fns[tag]
+
+
+def test_adjust_allreduce_mul_add(tag):
+    fns = FnDict()
+    Mul = Primitive('Mul')
+    AddN = Primitive('AddN')
+    AllReduce = Primitive('AllReduce')
+
+    x = Tensor(np.ones(shape=(64, 32)).astype(np.float32))
+    y = Tensor(np.ones(shape=(64, 32)).astype(np.float32))
+    z = Tensor(np.ones(shape=(64, 32)).astype(np.float32))
+
+    @fns
+    def beforell():
+        return AddN((z, Mul(y, AllReduce(x))))
+
+    @fns
+    def beforelr():
+        return AddN((z, Mul(AllReduce(x), y)))
+
+    @fns
+    def beforerl():
+        return AddN((Mul(y, AllReduce(x)), z))
+
+    @fns
+    def beforerr():
+        return AddN((Mul(AllReduce(x), y), z))
+
+    @fns
+    def after1():
+        return Mul(AllReduce(AddN((z, x))), y)
+
+    @fns
+    def before2r():
+        return AddN((Mul(AllReduce(x), y), Mul(z, z)))
+
+    @fns
+    def before2l():
+        return AddN((Mul(z, z), Mul(AllReduce(x), y)))
+
+    @fns
+    def after2():
+        return Mul(AllReduce(AddN((Mul(z, z), x))), y)
+
+    return fns[tag]
+
+
+def test_row_tensor(tag):
+    """ test_add_zero """
+    fns = FnDict()
+    make_row_tensor = Primitive('MakeRowTensor')
+    row_tensor_get_values = Primitive('RowTensorGetValues')
+    row_tensor_get_indices = Primitive('RowTensorGetIndices')
+    row_tensor_get_dense_shape = Primitive('RowTensorGetDenseShape')
+
+    @fns
+    def before_get_indices(x, y, z):
+        return row_tensor_get_indices(make_row_tensor(x, y, z))
+
+    @fns
+    def after_get_indices(x, y, z):
+        return x
+
+    @fns
+    def before_get_values(x, y, z):
+        return row_tensor_get_values(make_row_tensor(x, y, z))
+
+    @fns
+    def after_get_values(x, y, z):
+        return y
+
+    @fns
+    def before_get_dense_shape(x, y, z):
+        return row_tensor_get_dense_shape(make_row_tensor(x, y, z))
+
+    @fns
+    def after_get_dense_shape(x, y, z):
+        return z
+
+    return fns[tag]
+
+
+def test_sparse_tensor(tag):
+    """ test_add_zero """
+    fns = FnDict()
+    make_sparse_tensor = Primitive('MakeCOOTensor')
+    sparse_tensor_get_values = Primitive('COOTensorGetValues')
+    sparse_tensor_get_indices = Primitive('COOTensorGetIndices')
+    sparse_tensor_get_dense_shape = Primitive('COOTensorGetDenseShape')
+
+    @fns
+    def before_get_indices(x, y, z):
+        return sparse_tensor_get_indices(make_sparse_tensor(x, y, z))
+
+    @fns
+    def after_get_indices(x, y, z):
+        return x
+
+    @fns
+    def before_get_values(x, y, z):
+        return sparse_tensor_get_values(make_sparse_tensor(x, y, z))
+
+    @fns
+    def after_get_values(x, y, z):
+        return y
+
+    @fns
+    def before_get_dense_shape(x, y, z):
+        return sparse_tensor_get_dense_shape(make_sparse_tensor(x, y, z))
+
+    @fns
+    def after_get_dense_shape(x, y, z):
+        return z
+
+    return fns[tag]
+
+
+# Test ut for file: call_graph_tuple_transform.h.
+def test_tuple_flatten(tag):
+    """
+    Feature: optimizer.
+    Description: test cases for pass: graph_tuple_transform.
+    Expectation: the tuple args and parameters are successfully flattened by the pass.
+    """
+    fns = FnDict()
+    w = Tensor(np.random.randn(64, 3, 7, 7).astype(np.float32))
+    x = Tensor(np.random.randn(32, 3, 224, 224).astype(np.float32))
+
+    x1 = Tensor(np.random.randn(1).astype(np.float32))
+    y1 = Tensor(np.random.randn(1).astype(np.float32))
+
+    p = Tensor(3, mstype.float32)
+
+    out_channel = 64
+    kernel_size = 7
+    conv = P.Conv2D(out_channel,
+                    kernel_size,
+                    mode=1,
+                    pad_mode="valid",
+                    pad=0,
+                    stride=1,
+                    dilation=1,
+                    group=1)
+    pow_ops = P.Pow()
+
+    @fns
+    def test_flatten_switch_partial_arg():
+        def called_graph_with_tuple(tuple_x, tuple_y):
+            return conv(F.tuple_getitem(tuple_x, 0), F.tuple_getitem(tuple_x, 1)) + conv(F.tuple_getitem(tuple_y, 0),
+                                                                                         F.tuple_getitem(tuple_y, 1))
+
+        # Add tuple args in partial args.
+        func1 = F.partial(called_graph_with_tuple, (pow_ops(x, p), pow_ops(w, p)))
+        func2 = F.partial(called_graph_with_tuple, (pow_ops(x, p), pow_ops(w, p)))
+        cond = x1 < y1
+
+        switch_node = F.switch(cond, func1, func2)
+        # Add tuple args in call args.
+        return switch_node((pow_ops(x, p), pow_ops(w, p)))
+
+    index = Tensor(1, mstype.int32)
+
+    @fns
+    def test_flatten_switch_layer_partial_arg():
+        def called_graph_with_tuple(tuple_x):
+            return conv(F.tuple_getitem(tuple_x, 0), F.tuple_getitem(tuple_x, 1))
+
+        def called_graph_no_tuple(param1, param2):
+            return conv(param1, param2)
+
+        # Add tuple args in partial
+        func1 = F.partial(called_graph_with_tuple, (pow_ops(x, p), pow_ops(w, p)))
+        func2 = F.partial(called_graph_with_tuple, (pow_ops(x, p), pow_ops(w, p)))
+        # Add tensor args in partial
+        func3 = F.partial(called_graph_no_tuple, pow_ops(x, p), pow_ops(w, p))
+        switch_node = F.switch_layer(pow_ops(index, index), (func1, func2, func3))
+        return switch_node()
+
+    @fns
+    def test_flatten_simple_call_tuple_in_tuple_arg():
+        def called_graph_with_tuple(tuple_x, tuple_tuple_y, tensor_z):
+            result1 = conv(F.tuple_getitem(tuple_x, 0), F.tuple_getitem(tuple_x, 1))
+            tuple_0 = F.tuple_getitem(tuple_tuple_y, 0)
+            result2 = conv(F.tuple_getitem(tuple_0, 0), F.tuple_getitem(tuple_0, 1))
+            tensor_1 = F.tuple_getitem(tuple_tuple_y, 1)
+            result3 = conv(tensor_1, tensor_z)
+            return result1 + result2 + result3
+
+        # Tuple arg.
+        tuple_x_arg = (pow_ops(x, p), pow_ops(w, p))
+        # TupleTuple arg.
+        tuple_0_arg = (pow_ops(x, p), pow_ops(w, p))
+        tensor_1_arg = pow_ops(x, p)
+        tuple_tuple_y_arg = (tuple_0_arg, tensor_1_arg)
+        # TensorArg
+        tensor_z_arg = pow_ops(w, p)
+        return called_graph_with_tuple(tuple_x_arg, tuple_tuple_y_arg, tensor_z_arg)
+
+    return fns[tag]
+
+
+def test_partial_unused_args_eliminate(tag):
+    """
+    Feature: Eliminate the unused args of partial inputs.
+    Description: Construct a partial call.
+    Expectation: The unused args are eliminated.
+    """
+    fns = FnDict()
+    out_channel = 64
+    kernel_size = 7
+    conv = P.Conv2D(out_channel,
+                    kernel_size,
+                    mode=1,
+                    pad_mode="valid",
+                    pad=0,
+                    stride=1,
+                    dilation=1,
+                    group=1)
+
+    @fns
+    def before(x, y, z):
+        def called_graph(a, b, c):
+            return conv(a, b)
+
+        func = F.partial(called_graph, x, y, z)
+        return func
+
+    @fns
+    def after(x, y, z):
+        def called_graph(a, b):
+            return conv(a, b)
+
+        func = F.partial(called_graph, x, y)
+        return func
 
     return fns[tag]

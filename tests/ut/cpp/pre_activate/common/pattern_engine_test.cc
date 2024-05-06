@@ -1,5 +1,5 @@
 /**
- * Copyright 2020 Huawei Technologies Co., Ltd
+ * Copyright 2020-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,31 +16,38 @@
 
 #include <iostream>
 #include <sstream>
+#include <vector>
 #include <memory>
 #include <algorithm>
 
 #include "common/common_test.h"
-#include "pre_activate/common/pattern_engine.h"
-#include "pre_activate/common/visit.h"
-#include "utils/base_ref.h"
+#include "ops/math_ops.h"
+#include "include/backend/optimizer/pattern_engine.h"
+#include "include/backend/optimizer/visitor.h"
+#include "include/backend/optimizer/helper.h"
+#include "base/base_ref.h"
 #include "ir/anf.h"
+#include "include/common/utils/utils.h"
 
 namespace mindspore {
 using PatternListType = std::initializer_list<BaseRef>;
+
+std::shared_ptr<VectorRef> ExpandList(const std::vector<BaseRef> &list);
 
 bool Equal(const BaseRef &a, const BaseRef &b) { return a == b; }
 
 class TestMatchEngine : public UT::Common {
  public:
-  TestMatchEngine()
-      : TU(std::make_shared<DefaultVisitor>(), std::function<bool(const BaseRef &, const BaseRef &)>(Equal)) {
+  TestMatchEngine() : TU(std::make_shared<Visitor>()) {
     equiv_null = std::make_shared<Equiv>();
+    fg = std::make_shared<FuncGraph>();
   };
 
  public:
   PatternEngine TU;
   EquivPtr equiv_null;
   PrimitiveVarMap primitive_vars_null;
+  FuncGraphPtr fg;
 };
 
 TEST_F(TestMatchEngine, Var) {
@@ -49,7 +56,7 @@ TEST_F(TestMatchEngine, Var) {
   VarPtr v3 = std::make_shared<Var>("name");
   ASSERT_TRUE(!(v1 == v2));
   ASSERT_TRUE(v1->matches(v2));
-  ASSERT_TRUE(v1->matches(1));
+  ASSERT_TRUE(v1->matches(static_cast<int64_t>(1)));
   ASSERT_EQ(v3->ToString(), "Var(name)");
   ASSERT_NE(v1->tag(), v2->tag());
 }
@@ -61,6 +68,8 @@ TEST_F(TestMatchEngine, CondVar) {
       v = utils::cast<float>(any);
     } else if (utils::isa<int>(any)) {
       v = utils::cast<int>(any);
+    } else if (utils::isa<int64_t>(any)) {
+      v = utils::cast<int64_t>(any);
     } else {
       return false;
     }
@@ -74,9 +83,9 @@ TEST_F(TestMatchEngine, CondVar) {
 }
 
 TEST_F(TestMatchEngine, Seq) {
-  auto seq = Seq({1, 2, 3});
+  auto seq = Seq({static_cast<int64_t>(1), static_cast<int64_t>(2), static_cast<int64_t>(3)});
   MS_LOG(INFO) << "seq:" << seq.ToString();
-  ASSERT_EQ(seq.ToString(), "vector[Int32Imm value:1, Int32Imm value:2, Int32Imm value:3]");
+  ASSERT_EQ(seq.ToString(), "vector[Int64Imm value:1, Int64Imm value:2, Int64Imm value:3]");
 }
 
 TEST_F(TestMatchEngine, SeqVar) {
@@ -214,16 +223,78 @@ TEST_F(TestMatchEngine, Match_CondVar) {
   ASSERT_EQ(d, nullptr);
 }
 
-TEST_F(TestMatchEngine, Match_Reify) {
+/// Feature: Backend support dump flag
+/// Description: PatternEngine match var with primitive
+/// Expectation: Get correct Equiv map
+TEST_F(TestMatchEngine, Match_PrimVar) {
+  VarPtr mul1 = std::make_shared<Var>(std::make_shared<Primitive>(kMulOpName));
+  VarPtr mul2 = std::make_shared<Var>(std::make_shared<Primitive>(kMulOpName));
   VarPtr v1 = std::make_shared<Var>();
-  VarPtr sv = std::make_shared<SeqVar>();
+  VarPtr sv2 = std::make_shared<SeqVar>();
+  auto pattern_ref = VectorRef({mul1, v1, VectorRef({mul2, sv2})});
+  PrimitiveVarMapPtr primitive_vars = std::make_shared<PrimitiveVarMap>();
+  auto pattern_node = opt::SexpToNode(pattern_ref, fg, primitive_vars.get(), true);
+  ASSERT_EQ(primitive_vars->size(), std::size_t(2));
 
-  BaseRef t;
+  auto anode1 = std::make_shared<AnfNode>(fg);
+  auto anode2 = std::make_shared<AnfNode>(fg);
+  auto anode3 = std::make_shared<AnfNode>(fg);
+  AnfNodePtr mul2_cnode = std::make_shared<CNode>(
+    std::vector<AnfNodePtr>{NewValueNode(std::make_shared<Primitive>(kMulOpName)), anode2, anode3}, fg);
+  AnfNodePtr mul1_cnode = std::make_shared<CNode>(
+    std::vector<AnfNodePtr>{NewValueNode(std::make_shared<Primitive>(kMulOpName)), anode1, mul2_cnode}, fg);
+
+  EquivPtr d;
+  equiv_null->clear();
+  d = TU.Match(pattern_node, mul1_cnode, *primitive_vars, equiv_null);
+  ASSERT_EQ(d->size(), std::size_t(4));
+  ASSERT_EQ((*d)[mul2], mul2_cnode);
+  ASSERT_EQ((*d)[mul1], mul1_cnode);
+
+  AnfNodePtr sub_cnode = std::make_shared<CNode>(
+    std::vector<AnfNodePtr>{NewValueNode(std::make_shared<Primitive>(kSubOpName)), anode1, mul2_cnode}, fg);
 
   equiv_null->clear();
-  (*equiv_null)[sv] = BaseRef(std::make_shared<Seq>(PatternListType{3, 4}));
-  t = TU.Replace(VectorRef({1, 2, sv}), equiv_null);
-  ASSERT_EQ(t, BaseRef(VectorRef({1, 2, 3, 4})));
+  d = TU.Match(pattern_node, sub_cnode, *primitive_vars, equiv_null);
+  ASSERT_EQ(d, nullptr);
 }
 
+/// Feature: Backend support dump flag
+/// Description: PatternEngine match primitive
+/// Expectation: Get correct Equiv map
+TEST_F(TestMatchEngine, Match_Prim) {
+  VarPtr v1 = std::make_shared<Var>();
+  VarPtr sv2 = std::make_shared<SeqVar>();
+  auto pattern_ref = VectorRef({prim::kPrimMul, v1, VectorRef({prim::kPrimMul, sv2})});
+  PrimitiveVarMapPtr primitive_vars = std::make_shared<PrimitiveVarMap>();
+  auto pattern_node = opt::SexpToNode(pattern_ref, fg, primitive_vars.get(), true);
+  ASSERT_EQ(primitive_vars->size(), std::size_t(2));
+
+  auto anode1 = std::make_shared<AnfNode>(fg);
+  auto anode2 = std::make_shared<AnfNode>(fg);
+  auto anode3 = std::make_shared<AnfNode>(fg);
+  AnfNodePtr mul2_cnode = std::make_shared<CNode>(
+    std::vector<AnfNodePtr>{NewValueNode(std::make_shared<Primitive>(kMulOpName)), anode2, anode3}, fg);
+  AnfNodePtr mul1_cnode = std::make_shared<CNode>(
+    std::vector<AnfNodePtr>{NewValueNode(std::make_shared<Primitive>(kMulOpName)), anode1, mul2_cnode}, fg);
+
+  EquivPtr d;
+  equiv_null->clear();
+  d = TU.Match(pattern_node, mul1_cnode, *primitive_vars, equiv_null);
+  ASSERT_EQ(d->size(), std::size_t(4));
+  for (auto &prim_var : *primitive_vars) {
+    if (prim_var.first == prim::kPrimMul) {
+      ASSERT_EQ((*d)[prim_var.second], mul1_cnode);
+    } else {
+      ASSERT_EQ((*d)[prim_var.second], mul2_cnode);
+    }
+  }
+
+  AnfNodePtr sub_cnode = std::make_shared<CNode>(
+    std::vector<AnfNodePtr>{NewValueNode(std::make_shared<Primitive>(kSubOpName)), anode1, mul2_cnode}, fg);
+
+  equiv_null->clear();
+  d = TU.Match(pattern_node, sub_cnode, *primitive_vars, equiv_null);
+  ASSERT_EQ(d, nullptr);
+}
 }  // namespace mindspore

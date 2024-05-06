@@ -1,4 +1,4 @@
-# Copyright 2020 Huawei Technologies Co., Ltd
+# Copyright 2020-2024 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,12 +15,11 @@
 """test checking for some ops"""
 import functools
 import logging
+import pytest
 import numpy as np
-
 import mindspore.context as context
 from mindspore import Tensor
 from mindspore import nn
-from mindspore.common.api import _executor
 from mindspore.ops import operations as P
 from ..ut_filter import non_graph_engine
 from ....mindspore_test_framework.mindspore_test import mindspore_test
@@ -62,38 +61,8 @@ def test_net_without_construct():
     """ test_net_without_construct """
     net = NetMissConstruct()
     inp = Tensor(np.ones([1, 1, 32, 32]).astype(np.float32))
-    try:
-        _executor.compile(net, inp)
-    except RuntimeError as err:
-        if str(err).find("Unsupported syntax 'Raise' at ") >= 0:
-            print(str(err))
-        else:
-            raise err
-
-
-class NetWithRaise(nn.Cell):
-    """ NetWithRaise definition """
-
-    def __init__(self):
-        super(NetWithRaise, self).__init__()
-        self.conv1 = nn.Conv2d(1, 6, 5, pad_mode='valid')
-
-    # raise exception in method 'construct'
-    def construct(self, x):
-        raise 'exception in construct'
-
-
-def test_net_with_raise():
-    """ test_net_with_raise """
-    net = NetWithRaise()
-    inp = Tensor(np.ones([1, 1, 32, 32]).astype(np.float32))
-    try:
-        _executor.compile(net, inp)
-    except RuntimeError as err:
-        if str(err).find("Unsupported syntax 'Raise' at ") >= 0:
-            print(str(err))
-        else:
-            raise err
+    with pytest.raises(AttributeError):
+        net(inp)
 
 
 class NetAddN(nn.Cell):
@@ -212,6 +181,21 @@ test_case_check_ops = [
     ('BatchMatMul', {
         'block': NetBatchMatMul(),
         'desc_inputs': [Tensor(np.ones(shape=[3, 1, 5])), Tensor(np.ones(shape=[3, 5, 4]))]}),
+    ('BatchMatMul_broadcast_1', {
+        'block': NetBatchMatMul(),
+        'desc_inputs': [Tensor(np.ones(shape=[3, 1, 5])), Tensor(np.ones(shape=[5, 4]))]}),
+    ('BatchMatMul_broadcast_2', {
+        'block': NetBatchMatMul(),
+        'desc_inputs': [Tensor(np.ones(shape=[3, 1, 5])), Tensor(np.ones(shape=[1, 5, 4]))]}),
+    ('BatchMatMul_broadcast_3', {
+        'block': NetBatchMatMul(),
+        'desc_inputs': [Tensor(np.ones(shape=[2, 1, 1, 5])), Tensor(np.ones(shape=[1, 2, 5, 4]))]}),
+    ('BatchMatMul_broadcast_4', {
+        'block': NetBatchMatMul(),
+        'desc_inputs': [Tensor(np.ones(shape=[2, 2, 1, 1, 5])), Tensor(np.ones(shape=[1, 2, 5, 4]))]}),
+    ('BatchMatMul_broadcast_5', {
+        'block': NetBatchMatMul(),
+        'desc_inputs': [Tensor(np.ones(shape=[3, 1, 5])), Tensor(np.ones(shape=[1, 3, 5, 4]))]}),
 ]
 
 test_case_lists = [test_case_check_ops]
@@ -282,9 +266,6 @@ raise_set = [
         'block': (P.BatchMatMul(), {'exception': ValueError}),
         'desc_inputs': [Tensor(np.ones(shape=[3, 1, 5])), Tensor(np.ones(shape=[3, 3, 4]))]}),
     ('BatchMatMul_4_Error', {
-        'block': (P.BatchMatMul(), {'exception': ValueError}),
-        'desc_inputs': [Tensor(np.ones(shape=[3, 1, 5])), Tensor(np.ones(shape=[1, 3, 5, 4]))]}),
-    ('BatchMatMul_5_Error', {
         'block': (P.BatchMatMul(), {'exception': ValueError}),
         'desc_inputs': [Tensor(np.ones(shape=[3, 1, 5])), Tensor(np.ones(shape=[2, 5, 4]))]}),
 ]

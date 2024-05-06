@@ -13,10 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "vm/vm.h"
+#include "backend/graph_compiler/vm.h"
+#include "mindspore/core/ops/framework_ops.h"
 #include "common/common_test.h"
-#include "operator/ops.h"
-#include "vm/backend.h"
+#include "frontend/operator/ops.h"
+#include "backend/graph_compiler/backend.h"
 
 namespace mindspore {
 namespace compile {
@@ -45,13 +46,15 @@ TEST_F(TestCompileVM, StructPartial) {
 
 TEST_F(TestCompileVM, FinalVM) {
   std::vector<std::pair<Instruction, VectorRef>> instr;
-  instr.push_back({Instruction::kCall, VectorRef({-1})});
-  instr.push_back({Instruction::kTailCall, VectorRef({-2, 1, 1})});
-  instr.push_back({Instruction::kReturn, VectorRef({-1, 1})});
-  instr.push_back({Instruction::kPartial, VectorRef({0, "cc"})});
+  instr.push_back({Instruction::kCall, VectorRef({static_cast<int64_t>(-1)})});
+  instr.push_back(
+    {Instruction::kTailCall, VectorRef({static_cast<int64_t>(-2), static_cast<int64_t>(1), static_cast<int64_t>(1)})});
+  instr.push_back({Instruction::kReturn, VectorRef({static_cast<int64_t>(-1), static_cast<int64_t>(1)})});
+  instr.push_back({Instruction::kPartial, VectorRef({static_cast<int64_t>(0), "cc"})});
   BackendPtr backend = std::make_shared<Backend>("vm");
   auto vm = new FinalVM(instr, backend);
-  vm->Eval(VectorRef({1, 2, 3, -1, "a", "b", "c"}));
+  vm->Eval(VectorRef({static_cast<int64_t>(1), static_cast<int64_t>(2), static_cast<int64_t>(3),
+                      static_cast<int64_t>(-1), "a", "b", "c"}));
   delete vm;
   vm = nullptr;
 }

@@ -16,13 +16,13 @@
 #include "common/backend_common_test.h"
 #include "ir/anf.h"
 #include "ir/tensor.h"
-#include "debug/anf_ir_dump.h"
+#include "include/common/debug/anf_ir_dump.h"
 #include "common/py_func_graph_fetcher.h"
-#include "session/anf_runtime_algorithm.h"
-#include "pre_activate/common/optimizer.h"
-#include "pre_activate/common/pass_manager.h"
-#include "pre_activate/pass/convert_tuple_input_to_dynamic_input.h"
-#include "utils/utils.h"
+#include "include/backend/anf_runtime_algorithm.h"
+#include "include/backend/optimizer/optimizer.h"
+#include "include/backend/optimizer/pass_manager.h"
+#include "backend/common/pass/convert_tuple_input_to_dynamic_input.h"
+#include "include/common/utils/utils.h"
 
 namespace mindspore {
 namespace opt {
@@ -39,7 +39,7 @@ class TestHWConstTupleInputToDynamicInput : public BackendCommon {
 TEST_F(TestHWConstTupleInputToDynamicInput, test_convert_tuple_input_to_dynamic_input) {
   FuncGraphPtr g = getPyFun_.CallAndParseRet("test_convert_tuple_input_to_dynamic_input", "before");
   ASSERT_TRUE(g != nullptr);
-  std::vector<int> shp_x{1, 11, 20, 1, 2};
+  std::vector<int64_t> shp_x{1, 11, 20, 1, 2};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp_x);
   AbstractBasePtrList args_spec_list{x_abstract};
   auto func_graph = GetKernelGraph(g, args_spec_list);

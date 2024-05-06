@@ -18,7 +18,7 @@ import pytest
 
 import mindspore.nn as nn
 from mindspore import Tensor, Parameter
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.nn import TrainOneStepCell, WithLossCell
 from mindspore.nn.optim import RMSProp
 from mindspore.ops import operations as P
@@ -51,13 +51,13 @@ def test_rmsprop_compile():
 
     net_with_loss = WithLossCell(net, loss)
     train_network = TrainOneStepCell(net_with_loss, optimizer)
-    _executor.compile(train_network, inputs, label)
+    _cell_graph_executor.compile(train_network, inputs, label)
 
 
 def test_rmsprop_e():
     net = Net()
     with pytest.raises(ValueError):
-        RMSProp(net.get_parameters(), momentum=-0.1, learning_rate=0.1)
+        RMSProp(net.get_parameters(), momentum=-0.1, learning_rate=0.1, weight_decay=0.9)
 
     with pytest.raises(TypeError):
-        RMSProp(net.get_parameters(), momentum=1, learning_rate=0.1)
+        RMSProp(net.get_parameters(), momentum=1, learning_rate=0.1, weight_decay=0.9)

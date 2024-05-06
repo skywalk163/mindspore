@@ -16,10 +16,6 @@
 
 #include "ut_common.h"
 
-using mindspore::LogStream;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::MsLogLevel::ERROR;
-
 namespace mindspore {
 namespace mindrecord {
 namespace UT {
@@ -384,8 +380,8 @@ void ShardWriterImageNetOpenForAppend(string filename) {
   {
     MS_LOG(INFO) << "=============== images " << bin_data.size() << " ============================";
     mindrecord::ShardWriter fw;
-    auto ret = fw.OpenForAppend(filename);
-    if (ret == FAILED) {
+    auto status = fw.OpenForAppend(filename);
+    if (status.IsError()) {
       return;
     }
 

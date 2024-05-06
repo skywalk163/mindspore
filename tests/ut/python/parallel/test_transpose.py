@@ -21,7 +21,8 @@ from mindspore.common.parameter import Parameter
 from mindspore.nn.loss import SoftmaxCrossEntropyWithLogits
 from mindspore.nn.optim.momentum import Momentum
 from mindspore.ops import operations as P
-from mindspore.train import Model, ParallelMode
+from mindspore.train import Model
+from mindspore.context import ParallelMode
 from tests.dataset_mock import MindData
 
 
@@ -49,10 +50,10 @@ class Dataset(MindData):
 class TransposeNet(nn.Cell):
     def __init__(self, strategy1, strategy2):
         super(TransposeNet, self).__init__()
-        self.matmul = P.MatMul().set_strategy(((8, 1), (1, 1)))
+        self.matmul = P.MatMul().shard(((8, 1), (1, 1)))
         self.matmul_weight = Parameter(Tensor(np.ones([128, 256]), dtype=ms.float32), name="weight")
-        self.transpose1 = P.Transpose().set_strategy(strategy1)
-        self.transpose2 = P.Transpose().set_strategy(strategy2)
+        self.transpose1 = P.Transpose().shard(strategy1)
+        self.transpose2 = P.Transpose().shard(strategy2)
 
     def construct(self, x):
         x = self.matmul(x, self.matmul_weight)
@@ -79,8 +80,8 @@ def transpose_common(strategy1, strategy2):
     dataset = Dataset(predict, label, 2)
     net = transpose_net(strategy1, strategy2)
 
-    loss = SoftmaxCrossEntropyWithLogits(is_grad=False, sparse=True)
-    loss.softmax_cross_entropy.set_strategy(((8, 1), (8, 1)))
+    loss = SoftmaxCrossEntropyWithLogits(sparse=True, reduction='mean')
+    loss.softmax_cross_entropy.shard(((8, 1), (8, 1)))
     opt = Momentum(net.trainable_params(), learning_rate, momentum)
     context.set_context(mode=context.GRAPH_MODE)
     model = Model(net, loss, opt)
@@ -89,12 +90,22 @@ def transpose_common(strategy1, strategy2):
 
 
 def test_transpose1():
+    """
+    Feature: distribute operator transpose in auto parallel.
+    Description: run transpose distribute operator using model.
+    Expectation: compile done without error.
+    """
     strategy1 = ((1, 8),)
     strategy2 = ((1, 8),)
     transpose_common(strategy1, strategy2)
 
 
 def test_transpose2():
+    """
+    Feature: distribute operator transpose in auto parallel.
+    Description: run transpose distribute operator using model.
+    Expectation: compile done without error.
+    """
     strategy1 = ((1, 4),)
     strategy2 = ((1, 8),)
     transpose_common(strategy1, strategy2)

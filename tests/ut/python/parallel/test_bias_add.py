@@ -18,7 +18,7 @@ import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
 from mindspore.ops import operations as P
-from mindspore.train.model import Model
+from mindspore.train import Model
 
 
 class CrossEntropyLoss(nn.Cell):
@@ -61,13 +61,17 @@ class DatasetLenet():
     def get_repeat_count(self):
         return 1
 
+    def create_tuple_iterator(self, num_epochs=-1, do_copy=True):
+        return self
+
 
 class Net(nn.Cell):
     def __init__(self):
         super().__init__()
         self.conv = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=1, stride=1, pad_mode='valid',
                               has_bias=True, weight_init='ones', bias_init='ones')
-        self.reduce_mean = P.ReduceMean(keep_dims=False).set_strategy(((1, 1, 1, 8),))
+        self.conv.conv2d.shard(((8, 1, 1, 1), (1, 1, 1, 1)))
+        self.reduce_mean = P.ReduceMean(keep_dims=False).shard(((1, 1, 1, 8),))
         self.flat = nn.Flatten()
 
     def construct(self, inputs):
@@ -78,8 +82,13 @@ class Net(nn.Cell):
 
 
 def test_bias_add():
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
     context.set_context(mode=context.GRAPH_MODE)
-    context.set_auto_parallel_context(parallel_mode="auto_parallel", device_num=8)
+    context.set_auto_parallel_context(parallel_mode="auto_parallel", search_mode="dynamic_programming", device_num=8)
     input_np = np.ones([16, 3, 32, 32]).astype(np.float32)
     label_np = np.zeros([16, 2048]).astype(np.float32)
     dataset = DatasetLenet(Tensor(input_np), Tensor(label_np), 1)

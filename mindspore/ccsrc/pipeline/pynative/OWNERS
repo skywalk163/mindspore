@@ -1,0 +1,15 @@
+approvers:
+- chujinjin #
+- kisnwang
+- hwcaifubi
+- baochong
+- gaoxiong1
+- zjun3021
+
+reviewers:
+- wangch1009
+- luochao60
+- nomindcarry
+
+options:
+    no_parent_owners: true

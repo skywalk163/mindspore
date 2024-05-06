@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@
 #include <list>
 #include <vector>
 #include "common/common_test.h"
-#include "parallel/strategy.h"
-#include "parallel/ops_info/loss_info.h"
-#include "parallel/device_manager.h"
-#include "parallel/tensor_layout/tensor_redistribution.h"
+#include "frontend/parallel/strategy.h"
+#include "frontend/parallel/ops_info/loss_info.h"
+#include "frontend/parallel/device_manager.h"
+#include "frontend/parallel/tensor_layout/tensor_redistribution.h"
 
 namespace mindspore {
 namespace parallel {
@@ -38,13 +38,13 @@ class TestSoftmaxLoss : public UT::Common {
 };
 
 void TestSoftmaxLoss::SetUp() {
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 65; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(64);
   stage_map.push_back(1);
 
@@ -55,7 +55,7 @@ void TestSoftmaxLoss::SetUp() {
   g_device_manager->Init(dev_list, local_dev, stage_map, "hccl");
 
   ValuePtr is_grad = MakeValue(true);
-  std::unordered_map<std::string, ValuePtr> attr = {{"is_grad", is_grad}};
+  mindspore::HashMap<std::string, ValuePtr> attr = {{"is_grad", is_grad}};
 
   Shapes inputs_shape = {{2, 4, 8, 16}, {2, 4, 8, 16}};
   Shapes outputs_shape = {{2}, {2, 4, 8, 16}};
@@ -64,21 +64,21 @@ void TestSoftmaxLoss::SetUp() {
 }
 
 TEST_F(TestSoftmaxLoss, InferDevMatrixShape1) {
-  std::vector<Dimensions> inputs = {{2, 4, 8, 1}, {2, 4, 8, 1}};
+  Strategies inputs = {{2, 4, 8, 1}, {2, 4, 8, 1}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  loss->Init(strategy);
-  std::vector<int32_t> dev_matrix_shape = loss->dev_matrix_shape();
+  loss->Init(strategy, nullptr);
+  Shape dev_matrix_shape = loss->dev_matrix_shape();
 
-  std::vector<int32_t> expect = {2, 4, 8, 1};
+  Shape expect = {2, 4, 8, 1};
   ASSERT_EQ(dev_matrix_shape, expect);
 }
 
 TEST_F(TestSoftmaxLoss, InferSliceShape1) {
-  std::vector<Dimensions> str = {{2, 4, 8, 1}, {2, 4, 8, 1}};
+  Strategies str = {{2, 4, 8, 1}, {2, 4, 8, 1}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  loss->Init(strategy);
+  loss->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = loss->inputs_tensor_info();
   std::vector<TensorInfo> outputs = loss->outputs_tensor_info();
 
@@ -104,10 +104,10 @@ TEST_F(TestSoftmaxLoss, InferSliceShape1) {
 }
 
 TEST_F(TestSoftmaxLoss, GetTensorLayout1) {
-  std::vector<Dimensions> str = {{2, 4, 8, 1}, {2, 4, 8, 1}};
+  Strategies str = {{2, 4, 8, 1}, {2, 4, 8, 1}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  loss->Init(strategy);
+  loss->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = loss->inputs_tensor_info();
   std::vector<TensorInfo> outputs = loss->outputs_tensor_info();
 
@@ -133,10 +133,10 @@ TEST_F(TestSoftmaxLoss, GetTensorLayout1) {
 }
 
 TEST_F(TestSoftmaxLoss, GetForwardOp1) {
-  std::vector<Dimensions> inputs = {{2, 4, 8, 1}, {2, 4, 8, 1}};
+  Strategies inputs = {{2, 4, 8, 1}, {2, 4, 8, 1}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  loss->Init(strategy);
+  loss->Init(strategy, nullptr);
   OperatorVector forward_op = loss->forward_op();
   size_t size = forward_op.size();
 
@@ -144,10 +144,10 @@ TEST_F(TestSoftmaxLoss, GetForwardOp1) {
 }
 
 TEST_F(TestSoftmaxLoss, GetMirrorOPs1) {
-  std::vector<Dimensions> inputs = {{2, 4, 8, 1}, {2, 4, 8, 1}};
+  Strategies inputs = {{2, 4, 8, 1}, {2, 4, 8, 1}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  loss->Init(strategy);
+  loss->Init(strategy, nullptr);
   MirrorOps mirror_ops = loss->mirror_ops();
 
   size_t size = mirror_ops.size();
@@ -156,17 +156,17 @@ TEST_F(TestSoftmaxLoss, GetMirrorOPs1) {
 }
 
 TEST_F(TestSoftmaxLoss, GetVirtualDivOPs1) {
-  std::vector<Dimensions> inputs = {{1, 4, 8, 1}, {1, 4, 8, 1}};
+  Strategies inputs = {{1, 4, 8, 1}, {1, 4, 8, 1}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  loss->Init(strategy);
+  loss->Init(strategy, nullptr);
   OperatorVector virtual_div_op = loss->virtual_div_op();
 
   OperatorArgs operator_args = virtual_div_op.at(0).second;
 
   std::string arg0_name = operator_args.first.at(0).first;
   ValuePtr arg0_value = operator_args.first.at(0).second;
-  int32_t divisor = arg0_value->cast<Int32ImmPtr>()->value();
+  int64_t divisor = arg0_value->cast<Int64ImmPtr>()->value();
 
   ASSERT_EQ(virtual_div_op.at(0).first, "_VirtualDiv");
   ASSERT_EQ(virtual_div_op.size(), 1);
@@ -176,19 +176,19 @@ TEST_F(TestSoftmaxLoss, GetVirtualDivOPs1) {
 
 TEST_F(TestSoftmaxLoss, CheckStrategy1) {
   // Success: {{2,4,8,16}}
-  std::vector<Dimensions> inputs = {{2, 2, 8, 16}, {2, 4, 16, 1}};
+  Strategies inputs = {{2, 2, 8, 16}, {2, 4, 16, 1}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = loss->Init(strategy);
+  Status ret = loss->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 
 TEST_F(TestSoftmaxLoss, CheckStrategy2) {
   // Success: {{2,4,8,16}}
-  std::vector<Dimensions> inputs = {{2, 4, 8}};
+  Strategies inputs = {{2, 4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = loss->Init(strategy);
+  Status ret = loss->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 

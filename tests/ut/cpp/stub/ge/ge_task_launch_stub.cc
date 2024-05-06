@@ -14,45 +14,63 @@
  * limitations under the License.
  */
 #include <vector>
-#include "framework/ge_runtime/model_runner.h"
-#include "device/ascend/tasksink/runtime_utils.h"
-
-namespace ge {
-namespace model_runner {
-ModelRunner &ModelRunner::Instance() {
-  static ModelRunner runner;
-  return runner;
-}
-
-bool ModelRunner::LoadDavinciModel(uint32_t device_id, uint64_t session_id, uint32_t model_id,
-                                   std::shared_ptr<DavinciModel> ascend_model,
-                                   std::shared_ptr<ge::ModelListener> listener) {
-  return true;
-}
-
-bool ModelRunner::UnloadModel(uint32_t model_id) { return true; }
-
-bool ModelRunner::RunModel(uint32_t model_id, const ge::InputData &input_data, ge::OutputData *output_data) {
-  return true;
-}
-
-const std::vector<uint32_t> &ModelRunner::GetTaskIdList(uint32_t model_id) const {
-  static std::vector<uint32_t> task_id_list;
-  return task_id_list;
-}
-}  // namespace model_runner
-}  // namespace ge
+#include "plugin/device/ascend/hal/hccl_adapter/hccl_adapter.h"
 
 namespace mindspore {
-namespace device {
-namespace ascend {
-namespace tasksink {
-bool RuntimeUtils::HcomBindModel(rtModel_t model, rtStream_t stream) { return true; }
+namespace hccl {
+HcclAdapter &HcclAdapter::GetInstance() {
+  static HcclAdapter instance;
+  return instance;
+}
+bool HcclAdapter::InitHccl(uint32_t, std::string_view) { return true; }
+bool HcclAdapter::InitHccl(uint32_t, std::string_view, std::string_view, HcclMode) { return true; }
+bool HcclAdapter::FinalizeHccl() { return true; }
+HcclResult HcclAdapter::HcclCreateGroup(const std::string &, uint32_t, uint32_t *) const { return HCCL_SUCCESS; }
+HcclResult HcclAdapter::HcclDestroyGroup(const std::string &) const { return HCCL_SUCCESS; }
+HcclResult HcclAdapter::HcclGetRankId(const std::string &, uint32_t *) const { return HCCL_SUCCESS; }
+HcclResult HcclAdapter::HcclGetRankSize(const std::string &, uint32_t *) const { return HCCL_SUCCESS; }
+HcclResult HcclAdapter::HcclGetLocalRankId(const std::string &, uint32_t *) const { return HCCL_SUCCESS; }
+HcclResult HcclAdapter::HcclGetLocalRankSize(const std::string &, uint32_t *) const { return HCCL_SUCCESS; }
+HcclResult HcclAdapter::HcclGetWorldRankFromGroupRank(const std::string &, uint32_t, uint32_t *) const {
+  return HCCL_SUCCESS;
+}
+HcclResult HcclAdapter::HcclGetGroupRankFromWorldRank(uint32_t, const std::string &, uint32_t *) const {
+  return HCCL_SUCCESS;
+}
+HcclResult HcclAdapter::HcclBroadcast(void *, uint64_t, HcclDataType, uint32_t, aclrtStream, HcclComm) const {
+  return HCCL_SUCCESS;
+}
+HcclResult HcclAdapter::HcclAllReduce(void *, void *, uint64_t, HcclDataType, HcclReduceOp, aclrtStream,
+                                      HcclComm) const {
+  return HCCL_SUCCESS;
+}
+HcclResult HcclAdapter::HcclAllGather(void *, void *, uint64_t, HcclDataType, aclrtStream, HcclComm) const {
+  return HCCL_SUCCESS;
+}
+HcclResult HcclAdapter::HcclReduceScatter(void *, void *, uint64_t, HcclDataType, HcclReduceOp, aclrtStream,
+                                          HcclComm) const {
+  return HCCL_SUCCESS;
+}
+HcclResult HcclAdapter::HcclSend(void *, uint64_t, HcclDataType, uint32_t, aclrtStream, HcclComm) const {
+  return HCCL_SUCCESS;
+}
+HcclResult HcclAdapter::HcclRecv(void *, uint64_t, HcclDataType, uint32_t, aclrtStream, HcclComm) const {
+  return HCCL_SUCCESS;
+}
+HcclResult HcclAdapter::HcclExecEnqueueOp(const ::HcomOperation &op_info, const HExecCallBack &callback) const {
+  return HCCL_SUCCESS;
+}
+HcclResult HcclAdapter::HcclAllToAll(void *, void *, hccl::HcclAllToAllVParams, HcclDataType, aclrtStream,
+                                     HcclComm) const {
+  return HCCL_SUCCESS;
+}
 
-bool RuntimeUtils::HcomUnbindModel(rtModel_t model) { return true; }
+bool HcclAdapter::UseHcclCM() const { return false; }
 
-bool RuntimeUtils::HcomDistribute(const std::shared_ptr<HcclTaskInfo> &task_info, rtStream_t stream) { return true; }
-}  // namespace tasksink
-}  // namespace ascend
-}  // namespace device
+bool HcclAdapter::IsSameServer(const std::vector<uint32_t> &rank_ids) const { return false; }
+
+std::string HcclAdapter::GetHcomGroup(const CNodePtr &) const {
+  return "";
+}
+}  // namespace hccl
 }  // namespace mindspore

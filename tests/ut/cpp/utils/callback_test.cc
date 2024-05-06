@@ -16,19 +16,17 @@
 #include <map>
 #include <string>
 #include "pybind11/pybind11.h"
-#include "utils/callbacks.h"
+#include "include/common/utils/callbacks.h"
 #include "common/common_test.h"
-#include "pipeline/pipeline.h"
-#include "pipeline/parse/python_adapter.h"
-#include "transform/df_graph_manager.h"
-#include "debug/draw.h"
-#ifdef ENABLE_GE
-#include "utils/callbacks_ge.h"
+#include "pipeline/jit/ps/pipeline.h"
+#include "include/common/utils/python_adapter.h"
+#include "mindspore/ccsrc/transform/graph_ir/df_graph_manager.h"
+#include "include/common/debug/draw.h"
+#ifdef ENABLE_D
+#include "include/common/utils/callbacks_ge.h"
 #endif
 
 namespace mindspore {
-namespace python_adapter = mindspore::parse::python_adapter;
-
 class TestCallback : public UT::Common {
  public:
   TestCallback() {}
@@ -38,16 +36,16 @@ class TestCallback : public UT::Common {
  * # ut and python static info not share
 TEST_F(TestCallback, test_get_anf_tensor_shape) {
   py::object obj = python_adapter::CallPyFn("gtest_input.pipeline.parse.parse_class", "test_get_object_graph");
-  FuncGraphPtr func_graph = pipeline::ExecutorPy::GetInstance()->GetFuncGraphPy(obj);
+  FuncGraphPtr func_graph = pipeline::GraphExecutorPy::GetInstance()->GetFuncGraphPy(obj);
   transform::DfGraphManager::GetInstance().SetAnfGraph(func_graph);
-  std::shared_ptr<std::vector<int>> param_shape_ptr = std::make_shared<std::vector<int>>();
+  std::shared_ptr<std::vector<int64_t>> param_shape_ptr = std::make_shared<std::vector<int64_t>>();
   bool get_shape = callbacks::GetParameterShape(func_graph, "weight", param_shape_ptr);
   ASSERT_TRUE(get_shape == true);
 }
 
 TEST_F(TestCallback, test_checkpoint_save_op) {
   py::object obj = python_adapter::CallPyFn("gtest_input.pipeline.parse.parse_class", "test_get_object_graph");
-  FuncGraphPtr func_graph = pipeline::ExecutorPy::GetInstance()->GetFuncGraphPy(obj);
+  FuncGraphPtr func_graph = pipeline::GraphExecutorPy::GetInstance()->GetFuncGraphPy(obj);
   transform::DfGraphManager::GetInstance().SetAnfGraph(func_graph);
 
 #define DTYPE float

@@ -22,6 +22,10 @@ from mindspore import Tensor
 from mindspore.ops import composite as C
 context.set_context(mode=context.GRAPH_MODE, device_target="Ascend")
 
+
+grad_with_sens = C.GradOperation(sens_param=True)
+
+
 class Net(nn.Cell):
     """Net definition"""
 
@@ -33,9 +37,7 @@ class Net(nn.Cell):
         return self.square(data)
 
 
-@pytest.mark.level0
-@pytest.mark.platform_x86_ascend_training
-@pytest.mark.platform_arm_ascend_training
+@pytest.mark.level1
 @pytest.mark.env_onecard
 def test_net():
     x = np.array([1.0, 4.0, 9.0]).astype(np.float32)
@@ -44,7 +46,7 @@ def test_net():
     expect = np.array([1.0, 16.0, 81.0]).astype(np.float32)
     assert (output.asnumpy() == expect).all()
 
-@pytest.mark.level0
+@pytest.mark.level1
 @pytest.mark.platform_x86_ascend_training
 @pytest.mark.platform_arm_ascend_training
 @pytest.mark.env_onecard
@@ -52,6 +54,6 @@ def test_grad_net():
     x = np.array([1.0, 4.0, 9.0]).astype(np.float32)
     sens = np.array([1.0, 1.0, 1.0]).astype(np.float32)
     square = Net()
-    dx = C.grad_with_sens(square)(Tensor(x), Tensor(sens))
+    dx = grad_with_sens(square)(Tensor(x), Tensor(sens))
     expect = np.array([2.0, 8.0, 18.0]).astype(np.float32)
     assert (dx.asnumpy() == expect).all()

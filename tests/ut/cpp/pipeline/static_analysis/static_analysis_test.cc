@@ -16,22 +16,26 @@
 #include <iostream>
 #include <memory>
 
-#include "pipeline/static_analysis/prim.h"
-#include "pipeline/static_analysis/helper.h"
 #include "common/common_test.h"
+#include "ops/arithmetic_op_name.h"
 #include "common/py_func_graph_fetcher.h"
+#include "frontend/operator/ops.h"
+#include "include/common/debug/draw.h"
 #include "ir/manager.h"
 #include "ir/tensor.h"
-#include "operator/ops.h"
-#include "pipeline/parse/parse.h"
-#include "pipeline/parse/data_converter.h"
-#include "pipeline/resource.h"
-#include "debug/draw.h"
+#include "mindspore/core/ops/arithmetic_ops.h"
+#include "mindspore/core/ops/framework_ops.h"
+#include "pipeline/jit/ps/parse/data_converter.h"
+#include "pipeline/jit/ps/parse/parse.h"
+#include "pipeline/jit/ps/resource.h"
+#include "pipeline/jit/ps/action.h"
+#include "pipeline/jit/ps/static_analysis/prim.h"
+#include "pipeline/static_analysis/helper.h"
 #include "utils/log_adapter.h"
+#include "include/common/debug/anf_ir_dump.h"
 
 namespace mindspore {
 namespace abstract {
-namespace python_adapter = mindspore::parse::python_adapter;
 namespace {
 
 AbstractBasePtr InferImplScalarAddStub(const AnalysisEnginePtr &engine, const PrimitivePtr &,
@@ -46,8 +50,8 @@ AbstractBasePtr InferImplScalarAddStub(const AnalysisEnginePtr &engine, const Pr
 }
 
 EvaluatorPtr InitPrimitiveScalarAddEvaluatorStub() {
-  EvaluatorPtr PrimitiveScalarAddEvaluator =
-    std::make_shared<StandardPrimEvaluator>(prim::kPrimScalarAdd, InferImplScalarAddStub);
+  EvaluatorPtr PrimitiveScalarAddEvaluator = std::make_shared<StandardPrimEvaluator>(
+    prim::kPrimScalarAdd, StandardPrimitiveImplReg{InferImplScalarAddStub, nullptr, true});
   return PrimitiveScalarAddEvaluator;
 }
 
@@ -62,8 +66,8 @@ AbstractBasePtr InferImplReturnStub(const AnalysisEnginePtr &engine, const Primi
 }
 
 EvaluatorPtr InitPrimitiveReturnEvaluatorStub() {
-  EvaluatorPtr PrimitiveReturnEvaluator =
-    std::make_shared<StandardPrimEvaluator>(prim::kPrimReturn, InferImplReturnStub);
+  EvaluatorPtr PrimitiveReturnEvaluator = std::make_shared<StandardPrimEvaluator>(
+    prim::kPrimReturn, StandardPrimitiveImplReg{InferImplReturnStub, nullptr, true});
   return PrimitiveReturnEvaluator;
 }
 
@@ -96,7 +100,7 @@ class MetaScalarAdd : public MetaFuncGraph {
     FuncGraphPtr fg = std::make_shared<FuncGraph>();
     ParameterPtr x = fg->add_parameter();
     ParameterPtr y = fg->add_parameter();
-    auto prim_scalar_add = std::make_shared<Primitive>("scalar_add");
+    auto prim_scalar_add = std::make_shared<Primitive>("ScalarAdd");
     std::vector<AnfNodePtr> inputs;
     inputs.push_back(NewValueNode(prim_scalar_add));
     inputs.push_back(x);
@@ -129,7 +133,7 @@ static FuncGraphPtr MakeFuncGraph(PrimitivePtr prim) {
    * @mindspore
    * def f(x, y):
    *     return x + y
-   * print(f(1,2))
+   * print64_t(f(1,2))
    */
   FuncGraphPtr func_graph = std::make_shared<FuncGraph>();
   ParameterPtr x = func_graph->add_parameter();
@@ -153,18 +157,18 @@ void TestInfer::TearDown() {
 
 TEST_F(TestInfer, test_inferred_scalar_add) {
   AbstractBasePtrList args_spec_list;
-  int v1 = 1;
-  int v2 = 2;
+  int64_t v1 = 1;
+  int64_t v2 = 2;
 
   AbstractBasePtr abstract_v1 = FromValue(v1, false);
   AbstractBasePtr abstract_v2 = FromValue(v2, false);
   args_spec_list.push_back(abstract_v1);
   args_spec_list.push_back(abstract_v2);
 
-  auto prim_scalar_add = std::make_shared<Primitive>("scalar_add");
+  auto prim_scalar_add = std::make_shared<Primitive>("ScalarAdd");
   FuncGraphPtr func_graph = MakeFuncGraph(prim_scalar_add);
-  AbstractBasePtr abs_base_got = engine_->Run(func_graph, args_spec_list).inferred->abstract();
-  ASSERT_TRUE(abs_base_got.get() == abstract_v1.get());
+  AbstractBasePtr abs_base_got = engine_->Run(func_graph, args_spec_list).eval_result->abstract();
+  ASSERT_TRUE(*abs_base_got->BuildValue() == *MakeValue(static_cast<int64_t>(3)));
 }
 
 class TestInferGraph : public UT::Common {
@@ -259,21 +263,21 @@ TEST_F(TestInferGraph, test_inferred) {
   AbstractBasePtrList args_spec_list;
   MS_LOG(INFO) << "Begin TestInferGraph call other graph.";
   MS_LOG(INFO) << "" << graph_f_->get_return()->ToString();
-  AbstractBasePtr abstract_v1 = FromValue(1, false);
+  AbstractBasePtr abstract_v1 = FromValue(static_cast<int64_t>(1), false);
   args_spec_list.push_back(abstract_v1);
-  AbstractBasePtr abs_base_got = engine_->Run(graph_f_, args_spec_list).inferred->abstract();
+  AbstractBasePtr abs_base_got = engine_->Run(graph_f_, args_spec_list).eval_result->abstract();
   ASSERT_TRUE(abs_base_got.get() == abstract_v1.get());
 
   // now this test case failed randomly, have to debug.
   MS_LOG(INFO) << "Begin TestInferGraph closure.";
   MS_LOG(INFO) << "" << graph_alpha_->get_return()->ToString();
 
-  AbstractBasePtr abstract_v2 = FromValue(2, false);
+  AbstractBasePtr abstract_v2 = FromValue(static_cast<int64_t>(2), false);
   args_spec_list.clear();
   args_spec_list.push_back(abstract_v1);
   args_spec_list.push_back(abstract_v2);
-  abs_base_got = engine_->Run(graph_alpha_, args_spec_list).inferred->abstract();
-  ASSERT_TRUE(abs_base_got.get() == abstract_v1.get());
+  abs_base_got = engine_->Run(graph_alpha_, args_spec_list).eval_result->abstract();
+  ASSERT_TRUE(*abs_base_got->BuildValue() == *MakeValue(static_cast<int64_t>(3)));
 }
 
 TEST_F(TestInferGraph, test_context) {
@@ -293,23 +297,23 @@ TEST_F(TestInferGraph, test_context) {
 
   AnalysisContextPtr dummy_context = AnalysisContext::DummyContext();
 
-  AnalysisContextPtr f_context = dummy_context->NewFuncGraphContext(graph_f_, AbstractBasePtrList());
-  ASSERT_TRUE(f_context->Filter(graph_f_) = f_context);
-  ASSERT_TRUE(f_context->Filter(nullptr) = dummy_context);
+  AnalysisContextPtr f_context = NewContext(dummy_context, graph_f_, AbstractBasePtrList());
+  ASSERT_TRUE(f_context->FindOwnOrParentContext(graph_f_.get()) = f_context);
+  ASSERT_TRUE(f_context->FindOwnOrParentContext(nullptr) = dummy_context);
 
-  AnalysisContextPtr g_context = f_context->NewFuncGraphContext(graph_g_, AbstractBasePtrList());
-  ASSERT_TRUE(g_context->Filter(graph_g_) = g_context);
-  ASSERT_TRUE(g_context->Filter(graph_f_) = dummy_context);
-  ASSERT_TRUE(g_context->Filter(nullptr) = dummy_context);
+  AnalysisContextPtr g_context = NewContext(f_context, graph_g_, AbstractBasePtrList());
+  ASSERT_TRUE(g_context->FindOwnOrParentContext(graph_g_.get()) = g_context);
+  ASSERT_TRUE(g_context->FindOwnOrParentContext(graph_f_.get()) = dummy_context);
+  ASSERT_TRUE(g_context->FindOwnOrParentContext(nullptr) = dummy_context);
 
-  AnalysisContextPtr alpha_context = dummy_context->NewFuncGraphContext(graph_alpha_, AbstractBasePtrList());
-  ASSERT_TRUE(alpha_context->Filter(graph_alpha_) = alpha_context);
-  ASSERT_TRUE(alpha_context->Filter(nullptr) = dummy_context);
+  AnalysisContextPtr alpha_context = NewContext(dummy_context, graph_alpha_, AbstractBasePtrList());
+  ASSERT_TRUE(alpha_context->FindOwnOrParentContext(graph_alpha_.get()) = alpha_context);
+  ASSERT_TRUE(alpha_context->FindOwnOrParentContext(nullptr) = dummy_context);
 
-  AnalysisContextPtr beta_context = alpha_context->NewFuncGraphContext(graph_beta_, AbstractBasePtrList());
-  ASSERT_TRUE(beta_context->Filter(graph_beta_) = beta_context);
-  ASSERT_TRUE(beta_context->Filter(graph_alpha_) = alpha_context);
-  ASSERT_TRUE(beta_context->Filter(nullptr) = dummy_context);
+  AnalysisContextPtr beta_context = NewContext(alpha_context, graph_beta_, AbstractBasePtrList());
+  ASSERT_TRUE(beta_context->FindOwnOrParentContext(graph_beta_.get()) = beta_context);
+  ASSERT_TRUE(beta_context->FindOwnOrParentContext(graph_alpha_.get()) = alpha_context);
+  ASSERT_TRUE(beta_context->FindOwnOrParentContext(nullptr) = dummy_context);
 }
 
 class TestInferMetaGraph : public UT::Common {
@@ -351,15 +355,16 @@ void TestInferMetaGraph::TearDown() {
 
 TEST_F(TestInferMetaGraph, test_inferred) {
   AbstractBasePtrList args_spec_list;
-  int v1 = 1;
+  int64_t v1 = 1;
+  int64_t res = 2;
   std::cout << "Begin TestInferGraph." << std::endl;
   std::cout << func_graph_->get_return()->ToString() << std::endl;
   AbstractBasePtr abstract_v1 = FromValue(v1, false);
   AbstractBasePtr abstract_v2 = FromValue(v1, false);
   args_spec_list.push_back(abstract_v1);
   args_spec_list.push_back(abstract_v2);
-  AbstractBasePtr abs_base_got = engine_->Run(func_graph_, args_spec_list).inferred->abstract();
-  ASSERT_TRUE(abs_base_got.get() == abstract_v1.get());
+  AbstractBasePtr abs_base_got = engine_->Run(func_graph_, args_spec_list).eval_result->abstract();
+  ASSERT_TRUE(*abs_base_got->BuildValue() == *MakeValue(res));
 }
 
 class TestInferUniform : public UT::Common {
@@ -380,61 +385,31 @@ void TestInferUniform::TearDown() {
 
 TEST_F(TestInferUniform, test_inferred_scalar_add) {
   AbstractBasePtrList args_spec;
-  int v1 = 1;
-  int v2 = 2;
+  int64_t v1 = 1;
+  int64_t v2 = 2;
 
   AbstractBasePtr abstract_v1 = FromValue(v1, false);
   AbstractBasePtr abstract_v2 = FromValue(v2, false);
   args_spec.push_back(abstract_v1);
   args_spec.push_back(abstract_v2);
 
-  auto prim_scalar_add = std::make_shared<Primitive>("scalar_add");
+  auto prim_scalar_add = std::make_shared<Primitive>("ScalarAdd");
   FuncGraphPtr func_graph = MakeFuncGraph(prim_scalar_add);
-  AbstractBasePtr abs_base_got = engine_->Run(func_graph, args_spec).inferred->abstract();
+  AbstractBasePtr abs_base_got = engine_->Run(func_graph, args_spec).eval_result->abstract();
   ASSERT_TRUE(*(abs_base_got->GetTypeTrack()) == *(abstract_v1->GetTypeTrack()));
-  ASSERT_TRUE(abs_base_got->GetTypeTrack()->type_id() == kNumberTypeInt32);
-}
-
-
-class TestEvalOnePrim : public UT::Common {
- public:
-  TestEvalOnePrim() : getPyFun("gtest_input.pipeline.infer.infer_test", true), engine_(nullptr) {}
-  void SetUp();
-  void TearDown();
-
-  UT::PyFuncGraphFetcher getPyFun;
-  AnalysisEnginePtr engine_;
-};
-
-void TestEvalOnePrim::SetUp() { engine_ = SetupAnalysisEngineStub(); }
-
-void TestEvalOnePrim::TearDown() {
-  // destroy resource
-}
-TEST_F(TestEvalOnePrim, test_scalar_add) {
-  double x1 = 1.1;
-  double x2 = 1.1;
-  double x3 = 2.2;
-  AbstractBasePtr base1 = FromValue(x1, false);
-  AbstractBasePtr base2 = FromValue(x2, false);
-  AbstractBasePtrList base_list = {base1, base2};
-  auto res = EvalOnePrim(std::make_shared<Primitive>("scalar_add"), base_list)->abstract();
-  MS_LOG(INFO) << "result spec: " << res->ToString();
-  AbstractBasePtr exp = FromValue(x3, false);
-  MS_LOG(INFO) << "result exp: " << exp->ToString();
-  ASSERT_EQ(*res, *exp);
+  ASSERT_TRUE(abs_base_got->GetTypeTrack()->type_id() == kNumberTypeInt64);
 }
 
 class TestGraphEval : public UT::Common {
  public:
-  TestGraphEval() : getPyFun("gtest_input.pipeline.infer.infer_test", true){}; 
+  TestGraphEval() : getPyFun("gtest_input.pipeline.infer.infer_test", true){};
   void SetUp();
   void TearDown();
   AnalysisEnginePtr engine_;
   UT::PyFuncGraphFetcher getPyFun;
 };
 
-void TestGraphEval::SetUp() { engine_ = SetupAnalysisEngine(); }  
+void TestGraphEval::SetUp() { engine_ = SetupAnalysisEngine(); }
 
 void TestGraphEval::TearDown() {
   // destroy resource
@@ -442,11 +417,77 @@ void TestGraphEval::TearDown() {
   parse::data_converter::ClearObjectCache();
 }
 
+class TestEvalCNode : public UT::Common {
+ public:
+  TestEvalCNode() : getPyFun_("gtest_input.pipeline.infer.infer_test", true, true), engine_(nullptr) {}
+  void SetUp();
+  void TearDown();
+
+  UT::PyFuncGraphFetcher getPyFun_;
+  AnalysisEnginePtr engine_;
+};
+
+void TestEvalCNode::SetUp() { engine_ = SetupAnalysisEngineStub(); }
+
+void TestEvalCNode::TearDown() {
+  // destroy resource
+}
+
+abstract::AbstractBasePtr EvalFunction(const ValuePtr &value, const abstract::AbstractBasePtrList &args_abs) {
+  return pipeline::AbstractAnalyze(value, args_abs).eval_result->abstract();
+}
+
+/// Feature: Test EvalCNodePrim.
+/// Description: Test EvalOnePrim.
+/// Expectation: success.
+TEST_F(TestEvalCNode, test_eval_cnode) {
+  FuncGraphPtr test_graph = getPyFun_.CallAndParseRet("eval_test_functions", "func");
+  ASSERT_TRUE(nullptr != test_graph);
+  auto node_list = TopoSort(test_graph->get_return());
+  AbstractBasePtr x = std::make_shared<AbstractTensor>(kFloat16, std::vector<int64_t>{1, 2, 3});
+  AbstractBasePtr y = std::make_shared<AbstractTensor>(kFloat32, std::vector<int64_t>{1, 2, 3});
+  int counter = 0;
+  for (const auto &item : node_list) {
+    if (item->isa<CNode>()) {
+      auto cnode = item->cast<CNodePtr>();
+      MS_EXCEPTION_IF_NULL(cnode);
+      auto func = GetValueNode(cnode->input(0));
+      MS_EXCEPTION_IF_NULL(func);
+      if (counter == 0) {
+        auto inputs = std::vector<AbstractBasePtr>{x, y};
+        // S-Prim-Add  Test DoSignature Eval
+        auto reno_abs = pipeline::Renormalize(func, inputs)->return_node()->abstract();
+        assert((*reno_abs) == (*y));
+        auto res = EvalFunction(func, inputs);
+        assert((*res) == (*y));
+      }
+      if (counter == 1) {
+        auto inputs = std::vector<AbstractBasePtr>{x, y};
+        // S-Prim-Add  Test DoSignature Eval
+        auto reno_abs = pipeline::Renormalize(func, inputs)->return_node()->abstract();
+        assert((*reno_abs) == (*y));
+        auto res = EvalFunction(func, inputs);
+        assert((*res) == (*y));
+      }
+      if (counter == 2) {
+        auto inputs = std::vector<AbstractBasePtr>{y};
+        // S-Prim-Add  Test DoSignature Eval
+        auto reno_abs = pipeline::Renormalize(func, inputs)->return_node()->abstract();
+        assert((*reno_abs) == (*y));
+        auto res = EvalFunction(func, inputs);
+        assert((*res) == (*y));
+      }
+      ++counter;
+    }
+    continue;
+  }
+}
+
 /* skip ut test cases temporarily
 TEST_F(TestGraphInfer, test_graph_infer_defaults) {
   FuncGraphPtr graph = getPyFun.CallAndParseRet("test_graph_infer_defaults");
   AbstractBasePtrList args_spec_list = {};
-  AbstractBasePtr res = engine_->Run(graph, args_spec_list).inferred->abstract();
+  AbstractBasePtr res = engine_->Run(graph, args_spec_list).eval_result->abstract();
   AbstractBasePtr expect = FromValue(MakeValue(50), false);
   ASSERT_EQ(*res, *expect);
 }
@@ -454,7 +495,7 @@ TEST_F(TestGraphInfer, test_graph_infer_defaults) {
 TEST_F(TestGraphInfer, test_graph_infer_vararg_0) {
   FuncGraphPtr graph = getPyFun.CallAndParseRet("test_graph_infer_vararg_0");
   AbstractBasePtrList args_spec_list = {};
-  AbstractBasePtr res = engine_->Run(graph, args_spec_list).inferred->abstract();
+  AbstractBasePtr res = engine_->Run(graph, args_spec_list).eval_result->abstract();
   AbstractBasePtr expect = FromValue(MakeValue(1), false);
   ASSERT_EQ(*res, *expect);
 }
@@ -462,7 +503,7 @@ TEST_F(TestGraphInfer, test_graph_infer_vararg_0) {
 TEST_F(TestGraphInfer, test_graph_infer_vararg) {
   FuncGraphPtr graph = getPyFun.CallAndParseRet("test_graph_infer_vararg");
   AbstractBasePtrList args_spec_list = {};
-  AbstractBasePtr res = engine_->Run(graph, args_spec_list).inferred->abstract();
+  AbstractBasePtr res = engine_->Run(graph, args_spec_list).eval_result->abstract();
   AbstractBasePtr expect = FromValue(MakeValue(9), false);
   ASSERT_EQ(*res, *expect);
 }
@@ -470,7 +511,7 @@ TEST_F(TestGraphInfer, test_graph_infer_vararg) {
 TEST_F(TestGraphInfer, test_graph_infer_vararg_kwonlyargs) {
   FuncGraphPtr graph = getPyFun.CallAndParseRet("test_graph_infer_vararg_kwonlyargs");
   AbstractBasePtrList args_spec_list = {};
-  AbstractBasePtr res = engine_->Run(graph, args_spec_list).inferred->abstract();
+  AbstractBasePtr res = engine_->Run(graph, args_spec_list).eval_result->abstract();
   AbstractBasePtr expect = FromValue(MakeValue(48), false);
   ASSERT_EQ(*res, *expect);
 }
@@ -478,7 +519,7 @@ TEST_F(TestGraphInfer, test_graph_infer_vararg_kwonlyargs) {
 TEST_F(TestGraphInfer, test_graph_infer_kwarg) {
   FuncGraphPtr graph = getPyFun.CallAndParseRet("test_graph_infer_kwarg");
   AbstractBasePtrList args_spec_list = {};
-  AbstractBasePtr res = engine_->Run(graph, args_spec_list).inferred->abstract();
+  AbstractBasePtr res = engine_->Run(graph, args_spec_list).eval_result->abstract();
   AbstractBasePtr expect = FromValue(MakeValue(7), false);
   ASSERT_EQ(*res, *expect);
 }
@@ -486,7 +527,7 @@ TEST_F(TestGraphInfer, test_graph_infer_kwarg) {
 TEST_F(TestGraphInfer, test_graph_infer_vararg_kwonlyargs_kwarg) {
   FuncGraphPtr graph = getPyFun.CallAndParseRet("test_graph_infer_vararg_kwonlyargs_kwarg");
   AbstractBasePtrList args_spec_list = {};
-  AbstractBasePtr res = engine_->Run(graph, args_spec_list).inferred->abstract();
+  AbstractBasePtr res = engine_->Run(graph, args_spec_list).eval_result->abstract();
   AbstractBasePtr expect = FromValue(MakeValue(46), false);
   ASSERT_EQ(*res, *expect);
 }
@@ -494,7 +535,7 @@ TEST_F(TestGraphInfer, test_graph_infer_vararg_kwonlyargs_kwarg) {
 TEST_F(TestGraphInfer, test_graph_infer_vararg_kwonlyargs_kwarg_defaults) {
   FuncGraphPtr graph = getPyFun.CallAndParseRet("test_graph_infer_vararg_kwonlyargs_kwarg_defaults");
   AbstractBasePtrList args_spec_list = {};
-  AbstractBasePtr res = engine_->Run(graph, args_spec_list).inferred->abstract();
+  AbstractBasePtr res = engine_->Run(graph, args_spec_list).eval_result->abstract();
   AbstractBasePtr expect = FromValue(MakeValue(57), false);
   ASSERT_EQ(*res, *expect);
 }

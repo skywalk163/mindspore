@@ -13,41 +13,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <string>
-#include "prof_mgr_core.h"
-#include <string>
+#include "acl/acl_prof.h"
 
-namespace Msprof {
-namespace Engine {
+ACL_FUNC_VISIBILITY aclError aclprofInit(const char *profilerResultPath, size_t length) { return ACL_SUCCESS; }
 
-class EngineIntf;
-/**
- * @name  : RegisterEngine
- * @berif : API of libmsprof, register an engine with a name
- * @param [in]: module: the name of plugin
-                engine: the plugin
- * @return: PROFILING_SUCCESS 0 (success)
- *          PROFILING_FAILED -1 (failed)
- */
-int RegisterEngine(const std::string& module, const EngineIntf* engine) { return 0; }
+ACL_FUNC_VISIBILITY aclError aclprofStart(const aclprofConfig *profilerConfig) { return ACL_SUCCESS; }
 
-}  // namespace Engine
-}  // namespace Msprof
+ACL_FUNC_VISIBILITY aclError aclprofStop(const aclprofConfig *profilerConfig) { return ACL_SUCCESS; }
 
-/**
- * @name  : ProfMgrStartUP
- * @berif : start Profiling task
- * @param : ProfMgrCfg cfg : config of start_up profiling
- * @return: NO_NULL (success)
- *        NULL (failed)
- */
-void* ProfMgrStartUp(const ProfMgrCfg* cfg) { return const_cast<void*>(reinterpret_cast<const void*>(cfg)); }
+ACL_FUNC_VISIBILITY aclError aclprofFinalize() { return ACL_SUCCESS; }
 
-/**
- * @name  : ProfMgrStop
- * @berif : stop Profiling task
- * @param : void * handle return by ProfMgrStartUP
- * @return: PROFILING_SUCCESS 0 (success)
- *        PROFILING_FAILED -1 (failed)
- */
-int ProfMgrStop(void* handle) { return 0; }
+ACL_FUNC_VISIBILITY aclprofConfig *aclprofCreateConfig(uint32_t *deviceIdList, uint32_t deviceNums,
+                                                       aclprofAicoreMetrics aicoreMetrics,
+                                                       const aclprofAicoreEvents *aicoreEvents,
+                                                       uint64_t dataTypeConfig) {
+  return nullptr;
+}
+
+ACL_FUNC_VISIBILITY aclError aclprofDestroyConfig(const aclprofConfig *profilerConfig) { return ACL_SUCCESS; }
+

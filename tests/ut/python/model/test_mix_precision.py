@@ -19,13 +19,14 @@ import mindspore.common.dtype as mstype
 import mindspore.nn as nn
 from mindspore import Tensor, context
 from mindspore.common import ParameterTuple
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.common.parameter import Parameter
 from mindspore.nn import Momentum
 from mindspore.nn import TrainOneStepCell, WithLossCell
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
-from mindspore.train.parallel_utils import ParallelMode
+from mindspore.ops import functional as F
+from mindspore.context import ParallelMode
 from tests.ops_common import convert
 from ....train_step_wrap import train_step_with_loss_warp
 
@@ -73,7 +74,7 @@ def test_add_cast_flag():
     net.fc3.to_float(mstype.float32)
     net = train_step_with_loss_warp(net)
     net.set_train()
-    _executor.compile(net, predict, label)
+    net(predict, label)
 
 
 def test_add_cast_flag_tensor():
@@ -81,7 +82,7 @@ def test_add_cast_flag_tensor():
     net = NetForConcat()
     net.add_flags_recursive(fp16=True)
     net.set_train()
-    _executor.compile(net, x1)
+    net(x1)
 
 
 def test_on_momentum():
@@ -90,11 +91,14 @@ def test_on_momentum():
     net = LeNet5()
     net = train_step_with_loss_warp(net).to_float(mstype.float16)
     net.set_train()
-    _executor.compile(net, predict, label)
+    net(predict, label)
 
 
-def test_data_parallel_with_cast():
+def data_parallel_with_cast():
     """test_data_parallel_with_cast"""
+    context.set_context(device_target='Ascend')
+    context.reset_auto_parallel_context()
+    context.set_auto_parallel_context(parallel_mode=ParallelMode.DATA_PARALLEL, gradients_mean=True, device_num=8)
     predict = Tensor(np.ones([1, 1, 32, 32]).astype(np.float32) * 0.01)
     label = Tensor(np.zeros([1, 10]).astype(np.float32))
     net = LeNet5()
@@ -106,11 +110,9 @@ def test_data_parallel_with_cast():
                          learning_rate=0.1,
                          momentum=0.9)
     net = WithLossCell(net, loss_fn)
-    context.reset_auto_parallel_context()
-    context.set_auto_parallel_context(parallel_mode=ParallelMode.DATA_PARALLEL, mirror_mean=True, device_num=8)
     net = TrainOneStepCell(net, optimizer)
 
-    _executor.compile(net, predict, label)
+    _cell_graph_executor.compile(net, predict, label)
     context.reset_auto_parallel_context()
 
 
@@ -127,17 +129,17 @@ def test_nn_prelu():
     x = Tensor(np.ones([1, 16, 10, 10]).astype(np.float32) * 0.01)
     net = NetForPReLU().set_train()
     net.add_flags_recursive(fp16=True)
-    _executor.compile(net, x)
+    _cell_graph_executor.compile(net, x)
 
 
 class NetForCast(nn.Cell):
     def __init__(self):
         super(NetForCast, self).__init__()
-        self.concat = P.Concat()
         self.x1 = Tensor(1.0, mstype.float32)
+        self.x2 = Parameter(Tensor(np.zeros([1, 10]).astype(np.float32)), name='x2')
 
     def construct(self, x0):
-        x = self.x1 * x0
+        x = self.x1 * x0 * self.x2
         return x
 
 
@@ -145,7 +147,7 @@ def test_cast():
     x = Tensor(np.ones([1, 16, 10, 10]).astype(np.float32) * 0.01)
     net = NetForCast()
     net.add_flags_recursive(fp16=True)
-    _executor.compile(net, x)
+    net(x)
 
 
 class IRBlockZ(nn.Cell):
@@ -165,8 +167,7 @@ class GetParamGrad(nn.Cell):
         super(GetParamGrad, self).__init__(auto_prefix=False)
         self.network = network
         self.weights = ParameterTuple(network.trainable_params())
-        self.grad = C.GradOperation('grad',
-                                    get_by_list=True,
+        self.grad = C.GradOperation(get_by_list=True,
                                     sens_param=True)
 
     def construct(self, data, sens):
@@ -185,3 +186,85 @@ def test_grad_conv_prelu():
     net = GetParamGrad(net)
     net.set_train()
     net(*all_inputs)
+
+
+def test_dict_cast():
+    class FirstNet(nn.Cell):
+        def __init__(self):
+            super(FirstNet, self).__init__()
+            self.net = SecondNet()
+            self.sub = P.Sub()
+
+        def construct(self, tensor_a, tensor_b):
+            a = F.mixed_precision_cast(mstype.float16, tensor_a)
+            b = F.mixed_precision_cast(mstype.float16, tensor_b)
+            c = self.sub(a, b)
+            dictionary = {"key": a}
+            result = self.net(c, key1=a, key2=dictionary)
+            return result
+
+    class SecondNet(nn.Cell):
+        def __init__(self):
+            super(SecondNet, self).__init__()
+            self.add = P.Add()
+
+        def construct(self, tensor_c, **kwargs):
+            d = F.mixed_precision_cast(mstype.float16, tensor_c)
+            dict_cast = F.mixed_precision_cast(mstype.float16, kwargs)
+            e = self.add(d, dict_cast["key1"])
+            f = self.add(e, dict_cast["key2"]["key"])
+            return f
+
+    x = Tensor(np.array([1, 2.5, 3.5]), mstype.float32)
+    y = Tensor(np.array([4, 5.5, 6.5]), mstype.float32)
+    net = FirstNet()
+    net(x, y)
+
+
+def test_list_cast():
+    """
+    Feature: Test mixed_precision_cast
+    Description: Test mixed_precision_cast with list input
+    Expectation: Success
+    """
+    class Net_Cast(nn.Cell):
+        def construct(self, x):
+            x = F.mixed_precision_cast(mstype.float16, x)
+            return x
+
+    context.set_context(mode=context.GRAPH_MODE)
+    x = [Tensor(1.0, mstype.float32), Tensor(2.0, mstype.float32)]
+    net = Net_Cast()
+    y = net(x)
+    assert isinstance(y, tuple)
+    assert len(y) == 2, f"type(y): {type(y)}, y: {y}"
+    assert y[0].dtype == mstype.float16
+    assert y[1].dtype == mstype.float16
+
+
+def test_kwarg_cast():
+    class FirstNet(nn.Cell):
+        def __init__(self):
+            super(FirstNet, self).__init__()
+            self.net = SecondNet().add_flags_recursive(fp16=True)
+            self.add = P.Add()
+
+        def construct(self, tensor_a, tensor_b):
+            tensor_c = self.add(tensor_a, tensor_b)
+            dictionary = {"key": tensor_a}
+            result = self.net(key1=tensor_c, key2=dictionary)
+            return result
+
+    class SecondNet(nn.Cell):
+        def __init__(self):
+            super(SecondNet, self).__init__()
+            self.add = P.Add()
+
+        def construct(self, key1=1, key2=2):
+            tensor_d = self.add(key1, key2["key"])
+            return tensor_d
+
+    x = Tensor(np.array([1, 2.5, 3.5]), mstype.float32)
+    y = Tensor(np.array([4, 5.5, 6.5]), mstype.float32)
+    net = FirstNet()
+    net(x, y)

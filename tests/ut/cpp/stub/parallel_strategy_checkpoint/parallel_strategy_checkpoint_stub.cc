@@ -15,7 +15,7 @@
  */
 #include <fstream>
 #include <memory>
-#include "parallel/strategy_checkpoint/parallel_strategy_checkpoint.h"
+#include "frontend/parallel/strategy_checkpoint/parallel_strategy_checkpoint.h"
 #include "utils/log_adapter.h"
 
 namespace mindspore {
@@ -29,6 +29,17 @@ bool StrategyCheckpoint::CheckPointExit(const std::string path) const { return f
 
 Status StrategyCheckpoint::Load(StrategyMap* strategy_map) { return SUCCESS; }
 
-Status StrategyCheckpoint::Save(const StrategyMap& strategy_map) { return SUCCESS; }
+Status StrategyCheckpoint::Save(const StrategyMap &strategy_map, const TensorInfoMap &tensor_info_map,
+                                const ManualShapeMap &manual_shape_map) { return SUCCESS; }
+
+Status StrategyCheckpoint::LoadGroupInfo(const std::string &file,
+                                         GroupInfoMap *group_info_map) const { return SUCCESS; }
+
+Status StrategyCheckpoint::SaveGroupInfo(const GroupInfoMap &group_info_map,
+                                         const RankList &restore_rank_list) { return SUCCESS; }
+Status StrategyCheckpoint::LoadAutoOpStrategy(StrategyMap *strategy_map) { return SUCCESS; }
+
+Status StrategyCheckpoint::SaveAutoOpStrategy(const StrategyMap &strategy_map, const TensorInfoMap &tensor_info_map,
+                                              const ManualShapeMap &manual_shape_map) { return SUCCESS; }
 }  // namespace parallel
 }  // namespace mindspore

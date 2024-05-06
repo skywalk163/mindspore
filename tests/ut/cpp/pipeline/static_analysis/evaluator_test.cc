@@ -14,20 +14,18 @@
  * limitations under the License.
  */
 
-#include "pipeline/static_analysis/evaluator.h"
-#include "pipeline/static_analysis/prim.h"
+#include "pipeline/jit/ps/static_analysis/evaluator.h"
+#include "pipeline/jit/ps/static_analysis/prim.h"
 
 #include "common/common_test.h"
 #include "common/py_func_graph_fetcher.h"
 
 #include "pipeline/static_analysis/helper.h"
 
-#include "debug/draw.h"
+#include "include/common/debug/draw.h"
 
 namespace mindspore {
 namespace abstract {
-namespace python_adapter = mindspore::parse::python_adapter;
-
 class TestEvaluatorCacheMap : public UT::Common {
  public:
   void SetUp() {}
@@ -37,26 +35,26 @@ class TestEvaluatorCacheMap : public UT::Common {
 TEST_F(TestEvaluatorCacheMap, test_evaluator_cache_map) {
   EvaluatorCacheMap cache;
 
-  AbstractBasePtr abstract_v1 = FromValue(1, false);
-  AbstractBasePtr abstract_v2 = FromValue(2, false);
+  AbstractBasePtr abstract_v1 = FromValue(static_cast<int64_t>(1), false);
+  AbstractBasePtr abstract_v2 = FromValue(static_cast<int64_t>(2), false);
   AbstractBasePtrList args_spec_list = {abstract_v1, abstract_v2};
-  AbstractBasePtr abstract_val = FromValue(10, false);
+  AbstractBasePtr abstract_val = FromValue(static_cast<int64_t>(10), false);
   cache[args_spec_list] = std::make_shared<EvalResult>(abstract_val, std::make_shared<AttrValueMap>());
 
   auto iter = cache.find(args_spec_list);
   ASSERT_TRUE(iter != cache.end());
   ASSERT_TRUE(iter->second->abstract() == abstract_val);
 
-  AbstractBasePtr abstract_v1_variant1 = FromValue(1, false);
-  AbstractBasePtr abstract_v2_variant1 = FromValue(2, false);
+  AbstractBasePtr abstract_v1_variant1 = FromValue(static_cast<int64_t>(1), false);
+  AbstractBasePtr abstract_v2_variant1 = FromValue(static_cast<int64_t>(2), false);
   AbstractBasePtrList args_spec_list_variant1 = {abstract_v1_variant1, abstract_v2_variant1};
 
   iter = cache.find(args_spec_list_variant1);
   ASSERT_TRUE(iter != cache.end());
   ASSERT_TRUE(iter->second->abstract() == abstract_val);
 
-  AbstractBasePtr abstract_v1_variant2 = FromValue(1, false);
-  AbstractBasePtr abstract_v2_variant2 = FromValue(3, false);
+  AbstractBasePtr abstract_v1_variant2 = FromValue(static_cast<int64_t>(1), false);
+  AbstractBasePtr abstract_v2_variant2 = FromValue(static_cast<int64_t>(3), false);
   AbstractBasePtrList args_spec_list_variant2 = {abstract_v1_variant2, abstract_v2_variant2};
 
   iter = cache.find(args_spec_list_variant2);
@@ -85,9 +83,9 @@ TEST_F(TestStandardEvaluator, test_multiple_conv2d) {
   FuncGraphPtr func_graph = getPyFun.CallAndParseRet("test_multiple_conv2d");
 
   // NCHW
-  std::vector<int> inputs_dims = {2, 20, 32, 32};
-  std::vector<int> weight1_dims = {2, 20, 5, 5};
-  std::vector<int> weight2_dims = {2, 2, 5, 5};
+  std::vector<int64_t> inputs_dims = {2, 20, 32, 32};
+  std::vector<int64_t> weight1_dims = {2, 20, 5, 5};
+  std::vector<int64_t> weight2_dims = {2, 2, 5, 5};
 
   tensor::TensorPtr inputs = std::make_shared<tensor::Tensor>();
   inputs->set_data_type(kNumberTypeInt32);
@@ -108,10 +106,10 @@ TEST_F(TestStandardEvaluator, test_multiple_conv2d) {
 
   AbstractBasePtr expected = abstract_inputs->Clone();
   // NCHW
-  std::vector<int> shape = {2, 2, 6, 6};
+  std::vector<int64_t> shape = {2, 2, 6, 6};
   expected->set_shape(std::make_shared<Shape>(shape));
 
-  AbstractBasePtr res = engine_->Run(func_graph, args_spec_list).inferred->abstract();
+  AbstractBasePtr res = engine_->Run(func_graph, args_spec_list).eval_result->abstract();
   MS_LOG(INFO) << "result: " << res->ToString();
   MS_LOG(INFO) << "expected: " << expected->ToString();
 
@@ -136,7 +134,6 @@ TEST_F(TestPartialEvaluator, test_infer_dataclass_resolved) {
   getPyFun.SetDoResolve(true);
   FuncGraphPtr func_graph = getPyFun("test_dataclass_fun_sub");
   ASSERT_TRUE(nullptr != func_graph);
-  draw::Draw("test_dataclass_fun_sub.dot", func_graph);
 
   AbstractBasePtrList args_spec_list;
   float x = 5.1;
@@ -144,7 +141,7 @@ TEST_F(TestPartialEvaluator, test_infer_dataclass_resolved) {
   AbstractBasePtr abstract_x = FromValue(x, false);
   args_spec_list.push_back(abstract_x);
 
-  AbstractBasePtr abs_base_got = engine_->Run(func_graph, args_spec_list).inferred->abstract();
+  AbstractBasePtr abs_base_got = engine_->Run(func_graph, args_spec_list).eval_result->abstract();
   ASSERT_TRUE(*(abs_base_got->GetTypeTrack()) == *(abstract_x->GetTypeTrack()));
   ASSERT_TRUE(abs_base_got->GetTypeTrack()->type_id() == kNumberTypeFloat32);
 }
@@ -160,7 +157,7 @@ TEST_F(TestPartialEvaluator, test_infer_dataclass_unresolved) {
   AbstractBasePtr abstract_x = FromValue(x, false);
   args_spec_list.push_back(abstract_x);
 
-  AbstractBasePtr abs_base_got = engine_->Run(func_graph, args_spec_list).inferred->abstract();
+  AbstractBasePtr abs_base_got = engine_->Run(func_graph, args_spec_list).eval_result->abstract();
   ASSERT_TRUE(*(abs_base_got->GetTypeTrack()) == *(abstract_x->GetTypeTrack()));
   ASSERT_TRUE(abs_base_got->GetTypeTrack()->type_id() == kNumberTypeFloat32);
 }
@@ -179,7 +176,7 @@ TEST_F(TestPartialEvaluator, test_infer_add_resolved) {
   args_spec_list.push_back(abstract_x);
   args_spec_list.push_back(abstract_y);
 
-  AbstractBasePtr abs_base_got = engine_->Run(func_graph, args_spec_list).inferred->abstract();
+  AbstractBasePtr abs_base_got = engine_->Run(func_graph, args_spec_list).eval_result->abstract();
   ASSERT_TRUE(*(abs_base_got->GetTypeTrack()) == *(abstract_x->GetTypeTrack()));
   ASSERT_TRUE(abs_base_got->GetTypeTrack()->type_id() == kNumberTypeFloat64);
 }
@@ -198,7 +195,7 @@ TEST_F(TestPartialEvaluator, test_infer_sub_unresolved) {
   args_spec_list.push_back(abstract_x);
   args_spec_list.push_back(abstract_y);
 
-  AbstractBasePtr abs_base_got = engine_->Run(func_graph, args_spec_list).inferred->abstract();
+  AbstractBasePtr abs_base_got = engine_->Run(func_graph, args_spec_list).eval_result->abstract();
   ASSERT_TRUE(*(abs_base_got->GetTypeTrack()) == *(abstract_x->GetTypeTrack()));
   ASSERT_TRUE(abs_base_got->GetTypeTrack()->type_id() == kNumberTypeFloat64);
 }
@@ -217,7 +214,7 @@ TEST_F(TestPartialEvaluator, test_infer_net_construct_add_resolved) {
   args_spec_list.push_back(abstract_x);
   args_spec_list.push_back(abstract_y);
 
-  AbstractBasePtr abs_base_got = engine_->Run(func_graph, args_spec_list).inferred->abstract();
+  AbstractBasePtr abs_base_got = engine_->Run(func_graph, args_spec_list).eval_result->abstract();
   ASSERT_TRUE(*(abs_base_got->GetTypeTrack()) == *(abstract_x->GetTypeTrack()));
   ASSERT_TRUE(abs_base_got->GetTypeTrack()->type_id() == kNumberTypeFloat64);
 }
@@ -226,7 +223,6 @@ TEST_F(TestPartialEvaluator, test_infer_construct_sub_unresolved) {
   getPyFun.SetDoResolve(false);
   FuncGraphPtr func_graph = getPyFun.CallAndParseRet("test_net_construct_sub");
   ASSERT_TRUE(nullptr != func_graph);
-  draw::Draw("test_infer_simple_net.dot", func_graph);
 
   AbstractBasePtrList args_spec_list;
   double x = 1.2;
@@ -237,7 +233,7 @@ TEST_F(TestPartialEvaluator, test_infer_construct_sub_unresolved) {
   args_spec_list.push_back(abstract_x);
   args_spec_list.push_back(abstract_y);
 
-  AbstractBasePtr abs_base_got = engine_->Run(func_graph, args_spec_list).inferred->abstract();
+  AbstractBasePtr abs_base_got = engine_->Run(func_graph, args_spec_list).eval_result->abstract();
   ASSERT_TRUE(*(abs_base_got->GetTypeTrack()) == *(abstract_x->GetTypeTrack()));
   ASSERT_TRUE(abs_base_got->GetTypeTrack()->type_id() == kNumberTypeFloat64);
 }

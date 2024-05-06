@@ -1,4 +1,4 @@
-# Copyright 2020 Huawei Technologies Co., Ltd
+# Copyright 2020-2022 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,16 +21,16 @@ from resnet import resnet50
 import mindspore.common.dtype as mstype
 import mindspore.context as context
 import mindspore.dataset as de
-import mindspore.dataset.transforms.c_transforms as C
-import mindspore.dataset.transforms.vision.c_transforms as vision
+import mindspore.dataset.transforms as C
+import mindspore.dataset.vision as vision
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore.communication.management import init
 from mindspore.nn.optim.momentum import Momentum
 from mindspore.ops import functional as F
 from mindspore.ops import operations as P
-from mindspore.train.callback import ModelCheckpoint, CheckpointConfig, LossMonitor
-from mindspore.train.model import Model, ParallelMode
+from mindspore.train import ModelCheckpoint, CheckpointConfig, LossMonitor, Model
+from mindspore.context import ParallelMode
 
 random.seed(1)
 np.random.seed(1)
@@ -88,8 +88,8 @@ def create_dataset(repeat_num=1, training=True):
                 changeswap_op]
 
     # apply map operations on images
-    ds = ds.map(input_columns="label", operations=type_cast_op)
-    ds = ds.map(input_columns="image", operations=c_trans)
+    ds = ds.map(operations=type_cast_op, input_columns="label")
+    ds = ds.map(operations=c_trans, input_columns="image")
 
     # apply repeat operations
     ds = ds.repeat(repeat_num)

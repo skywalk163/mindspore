@@ -18,7 +18,7 @@
 #include <vector>
 
 #include "common/common_test.h"
-#include "operator/cc_implementations.h"
+#include "frontend/operator/cc_implementations.h"
 
 namespace mindspore {
 namespace prim {
@@ -31,9 +31,9 @@ class TestImplementations : public UT::Common {
 
 TEST_F(TestImplementations, ScalarAddTest) {
   ValuePtrList list;
-  list.push_back(MakeValue(1));
-  list.push_back(MakeValue(2));
-  ASSERT_EQ(ScalarAdd(list)->cast<Int32ImmPtr>()->value(), 3);
+  list.push_back(MakeValue(static_cast<int64_t>(1)));
+  list.push_back(MakeValue(static_cast<int64_t>(2)));
+  ASSERT_EQ(ScalarAdd(list)->cast<Int64ImmPtr>()->value(), 3);
   list.clear();
 
   list.push_back(MakeValue(1.0f));
@@ -41,13 +41,8 @@ TEST_F(TestImplementations, ScalarAddTest) {
   ASSERT_EQ(ScalarAdd(list)->cast<FP32ImmPtr>()->value(), 2.5f);
   list.clear();
 
-  list.push_back(MakeValue(3.0));
-  list.push_back(MakeValue(0.5));
-  ASSERT_EQ(ScalarAdd(list)->cast<FP64ImmPtr>()->value(), 3.5);
-  list.clear();
-
-  list.push_back(MakeValue(INT32_MAX));
-  list.push_back(MakeValue(2));
+  list.push_back(MakeValue(INT64_MAX));
+  list.push_back(MakeValue(static_cast<int64_t>(2)));
   try {
     ScalarAdd(list);
     FAIL();
@@ -56,8 +51,8 @@ TEST_F(TestImplementations, ScalarAddTest) {
   }
   list.clear();
 
-  list.push_back(MakeValue(INT32_MIN));
-  list.push_back(MakeValue(-1));
+  list.push_back(MakeValue(INT64_MIN));
+  list.push_back(MakeValue(static_cast<int64_t>(-1)));
   try {
     ScalarAdd(list);
     FAIL();
@@ -69,9 +64,9 @@ TEST_F(TestImplementations, ScalarAddTest) {
 
 TEST_F(TestImplementations, ScalarSubTest) {
   ValuePtrList list;
-  list.push_back(MakeValue(1));
-  list.push_back(MakeValue(3));
-  ASSERT_EQ(ScalarSub(list)->cast<Int32ImmPtr>()->value(), -2);
+  list.push_back(MakeValue(static_cast<int64_t>(1)));
+  list.push_back(MakeValue(static_cast<int64_t>(3)));
+  ASSERT_EQ(ScalarSub(list)->cast<Int64ImmPtr>()->value(), -2);
   list.clear();
 
   list.push_back(MakeValue(1.0f));
@@ -79,13 +74,8 @@ TEST_F(TestImplementations, ScalarSubTest) {
   ASSERT_EQ(ScalarSub(list)->cast<FP32ImmPtr>()->value(), -0.5f);
   list.clear();
 
-  list.push_back(MakeValue(3.0));
-  list.push_back(MakeValue(0.5));
-  ASSERT_EQ(ScalarSub(list)->cast<FP64ImmPtr>()->value(), 2.5);
-  list.clear();
-
-  list.push_back(MakeValue(INT32_MAX));
-  list.push_back(MakeValue(-1));
+  list.push_back(MakeValue(INT64_MAX));
+  list.push_back(MakeValue(static_cast<int64_t>(-1)));
   try {
     ScalarSub(list);
     FAIL();
@@ -94,8 +84,8 @@ TEST_F(TestImplementations, ScalarSubTest) {
   }
   list.clear();
 
-  list.push_back(MakeValue(INT32_MIN));
-  list.push_back(MakeValue(1));
+  list.push_back(MakeValue(INT64_MIN));
+  list.push_back(MakeValue(static_cast<int64_t>(1)));
   try {
     ScalarSub(list);
     FAIL();
@@ -107,9 +97,9 @@ TEST_F(TestImplementations, ScalarSubTest) {
 
 TEST_F(TestImplementations, ScalarMulTest) {
   ValuePtrList list;
-  list.push_back(MakeValue(2));
-  list.push_back(MakeValue(3));
-  ASSERT_EQ(ScalarMul(list)->cast<Int32ImmPtr>()->value(), 6);
+  list.push_back(MakeValue(static_cast<int64_t>(2)));
+  list.push_back(MakeValue(static_cast<int64_t>(3)));
+  ASSERT_EQ(ScalarMul(list)->cast<Int64ImmPtr>()->value(), 6);
   list.clear();
 
   list.push_back(MakeValue(2.0f));
@@ -117,13 +107,8 @@ TEST_F(TestImplementations, ScalarMulTest) {
   ASSERT_EQ(ScalarMul(list)->cast<FP32ImmPtr>()->value(), 3.0f);
   list.clear();
 
-  list.push_back(MakeValue(-2.0));
-  list.push_back(MakeValue(-4.0));
-  ASSERT_EQ(ScalarMul(list)->cast<FP64ImmPtr>()->value(), 8.0);
-  list.clear();
-
-  list.push_back(MakeValue(10));
-  list.push_back(MakeValue(INT32_MAX));
+  list.push_back(MakeValue(static_cast<int64_t>(10)));
+  list.push_back(MakeValue(INT64_MAX));
   try {
     ScalarMul(list);
     FAIL();
@@ -132,8 +117,8 @@ TEST_F(TestImplementations, ScalarMulTest) {
   }
   list.clear();
 
-  list.push_back(MakeValue(INT32_MIN));
-  list.push_back(MakeValue(-1));
+  list.push_back(MakeValue(INT64_MIN));
+  list.push_back(MakeValue(static_cast<int64_t>(-1)));
   try {
     ScalarMul(list);
     FAIL();
@@ -142,8 +127,8 @@ TEST_F(TestImplementations, ScalarMulTest) {
   }
   list.clear();
 
-  list.push_back(MakeValue(-2));
-  list.push_back(MakeValue(INT32_MAX));
+  list.push_back(MakeValue(static_cast<int64_t>(-2)));
+  list.push_back(MakeValue(INT64_MAX));
   try {
     ScalarMul(list);
     FAIL();
@@ -152,8 +137,8 @@ TEST_F(TestImplementations, ScalarMulTest) {
   }
   list.clear();
 
-  list.push_back(MakeValue(2));
-  list.push_back(MakeValue(INT32_MIN));
+  list.push_back(MakeValue(static_cast<int64_t>(2)));
+  list.push_back(MakeValue(INT64_MIN));
   try {
     ScalarMul(list);
     FAIL();
@@ -162,17 +147,17 @@ TEST_F(TestImplementations, ScalarMulTest) {
   }
   list.clear();
 
-  list.push_back(MakeValue(0));
-  list.push_back(MakeValue(INT32_MIN));
-  ASSERT_EQ(ScalarDiv(list)->cast<Int32ImmPtr>()->value(), 0);
+  list.push_back(MakeValue(static_cast<int64_t>(0)));
+  list.push_back(MakeValue(INT64_MIN));
+  ASSERT_EQ(ScalarDiv(list)->cast<Int64ImmPtr>()->value(), 0);
   list.clear();
 }
 
 TEST_F(TestImplementations, ScalarDivTest) {
   ValuePtrList list;
-  list.push_back(MakeValue(6));
-  list.push_back(MakeValue(3));
-  ASSERT_EQ(ScalarDiv(list)->cast<Int32ImmPtr>()->value(), 2);
+  list.push_back(MakeValue(static_cast<int64_t>(6)));
+  list.push_back(MakeValue(static_cast<int64_t>(3)));
+  ASSERT_EQ(ScalarDiv(list)->cast<Int64ImmPtr>()->value(), 2);
   list.clear();
 
   list.push_back(MakeValue(3.0f));
@@ -180,23 +165,18 @@ TEST_F(TestImplementations, ScalarDivTest) {
   ASSERT_EQ(ScalarDiv(list)->cast<FP32ImmPtr>()->value(), 2.0f);
   list.clear();
 
-  list.push_back(MakeValue(-4.0));
-  list.push_back(MakeValue(2.0));
-  ASSERT_EQ(ScalarDiv(list)->cast<FP64ImmPtr>()->value(), -2.0);
-  list.clear();
-
-  list.push_back(MakeValue(INT32_MAX));
-  list.push_back(MakeValue(0));
+  list.push_back(MakeValue(INT64_MAX));
+  list.push_back(MakeValue(static_cast<int64_t>(0)));
   try {
     ScalarDiv(list);
     FAIL();
   } catch (std::runtime_error const &err) {
-    ASSERT_TRUE(std::string(err.what()).find("Divisor could not be zero") != std::string::npos);
+    ASSERT_TRUE(std::string(err.what()).find("The divisor could not be zero.") != std::string::npos);
   }
   list.clear();
 
-  list.push_back(MakeValue(INT32_MIN));
-  list.push_back(MakeValue(-1));
+  list.push_back(MakeValue(INT64_MIN));
+  list.push_back(MakeValue(static_cast<int64_t>(-1)));
   try {
     ScalarDiv(list);
     FAIL();
@@ -205,41 +185,41 @@ TEST_F(TestImplementations, ScalarDivTest) {
   }
   list.clear();
 
-  list.push_back(MakeValue(-1));
-  list.push_back(MakeValue(INT32_MIN));
-  ASSERT_EQ(ScalarDiv(list)->cast<Int32ImmPtr>()->value(), 0);
+  list.push_back(MakeValue(static_cast<int64_t>(-1)));
+  list.push_back(MakeValue(INT64_MIN));
+  ASSERT_EQ(ScalarDiv(list)->cast<Int64ImmPtr>()->value(), 0);
   list.clear();
 }
 
 TEST_F(TestImplementations, ScalarModTest) {
   ValuePtrList list;
-  list.push_back(MakeValue(7));
-  list.push_back(MakeValue(3));
-  ASSERT_EQ(ScalarMod(list)->cast<Int32ImmPtr>()->value(), 1);
+  list.push_back(MakeValue(static_cast<int64_t>(7)));
+  list.push_back(MakeValue(static_cast<int64_t>(3)));
+  ASSERT_EQ(ScalarMod(list)->cast<Int64ImmPtr>()->value(), 1);
   list.clear();
 
-  list.push_back(MakeValue(-8));
-  list.push_back(MakeValue(3));
-  ASSERT_EQ(ScalarMod(list)->cast<Int32ImmPtr>()->value(), -2);
+  list.push_back(MakeValue(static_cast<int64_t>(-8)));
+  list.push_back(MakeValue(static_cast<int64_t>(3)));
+  ASSERT_EQ(ScalarMod(list)->cast<Int64ImmPtr>()->value(), -2);
   list.clear();
 
-  list.push_back(MakeValue(-9));
-  list.push_back(MakeValue(2));
-  ASSERT_EQ(ScalarMod(list)->cast<Int32ImmPtr>()->value(), -1);
+  list.push_back(MakeValue(static_cast<int64_t>(-9)));
+  list.push_back(MakeValue(static_cast<int64_t>(2)));
+  ASSERT_EQ(ScalarMod(list)->cast<Int64ImmPtr>()->value(), -1);
   list.clear();
 
-  list.push_back(MakeValue(INT32_MIN));
-  list.push_back(MakeValue(0));
+  list.push_back(MakeValue(INT64_MIN));
+  list.push_back(MakeValue(static_cast<int64_t>(0)));
   try {
     ScalarMod(list);
     FAIL();
   } catch (std::runtime_error const &err) {
-    ASSERT_TRUE(std::string(err.what()).find("Could not mod to zero") != std::string::npos);
+    ASSERT_TRUE(std::string(err.what()).find("Cannot perform modulo operation on zero.") != std::string::npos);
   }
   list.clear();
 
-  list.push_back(MakeValue(INT32_MIN));
-  list.push_back(MakeValue(-1));
+  list.push_back(MakeValue(INT64_MIN));
+  list.push_back(MakeValue(static_cast<int64_t>(-1)));
   try {
     ScalarMod(list);
     FAIL();
@@ -251,22 +231,22 @@ TEST_F(TestImplementations, ScalarModTest) {
 
 TEST_F(TestImplementations, ScalarUAddTest) {
   ValuePtrList list;
-  list.push_back(MakeValue((uint32_t)1));
-  ASSERT_EQ(ScalarUAdd(list)->cast<UInt32ImmPtr>()->value(), 1);
+  list.push_back(MakeValue((uint64_t)1));
+  ASSERT_EQ(ScalarUAdd(list)->cast<UInt64ImmPtr>()->value(), 1);
   list.clear();
 }
 
 TEST_F(TestImplementations, ScalarLogTest) {
   ValuePtrList list;
-  list.push_back(MakeValue(static_cast<double>(7.3890560989306495)));
-  ASSERT_EQ(ScalarLog(list)->cast<FP64ImmPtr>()->value(), 2.0);
+  list.push_back(MakeValue(static_cast<float>(7.3890560989306495)));
+  ASSERT_EQ(ScalarLog(list)->cast<FP32ImmPtr>()->value(), 2.0);
   list.clear();
 }
 
 TEST_F(TestImplementations, ScalarUSubTest) {
   ValuePtrList list;
-  list.push_back(MakeValue(1));
-  ASSERT_EQ(ScalarUSub(list)->cast<Int32ImmPtr>()->value(), -1);
+  list.push_back(MakeValue(static_cast<int64_t>(1)));
+  ASSERT_EQ(ScalarUSub(list)->cast<Int64ImmPtr>()->value(), -1);
   list.clear();
 }
 
@@ -281,16 +261,6 @@ TEST_F(TestImplementations, ScalarEqTest) {
   list.push_back(MakeValue(-1.0f));
   ASSERT_EQ(ScalarEq(list)->cast<BoolImmPtr>()->value(), false);
   list.clear();
-
-  list.push_back(MakeValue(1.0f));
-  list.push_back(MakeValue(1.0));
-  ASSERT_EQ(ScalarEq(list)->cast<BoolImmPtr>()->value(), true);
-  list.clear();
-
-  list.push_back(MakeValue(1.0));
-  list.push_back(MakeValue(1.0));
-  ASSERT_EQ(ScalarEq(list)->cast<BoolImmPtr>()->value(), true);
-  list.clear();
 }
 
 TEST_F(TestImplementations, ScalarLtTest) {
@@ -304,16 +274,6 @@ TEST_F(TestImplementations, ScalarLtTest) {
   list.push_back(MakeValue(-1.0f));
   ASSERT_EQ(ScalarLt(list)->cast<BoolImmPtr>()->value(), false);
   list.clear();
-
-  list.push_back(MakeValue(1.0f));
-  list.push_back(MakeValue(2.5));
-  ASSERT_EQ(ScalarLt(list)->cast<BoolImmPtr>()->value(), true);
-  list.clear();
-
-  list.push_back(MakeValue(2.5));
-  list.push_back(MakeValue(3.0));
-  ASSERT_EQ(ScalarLt(list)->cast<BoolImmPtr>()->value(), true);
-  list.clear();
 }
 
 TEST_F(TestImplementations, ScalarGtTest) {
@@ -325,16 +285,6 @@ TEST_F(TestImplementations, ScalarGtTest) {
 
   list.push_back(MakeValue(2.0f));
   list.push_back(MakeValue(-1.0f));
-  ASSERT_EQ(ScalarGt(list)->cast<BoolImmPtr>()->value(), true);
-  list.clear();
-
-  list.push_back(MakeValue(2.0f));
-  list.push_back(MakeValue(2.0));
-  ASSERT_EQ(ScalarGt(list)->cast<BoolImmPtr>()->value(), false);
-  list.clear();
-
-  list.push_back(MakeValue(2.5));
-  list.push_back(MakeValue(2.0));
   ASSERT_EQ(ScalarGt(list)->cast<BoolImmPtr>()->value(), true);
   list.clear();
 }
@@ -350,16 +300,6 @@ TEST_F(TestImplementations, ScalarNeTest) {
   list.push_back(MakeValue(-1.0f));
   ASSERT_EQ(ScalarNe(list)->cast<BoolImmPtr>()->value(), true);
   list.clear();
-
-  list.push_back(MakeValue(1.0f));
-  list.push_back(MakeValue(2.0));
-  ASSERT_EQ(ScalarNe(list)->cast<BoolImmPtr>()->value(), true);
-  list.clear();
-
-  list.push_back(MakeValue(2.0));
-  list.push_back(MakeValue(2.0));
-  ASSERT_EQ(ScalarNe(list)->cast<BoolImmPtr>()->value(), false);
-  list.clear();
 }
 
 TEST_F(TestImplementations, ScalarLeTest) {
@@ -373,16 +313,6 @@ TEST_F(TestImplementations, ScalarLeTest) {
   list.push_back(MakeValue(-1.0f));
   ASSERT_EQ(ScalarLe(list)->cast<BoolImmPtr>()->value(), false);
   list.clear();
-
-  list.push_back(MakeValue(1.0f));
-  list.push_back(MakeValue(2.0));
-  ASSERT_EQ(ScalarLe(list)->cast<BoolImmPtr>()->value(), true);
-  list.clear();
-
-  list.push_back(MakeValue(6.0));
-  list.push_back(MakeValue(-1.0f));
-  ASSERT_EQ(ScalarLe(list)->cast<BoolImmPtr>()->value(), false);
-  list.clear();
 }
 
 TEST_F(TestImplementations, ScalarGeTest) {
@@ -393,16 +323,6 @@ TEST_F(TestImplementations, ScalarGeTest) {
   list.clear();
 
   list.push_back(MakeValue(1.0f));
-  list.push_back(MakeValue(-1.0f));
-  ASSERT_EQ(ScalarGe(list)->cast<BoolImmPtr>()->value(), true);
-  list.clear();
-
-  list.push_back(MakeValue(1.0f));
-  list.push_back(MakeValue(2.0));
-  ASSERT_EQ(ScalarGe(list)->cast<BoolImmPtr>()->value(), false);
-  list.clear();
-
-  list.push_back(MakeValue(6.0));
   list.push_back(MakeValue(-1.0f));
   ASSERT_EQ(ScalarGe(list)->cast<BoolImmPtr>()->value(), true);
   list.clear();

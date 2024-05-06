@@ -16,17 +16,21 @@ import numpy as np
 
 import mindspore as ms
 from mindspore import context, Tensor, Parameter
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.nn import Cell, TrainOneStepCell, Momentum
 from mindspore.ops import operations as P
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
 
 
 class Net(Cell):
     def __init__(self, mul_weight, strategy1=None, strategy2=None, strategy3=None):
         super().__init__()
-        self.mul = P.Mul().set_strategy(strategy1)
-        self.expand_dims = P.ExpandDims().set_strategy(strategy2)
-        self.mul2 = P.Mul().set_strategy(strategy3)
+        self.mul = P.Mul().shard(strategy1)
+        self.expand_dims = P.ExpandDims().shard(strategy2)
+        self.mul2 = P.Mul().shard(strategy3)
         self.mul_weight = Parameter(mul_weight, "w1")
 
     def construct(self, x, b):
@@ -39,8 +43,8 @@ class Net(Cell):
 class Net2(Cell):
     def __init__(self, mul_weight, strategy1=None, strategy2=None):
         super().__init__()
-        self.expand_dims = P.ExpandDims().set_strategy(strategy1)
-        self.mul = P.Mul().set_strategy(strategy2)
+        self.expand_dims = P.ExpandDims().shard(strategy1)
+        self.mul = P.Mul().shard(strategy2)
         self.mul_weight = Parameter(mul_weight, "w1")
 
     def construct(self, x, b):
@@ -57,8 +61,8 @@ _b = Tensor(np.ones([128, 64, 32, 1]), dtype=ms.float32)
 def compile_net(net):
     optimizer = Momentum(net.trainable_params(), learning_rate=0.1, momentum=0.9)
     train_net = TrainOneStepCell(net, optimizer)
-    train_net.set_auto_parallel()
-    _executor.compile(train_net, _x, _b)
+    train_net.set_train()
+    _cell_graph_executor.compile(train_net, _x, _b)
     context.reset_auto_parallel_context()
 
 
@@ -90,7 +94,13 @@ def test_expand_dims_hybrid_parallel():
 
 
 def test_expand_dims_auto_parallel():
-    context.set_auto_parallel_context(parallel_mode="auto_parallel", device_num=16, global_rank=0)
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
+    context.set_auto_parallel_context(parallel_mode="auto_parallel", search_mode="dynamic_programming", device_num=16,
+                                      global_rank=0)
     net = Net(_w1)
     compile_net(net)
 

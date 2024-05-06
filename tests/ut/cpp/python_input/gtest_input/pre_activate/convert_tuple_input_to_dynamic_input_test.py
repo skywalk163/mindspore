@@ -18,9 +18,10 @@ from mindspore.common.tensor import Tensor
 from mindspore.ops import Primitive
 from mindspore.ops import operations as P
 
-make_tuple = Primitive('make_tuple')
+make_tuple = Primitive('MakeTuple')
 concat = P.Concat()
-add = P.TensorAdd()
+concatD = Primitive('ConcatD')
+add = P.Add()
 
 t1 = Tensor(np.random.randn(1, 11, 20, 1, 1).astype(np.float32))
 t2 = Tensor(np.random.randn(1, 11, 20, 1, 1).astype(np.float32))
@@ -42,13 +43,13 @@ def test_convert_tuple_input_to_dynamic_input(tag):
 
     @fns
     def before(x):
-        res = concat((t1, t2))
+        res = concat((x, x))
         res = add(x, res)
         return res
 
     @fns
     def after(x):
-        res = concat(t1, t2)
+        res = concatD(x, x)
         res = add(x, res)
         res = make_tuple(res)
         return res

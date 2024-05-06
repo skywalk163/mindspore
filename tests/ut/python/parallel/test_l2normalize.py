@@ -18,10 +18,17 @@ import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
 from tests.ut.python.ops.test_math_ops import VirtualLoss
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
+grad_all = C.GradOperation(get_all=True)
 
 
 class NetWithLoss(nn.Cell):
@@ -41,7 +48,7 @@ class GradWrap(nn.Cell):
         self.network = network
 
     def construct(self, x, y, b):
-        return C.grad_all(self.network)(x, y, b)
+        return grad_all(self.network)(x, y, b)
 
 
 # model_parallel test
@@ -49,10 +56,10 @@ def test_l2normalize_matmul():
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2, strategy3):
             super().__init__()
-            self.norm1 = P.L2Normalize(axis=0).set_strategy(strategy1)
-            self.norm2 = P.L2Normalize(axis=0).set_strategy(strategy1)
-            self.mul1 = P.Mul().set_strategy(strategy2)
-            self.mul2 = P.Mul().set_strategy(strategy3)
+            self.norm1 = P.L2Normalize(axis=0).shard(strategy1)
+            self.norm2 = P.L2Normalize(axis=0).shard(strategy1)
+            self.mul1 = P.Mul().shard(strategy2)
+            self.mul2 = P.Mul().shard(strategy3)
 
         def construct(self, x, y, b):
             y = self.norm1(y)
@@ -67,9 +74,9 @@ def test_l2normalize_matmul():
     strategy3 = ((1, 1, 8), (1, 1, 8))
     net = GradWrap(NetWithLoss(Net(strategy1, strategy2, strategy3)))
     context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
-    net.set_auto_parallel()
 
     x = Tensor(np.ones([128, 32, 64]), dtype=ms.float32)
     y = Tensor(np.ones([128, 32, 64]), dtype=ms.float32)
     b = Tensor(np.ones([128, 32, 64]), dtype=ms.float32)
-    _executor.compile(net, x, y, b)
+    net.set_train()
+    _cell_graph_executor.compile(net, x, y, b)

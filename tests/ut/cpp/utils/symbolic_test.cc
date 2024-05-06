@@ -14,12 +14,8 @@
  * limitations under the License.
  */
 #include "common/common_test.h"
-#include "pipeline/static_analysis/static_analysis.h"
+#include "pipeline/jit/ps/static_analysis/static_analysis.h"
 #include "utils/symbolic.h"
-
-using std::cout;
-using std::endl;
-using std::string;
 
 namespace mindspore {
 class TestSymbolic : public UT::Common {
@@ -27,31 +23,14 @@ class TestSymbolic : public UT::Common {
   TestSymbolic() {}
 };
 
-TEST_F(TestSymbolic, test_env) {
-  auto sk1 = std::make_shared<SymbolicKeyInstance>(NewValueNode(1), abstract::FromValue(1234));
-  auto sk1b = std::make_shared<SymbolicKeyInstance>(NewValueNode(1), abstract::FromValue(1234));
+/// Feature: Test the basic functionality of SymbolicKeyInstance class.
+/// Description: Test equality of two SymbolicKeyInstance.
+/// Expectation: True
+TEST_F(TestSymbolic, test_symbolic) {
+  auto sk1 = std::make_shared<SymbolicKeyInstance>(NewValueNode(static_cast<int64_t>(1)), abstract::FromValue(1234));
+  auto sk1b = std::make_shared<SymbolicKeyInstance>(NewValueNode(static_cast<int64_t>(1)), abstract::FromValue(1234));
 
   ASSERT_EQ(*sk1, *sk1b);
-
-  auto sk2 = std::make_shared<SymbolicKeyInstance>(NewValueNode(2), abstract::FromValue(1234));
-
-  EnvInstance e = newenv->Set(sk1, 100);
-  ASSERT_FALSE(e == *newenv);
-
-  ASSERT_EQ(newenv->Len(), 0);
-  ASSERT_EQ(e.Len(), 1);
-  ASSERT_EQ(e.Get(sk1, 0), 100);
-  ASSERT_EQ(e.Get(sk2, 0), 0);
-
-  EnvInstance e2 = e.Set(sk1b, 200);
-  ASSERT_EQ(e2.Len(), 1);
-  ASSERT_EQ(e2.Get(sk1, 0), 200);
-  ASSERT_EQ(e2.Get(sk2, 0), 0);
-
-  EnvInstance e3 = e2.Set(sk2, 300);
-  ASSERT_EQ(e3.Len(), 2);
-  ASSERT_EQ(e3.Get(sk1, 0), 200);
-  ASSERT_EQ(e3.Get(sk2, 0), 300);
 }
 
 }  // namespace mindspore

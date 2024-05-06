@@ -3,6 +3,39 @@ build/
 mindspore/lib
 output
 *.ir
+*.patch
+st_tests
+kernel_meta/
+somas_meta/
+trace_code_graph_*
+ms_kernels_internal/
+
+# mindspore lite java
+mindspore/lite/java/.gradle/
+mindspore/lite/java/gradle
+mindspore/lite/java/gradlew
+mindspore/lite/java/gradlew.bat
+mindspore/lite/java/java/.gradle
+mindspore/lite/java/java/build
+mindspore/lite/java/java/gradle
+mindspore/lite/java/java/gradlew
+mindspore/lite/java/java/gradlew.bat
+mindspore/lite/java/java/app/build
+mindspore/lite/java/java/app/libs
+
+# flatbuffer
+mindspore/lite/tools/converter/parser/tflite/schema_generated.h
+mindspore/lite/tools/converter/parser/caffe/caffe.pb.cc
+mindspore/lite/tools/converter/parser/caffe/caffe.pb.h
+mindspore/lite/tools/converter/parser/onnx/onnx.pb.h
+mindspore/lite/tools/converter/parser/onnx/onnx.pb.h
+mindspore/lite/tools/converter/schema/*.h
+mindspore/lite/tools/converter/schema/inner
+mindspore/lite/schema/*.h
+mindspore/lite/schema/inner
+
+mindspore/lite/src/litert/kernel/opencl/cl/fp16/*.inc
+mindspore/lite/src/litert/kernel/opencl/cl/fp32/*.inc
 
 # Cmake files
 CMakeFiles/
@@ -26,6 +59,8 @@ cmake-build-debug
 *_pb2.py
 *.pb.h
 *.pb.cc
+*.pb
+*_grpc.py
 
 # Object files
 *.o
@@ -65,9 +100,46 @@ test_temp_summary_event_file/
 *.ckpt
 *.shp
 *.pkl
+*.pb
 .clangd
-mindspore/version.py
-mindspore/default_config.py
-mindspore/.commit_id
-onnx.proto
-mindspore/ccsrc/onnx.proto
+mindspore/python/mindspore/version.py
+mindspore/python/mindspore/default_config.py
+mindspore/python/mindspore/device_target.py
+mindspore/python/mindspore/package_name.py
+mindspore/python/mindspore/.commit_id
+mindspore/python/mindspore/lib
+
+# lite test file
+mindspore/lite/test/do_test/
+
+# lite opencl compile file
+*.cl.inc
+
+# auto gen code files
+mindspore/core/ops/auto_generate/gen_lite_ops.h
+mindspore/core/ops/auto_generate/gen_lite_ops.cc
+mindspore/core/ops/auto_generate/gen_ops_name.h
+mindspore/core/ops/auto_generate/gen_ops_primitive.h
+mindspore/core/ops/auto_generate/gen_ops_def.cc
+mindspore/core/ops/auto_generate/gen_ops_def.h
+mindspore/python/mindspore/ops_generate/ops.yaml
+mindspore/python/mindspore/ops_generate/ops_doc.yaml
+mindspore/python/mindspore/ops_generate/inner_ops.yaml
+mindspore/python/mindspore/ops_generate/inner_ops_doc.yaml
+mindspore/python/mindspore/ops/auto_generate/cpp_create_prim_instance_helper.py
+mindspore/python/mindspore/ops/auto_generate/gen_arg_handler.py
+mindspore/python/mindspore/ops/auto_generate/gen_arg_dtype_cast.py
+mindspore/python/mindspore/ops/auto_generate/gen_ops_def.py
+mindspore/python/mindspore/ops/auto_generate/gen_pyboost_func.py
+mindspore/python/mindspore/ops/auto_generate/pyboost_inner_prim.py
+mindspore/python/mindspore/ops/auto_generate/gen_inner_ops_def.py
+mindspore/python/mindspore/ops/auto_generate/gen_extend_func.py
+mindspore/python/mindspore/ops/auto_generate/gen_ops_prim.py
+mindspore/ccsrc/pipeline/pynative/op_function/auto_generate/
+mindspore/ccsrc/runtime/pynative/op_function/auto_generate/
+mindspore/ccsrc/kernel/pyboost/auto_generate/
+mindspore/ccsrc/plugin/device/cpu/kernel/pyboost/auto_generate/
+mindspore/ccsrc/plugin/device/gpu/kernel/pyboost/auto_generate/
+mindspore/ccsrc/plugin/device/ascend/kernel/pyboost/auto_generate/
+mindspore/ccsrc/plugin/device/ascend/kernel/opapi/aclnn_kernel_register_auto.cc
+mindspore/ccsrc/plugin/device/ascend/kernel/opapi/aclnn_auto_gen/

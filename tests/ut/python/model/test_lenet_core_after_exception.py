@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 
 import mindspore.nn as nn
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.common.tensor import Tensor
 from mindspore.ops import operations as P
 from ....train_step_wrap import train_step_with_loss_warp
@@ -53,5 +53,6 @@ def test_lenet5_exception():
     predict = Tensor(in1)
     label = Tensor(in2)
     net = train_step_with_loss_warp(LeNet5())
-    with pytest.raises(ValueError):
-        _executor.compile(net, predict, label)
+    with pytest.raises(RuntimeError) as info:
+        _cell_graph_executor.compile(net, predict, label)
+    assert "'C_in' of input 'x' shape divide by parameter 'group' must be " in str(info.value)

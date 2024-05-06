@@ -22,13 +22,22 @@ from mindspore import context
 from mindspore.ops import operations as P
 
 
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
 def test_get_parameter_layout():
+    """
+    Feature: test get parameter layout
+    Description: test get parameter layout.
+    Expectation: compile success
+    """
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2, weight):
             super().__init__()
             self.weight = Parameter(weight, "w1")
-            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).set_strategy(strategy1)
-            self.relu = P.ReLU().set_strategy(strategy2)
+            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).shard(strategy1)
+            self.relu = P.ReLU().shard(strategy2)
 
         def construct(self, x):
             out = self.matmul(x, self.weight)
@@ -46,14 +55,17 @@ def test_get_parameter_layout():
     weight = Tensor(np.ones([64, 32]), dtype=ms.float32)
 
     net = Net(strategy1, strategy2, weight)
-    net.set_auto_parallel()
-    exe = me._executor
-    exe.compile(net, x, phase='train', auto_parallel_mode=True)
-    x_layout = [[2, 4], [1, -1], [16, 32]]  # device_arrangement = [2, 4], tensor_map = [1, -1]
-    weight_layout = [[2, 4], [0, -1], [16, 32]]  # device_arrangement = [2, 4], tensor_map = [0, -1]
+    net.set_train()
+    exe = me._cell_graph_executor
+    exe.compile(net, x, phase='train')
+    # device_arrangement = [2, 4], tensor_map = [1, -1]
+    x_layout = ([8], [0, -1], [32, 32], 0, True, '')
+    # device_arrangement = [2, 4], tensor_map = [0, -1]
+    weight_layout = ([2, 4], [0, -1], [16, 32], 0, True, '')
     expect_dict = {'x': x_layout, 'w1': weight_layout}
     # to be resovled: static local variable count_p is used in step_parallel.cc, it needs to be reset between each ut
-    assert net.parameter_layout_dict == expect_dict
+    assert net.parameter_layout_dict["x"][0:6] == expect_dict["x"]
+    assert net.parameter_layout_dict["w1"][0:6] == expect_dict["w1"]
 
 
 if __name__ == '__main__':

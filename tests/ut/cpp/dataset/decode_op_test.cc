@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,19 @@
 #include <fstream>
 #include "common/common.h"
 #include "common/cvop_common.h"
-#include "dataset/kernels/image/decode_op.h"
+#include "minddata/dataset/kernels/image/decode_op.h"
 #include "utils/log_adapter.h"
 
 using namespace mindspore::dataset;
-using mindspore::LogStream;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::MsLogLevel::INFO;
 
 class MindDataTestDecodeOp : public UT::CVOP::CVOpCommon {
  public:
   MindDataTestDecodeOp() : CVOpCommon() {}
 };
 
+/// Feature: Decode op
+/// Description: Test Decode op basic usage
+/// Expectation: The data is processed successfully
 TEST_F(MindDataTestDecodeOp, TestOp) {
   MS_LOG(INFO) << "Doing testDecode";
   TensorShape s = TensorShape({1});

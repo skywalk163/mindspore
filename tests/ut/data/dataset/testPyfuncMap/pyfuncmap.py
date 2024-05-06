@@ -29,10 +29,10 @@ def test_case_0():
     # apply dataset operations
     ds1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, shuffle=False)
 
-    ds1 = ds1.map(input_columns=col, output_columns="out", operations=(lambda x: x + x))
+    ds1 = ds1.map(operations=(lambda x: x + x), input_columns=col, output_columns="out")
 
     print("************** Output Tensor *****************")
-    for data in ds1.create_dict_iterator():  # each data is a dictionary
+    for data in ds1.create_dict_iterator(num_epochs=1, output_numpy=True):  # each data is a dictionary
         # in this example, each dictionary has keys "image" and "label"
         print(data["out"])
     print("************** Output Tensor *****************")
@@ -49,10 +49,10 @@ def test_case_1():
     # apply dataset operations
     ds1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, shuffle=False)
 
-    ds1 = ds1.map(input_columns=col, output_columns=["out0", "out1"], operations=(lambda x: (x, x + x)))
+    ds1 = ds1.map(operations=(lambda x: (x, x + x)), input_columns=col, output_columns=["out0", "out1"])
 
     print("************** Output Tensor *****************")
-    for data in ds1.create_dict_iterator():  # each data is a dictionary
+    for data in ds1.create_dict_iterator(num_epochs=1, output_numpy=True):  # each data is a dictionary
         # in this example, each dictionary has keys "image" and "label"
         print("out0")
         print(data["out0"])
@@ -72,10 +72,10 @@ def test_case_2():
     # apply dataset operations
     ds1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, shuffle=False)
 
-    ds1 = ds1.map(input_columns=col, output_columns="out", operations=(lambda x, y: x + y))
+    ds1 = ds1.map(operations=(lambda x, y: x + y), input_columns=col, output_columns="out")
 
     print("************** Output Tensor *****************")
-    for data in ds1.create_dict_iterator():  # each data is a dictionary
+    for data in ds1.create_dict_iterator(num_epochs=1, output_numpy=True):  # each data is a dictionary
         # in this example, each dictionary has keys "image" and "label"
         print(data["out"])
 
@@ -93,11 +93,11 @@ def test_case_3():
     # apply dataset operations
     ds1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, shuffle=False)
 
-    ds1 = ds1.map(input_columns=col, output_columns=["out0", "out1", "out2"],
-                  operations=(lambda x, y: (x, x + y, x + x + y)))
+    ds1 = ds1.map(operations=(lambda x, y: (x, x + y, x + x + y)), input_columns=col,
+                  output_columns=["out0", "out1", "out2"])
 
     print("************** Output Tensor *****************")
-    for data in ds1.create_dict_iterator():  # each data is a dictionary
+    for data in ds1.create_dict_iterator(num_epochs=1, output_numpy=True):  # each data is a dictionary
         # in this example, each dictionary has keys "image" and "label"
         print("out0")
         print(data["out0"])
@@ -119,11 +119,11 @@ def test_case_4():
     # apply dataset operations
     ds1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, shuffle=False)
 
-    ds1 = ds1.map(input_columns=col, output_columns=["out0", "out1", "out2"], num_parallel_workers=4,
-                  operations=(lambda x, y: (x, x + y, x + x + y)))
+    ds1 = ds1.map(operations=(lambda x, y: (x, x + y, x + x + y)), input_columns=col,
+                  output_columns=["out0", "out1", "out2"], num_parallel_workers=4)
 
     print("************** Output Tensor *****************")
-    for data in ds1.create_dict_iterator():  # each data is a dictionary
+    for data in ds1.create_dict_iterator(num_epochs=1, output_numpy=True):  # each data is a dictionary
         # in this example, each dictionary has keys "image" and "label"
         print("out0")
         print(data["out0"])

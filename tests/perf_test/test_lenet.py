@@ -17,14 +17,17 @@
 
 import numpy as np
 
+from lenet import LeNet5
 import mindspore.nn as nn
 import mindspore.ops.composite as C
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
-from mindspore.model_zoo.lenet import LeNet
+from mindspore.common.api import _cell_graph_executor
 
 context.set_context(mode=context.GRAPH_MODE)
+
+
+grad_all_with_sens = C.GradOperation(get_all=True, sens_param=True)
 
 batch_size = 1
 channel = 1
@@ -38,7 +41,7 @@ class LeNetGrad(nn.Cell):
 
     def __init__(self, network):
         super(LeNetGrad, self).__init__()
-        self.grad_op = C.grad_all_with_sens
+        self.grad_op = grad_all_with_sens
         self.network = network
 
     def construct(self, x, sens):
@@ -56,12 +59,12 @@ def test_compile():
                                           height,
                                           weight) * 3, np.float32))
 
-    _executor.compile(net, inp)
+    _cell_graph_executor.compile(net, inp)
 
 
 def test_compile_grad():
     """Compile forward and backward graph"""
-    net = LeNet(num_class=num_class)
+    net = LeNet5(num_class=num_class)
     inp = Tensor(np.array(np.random.randn(batch_size,
                                           channel,
                                           height,
@@ -69,4 +72,4 @@ def test_compile_grad():
     sens = Tensor(np.ones([batch_size, num_class]).astype(np.float32))
     grad_op = LeNetGrad(net)
 
-    _executor.compile(grad_op, inp, sens)
+    _cell_graph_executor.compile(grad_op, inp, sens)

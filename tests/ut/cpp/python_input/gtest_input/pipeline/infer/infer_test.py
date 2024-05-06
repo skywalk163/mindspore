@@ -12,56 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ============================================================================
-from dataclasses import dataclass
-
 import mindspore.nn as nn
-from mindspore.ops import Primitive
 from mindspore.ops import functional as F
 from mindspore.ops import operations as P
 
-scala_add = Primitive('scalar_add')
+scala_add = F.scalar_add
 
 
-@dataclass
-class InferFoo:
-    x: int
-    y: int
+class FnDict:
+    def __init__(self):
+        self.fnDict = {}
 
-    def inf_add(self):
-        return scala_add(self.x, self.y)
+    def __call__(self, fn):
+        self.fnDict[fn.__name__] = fn
 
-
-def test_dataclass_fun_add(x):
-    foo = InferFoo(x, 1.2)
-    return foo.inf_add()
-
-
-@dataclass
-class ResolveFoo:
-    x: float
-    y: float
-
-    def inf_sub(self):
-        return self.x - self.y
-
-
-def test_dataclass_fun_sub(x):
-    foo = ResolveFoo(x, 0.1)
-    return foo.inf_sub()
-
-
-def test_fun_sub(x, y):
-    return x - y
-
-
-def test_fun_add(x, y):
-    return scala_add(x, y)
+    def __getitem__(self, name):
+        return self.fnDict[name]
 
 
 class AddNet(nn.Cell):
-    def __init__(self):
-        super(AddNet, self).__init__()
-
     def construct(self, x, y):
         return F.scalar_add(x, y)
 
@@ -75,9 +44,6 @@ def test_net_construct_add():
 
 
 class SubNet(nn.Cell):
-    def __init__(self):
-        super(SubNet, self).__init__()
-
     def construct(self, x, y):
         return F.scalar_sub(x, y)
 
@@ -201,3 +167,17 @@ def test_graph_infer_vararg_kwonlyargs_kwarg_defaults():
         return func_call(x, y, *args, p=p, z=10, m=q, **kwargs)
 
     return test_call_variable
+
+
+def eval_test_functions(tag):
+    fns = FnDict()
+    add = P.Add()
+    relu = P.ReLU()
+
+    @fns
+    def func(x, y):
+        res = add(x, y)
+        res = x + res
+        return relu(res)
+
+    return fns[tag]

@@ -20,9 +20,12 @@ import mindspore.context as context
 import mindspore.nn as nn
 import mindspore.ops.composite as C
 from mindspore import Tensor
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 
 context.set_context(mode=context.GRAPH_MODE)
+
+
+grad_all_with_sens = C.GradOperation(get_all=True, sens_param=True)
 
 
 class MeanAggregatorGrad(nn.Cell):
@@ -30,7 +33,7 @@ class MeanAggregatorGrad(nn.Cell):
 
     def __init__(self, network):
         super(MeanAggregatorGrad, self).__init__()
-        self.grad_op = C.grad_all_with_sens
+        self.grad_op = grad_all_with_sens
         self.network = network
 
     def construct(self, x, sens):
@@ -42,7 +45,7 @@ def test_MeanAggregator():
     """Compile MeanAggregator forward graph"""
     aggregator = MeanAggregator(32, 64, activation="relu", dropout_ratio=0.5)
     input_data = Tensor(np.array(np.random.rand(32, 3, 32), dtype=np.float32))
-    _executor.compile(aggregator, input_data)
+    _cell_graph_executor.compile(aggregator, input_data)
 
 
 def test_MeanAggregator_grad():
@@ -51,7 +54,7 @@ def test_MeanAggregator_grad():
     input_data = Tensor(np.array(np.random.rand(32, 3, 32), dtype=np.float32))
     sens = Tensor(np.ones([32, 64]).astype(np.float32))
     grad_op = MeanAggregatorGrad(aggregator)
-    _executor.compile(grad_op, input_data, sens)
+    _cell_graph_executor.compile(grad_op, input_data, sens)
 
 
 def test_AttentionHead():
@@ -63,11 +66,11 @@ def test_AttentionHead():
                          residual=False)
     input_data = Tensor(np.array(np.random.rand(1, 2708, 1433), dtype=np.float32))
     biases = Tensor(np.array(np.random.rand(1, 2708, 2708), dtype=np.float32))
-    _executor.compile(head, input_data, biases)
+    _cell_graph_executor.compile(head, input_data, biases)
 
 
 def test_AttentionAggregator():
     input_data = Tensor(np.array(np.random.rand(1, 2708, 1433), dtype=np.float32))
     biases = Tensor(np.array(np.random.rand(1, 2708, 2708), dtype=np.float32))
     net = AttentionAggregator(1433, 8, 8)
-    _executor.compile(net, input_data, biases)
+    _cell_graph_executor.compile(net, input_data, biases)

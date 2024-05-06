@@ -17,12 +17,12 @@ import os
 import pytest
 
 from mindspore import log as logger
-from mindspore.mindrecord import FileReader
+from mindspore.mindrecord import FileReader, MindPage
 from mindspore.mindrecord import ImageNetToMR
+from mindspore.mindrecord import set_enc_key, set_enc_mode, set_hash_mode
 
 IMAGENET_MAP_FILE = "../data/mindrecord/testImageNetDataWhole/labels_map.txt"
 IMAGENET_IMAGE_DIR = "../data/mindrecord/testImageNetDataWhole/images"
-MINDRECORD_FILE = "../data/mindrecord/testImageNetDataWhole/imagenet.mindrecord"
 PARTITION_NUMBER = 4
 
 @pytest.fixture
@@ -31,20 +31,21 @@ def fixture_file():
     def remove_one_file(x):
         if os.path.exists(x):
             os.remove(x)
-    def remove_file():
-        x = MINDRECORD_FILE
+    def remove_file(file_name):
+        x = file_name
         remove_one_file(x)
-        x = MINDRECORD_FILE + ".db"
+        x = file_name + ".db"
         remove_one_file(x)
         for i in range(PARTITION_NUMBER):
-            x = MINDRECORD_FILE + str(i)
+            x = file_name + str(i)
             remove_one_file(x)
-            x = MINDRECORD_FILE + str(i) + ".db"
+            x = file_name + str(i) + ".db"
             remove_one_file(x)
 
-    remove_file()
+    file_name = os.environ.get('PYTEST_CURRENT_TEST').split(':')[-1].split(' ')[0]
+    remove_file(file_name)
     yield "yield_fixture_data"
-    remove_file()
+    remove_file(file_name)
 
 def read(filename):
     """test file reade"""
@@ -60,35 +61,41 @@ def read(filename):
 
 def test_imagenet_to_mindrecord(fixture_file):
     """test transform imagenet dataset to mindrecord."""
+    file_name = os.environ.get('PYTEST_CURRENT_TEST').split(':')[-1].split(' ')[0]
     imagenet_transformer = ImageNetToMR(IMAGENET_MAP_FILE, IMAGENET_IMAGE_DIR,
-                                        MINDRECORD_FILE, PARTITION_NUMBER)
+                                        file_name, PARTITION_NUMBER)
     imagenet_transformer.transform()
     for i in range(PARTITION_NUMBER):
-        assert os.path.exists(MINDRECORD_FILE + str(i))
-        assert os.path.exists(MINDRECORD_FILE + str(i) + ".db")
-    read(MINDRECORD_FILE + "0")
+        assert os.path.exists(file_name + str(i))
+        assert os.path.exists(file_name + str(i) + ".db")
+    read([file_name + "0",
+          file_name + "1",
+          file_name + "2",
+          file_name + "3"])
 
 def test_imagenet_to_mindrecord_default_partition_number(fixture_file):
     """
     test transform imagenet dataset to mindrecord
     when partition number is default.
     """
+    file_name = os.environ.get('PYTEST_CURRENT_TEST').split(':')[-1].split(' ')[0]
     imagenet_transformer = ImageNetToMR(IMAGENET_MAP_FILE, IMAGENET_IMAGE_DIR,
-                                        MINDRECORD_FILE)
+                                        file_name, 1)
     imagenet_transformer.transform()
-    assert os.path.exists(MINDRECORD_FILE)
-    assert os.path.exists(MINDRECORD_FILE + ".db")
-    read(MINDRECORD_FILE)
+    assert os.path.exists(file_name)
+    assert os.path.exists(file_name + ".db")
+    read(file_name)
 
 def test_imagenet_to_mindrecord_partition_number_0(fixture_file):
     """
     test transform imagenet dataset to mindrecord
     when partition number is 0.
     """
+    file_name = os.environ.get('PYTEST_CURRENT_TEST').split(':')[-1].split(' ')[0]
     with pytest.raises(Exception, match="Invalid parameter value"):
         imagenet_transformer = ImageNetToMR(IMAGENET_MAP_FILE,
                                             IMAGENET_IMAGE_DIR,
-                                            MINDRECORD_FILE, 0)
+                                            file_name, 0)
         imagenet_transformer.transform()
 
 def test_imagenet_to_mindrecord_partition_number_none(fixture_file):
@@ -96,11 +103,12 @@ def test_imagenet_to_mindrecord_partition_number_none(fixture_file):
     test transform imagenet dataset to mindrecord
     when partition number is none.
     """
+    file_name = os.environ.get('PYTEST_CURRENT_TEST').split(':')[-1].split(' ')[0]
     with pytest.raises(Exception,
                        match="The parameter partition_number must be int"):
         imagenet_transformer = ImageNetToMR(IMAGENET_MAP_FILE,
                                             IMAGENET_IMAGE_DIR,
-                                            MINDRECORD_FILE, None)
+                                            file_name, None)
         imagenet_transformer.transform()
 
 def test_imagenet_to_mindrecord_illegal_filename(fixture_file):
@@ -108,9 +116,67 @@ def test_imagenet_to_mindrecord_illegal_filename(fixture_file):
     test transform imagenet dataset to mindrecord
     when file name contains illegal character.
     """
-    filename = "not_*ok"
+    filename = "imagenet_not_*ok"
     with pytest.raises(Exception, match="File name should not contains"):
         imagenet_transformer = ImageNetToMR(IMAGENET_MAP_FILE,
                                             IMAGENET_IMAGE_DIR, filename,
                                             PARTITION_NUMBER)
         imagenet_transformer.transform()
+
+def test_imagenet_to_mindrecord_illegal_1_filename(fixture_file):
+    """
+    test transform imagenet dataset to mindrecord
+    when file name end with '/'.
+    """
+    filename = "imagenet/path/"
+    with pytest.raises(Exception, match="File path can not end with '/'"):
+        imagenet_transformer = ImageNetToMR(IMAGENET_MAP_FILE,
+                                            IMAGENET_IMAGE_DIR, filename,
+                                            PARTITION_NUMBER)
+        imagenet_transformer.transform()
+
+
+def imagenet_to_mindrecord_with_enc_and_hash(encode, enc_mode, hash_mode):
+    """test transform imagenet dataset to mindrecord with enc and hash."""
+    file_name = os.environ.get('PYTEST_CURRENT_TEST').split(':')[-1].split(' ')[0]
+
+    if os.path.exists(file_name):
+        os.remove(file_name)
+    if os.path.exists(file_name + '.db'):
+        os.remove(file_name + '.db')
+
+    set_enc_key(encode)
+    set_enc_mode(enc_mode)
+    set_hash_mode(hash_mode)
+
+    imagenet_transformer = ImageNetToMR(IMAGENET_MAP_FILE, IMAGENET_IMAGE_DIR,
+                                        file_name, 1)
+    imagenet_transformer.transform()
+
+    assert os.path.exists(file_name)
+    assert os.path.exists(file_name + ".db")
+
+    read([file_name])
+
+    # MindPage open the file
+    _ = MindPage([file_name])
+
+    set_enc_key(None)
+    set_hash_mode(None)
+
+    if os.path.exists(file_name):
+        os.remove(file_name)
+    if os.path.exists(file_name + '.db'):
+        os.remove(file_name + '.db')
+
+
+def test_imagenet_to_mindrecord_with_enc_and_hash_check(fixture_file):
+    """
+    Feature: ImageNetToMR
+    Description: test transform imagenet dataset to mindrecord with enc and hash.
+    Expectation: SUCCESS
+    """
+    imagenet_to_mindrecord_with_enc_and_hash("0123456789012345", "AES-GCM", "sha384")
+    imagenet_to_mindrecord_with_enc_and_hash("0123456789012345", "AES-CBC", None)
+    imagenet_to_mindrecord_with_enc_and_hash(None, "SM4-CBC", "sha512")
+    imagenet_to_mindrecord_with_enc_and_hash(None, "SM4-CBC", None)

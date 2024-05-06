@@ -24,12 +24,14 @@ import pytest
 import mindspore as ms
 import mindspore.common.api as me
 import mindspore.nn as nn
-from mindspore import Tensor
+from mindspore import Tensor, context
 from mindspore.common.initializer import initializer
 from mindspore.common.parameter import Parameter
 from ..ut_filter import non_graph_engine
 
 ndarr = np.ones((2, 3))
+
+context.set_context(mode=context.GRAPH_MODE)
 
 
 def test_tensor_flatten():
@@ -50,148 +52,205 @@ def test_tensor():
     """test_tensor"""
     t1 = ms.Tensor(ndarr)
     assert isinstance(t1, ms.Tensor)
-    assert t1.dtype() == ms.float64
+    assert t1.dtype == ms.float64
 
     t2 = ms.Tensor(np.zeros([1, 2, 3]), ms.float32)
     assert isinstance(t2, ms.Tensor)
-    assert t2.shape() == (1, 2, 3)
-    assert t2.dtype() == ms.float32
+    assert t2.shape == (1, 2, 3)
+    assert t2.dtype == ms.float32
 
     t3 = ms.Tensor(0.1)
     assert isinstance(t3, ms.Tensor)
-    assert t3.dtype() == ms.float64
+    assert t3.dtype == ms.float32
 
     t4 = ms.Tensor(1)
     assert isinstance(t4, ms.Tensor)
-    assert t4.dtype() == ms.int64
+    assert t4.dtype == ms.int64
 
 
 def test_tensor_type_float16():
     t_float16 = ms.Tensor(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float16))
     assert isinstance(t_float16, ms.Tensor)
-    assert t_float16.shape() == (2, 3)
-    assert t_float16.dtype() == ms.float16
+    assert t_float16.shape == (2, 3)
+    assert t_float16.dtype == ms.float16
 
+
+def test_tensor_type_complex64():
+    np_input = np.array(
+        [[1+0.1j, 2j, 3+0.3j], [4-0.4j, 5, 6]], dtype=np.complex64)
+    t_complex64 = ms.Tensor(np_input)
+    assert isinstance(t_complex64, ms.Tensor)
+    assert t_complex64.shape == (2, 3)
+    assert t_complex64.dtype == ms.complex64
+    assert np.all(t_complex64.asnumpy() == np_input)
+
+
+def test_tensor_type_complex64_user_define():
+    np_input = np.zeros([1, 2, 3])
+    t_complex64 = ms.Tensor(np_input, ms.complex64)
+    assert isinstance(t_complex64, ms.Tensor)
+    assert t_complex64.shape == (1, 2, 3)
+    assert t_complex64.dtype == ms.complex64
+    assert np.all(t_complex64.asnumpy() == np_input)
+
+
+def test_tensor_type_complex128():
+    #complex python object
+    py_input = 1 + 2.22222222j
+    t_complex128 = ms.Tensor(py_input)
+    assert t_complex128.shape == ()
+    assert t_complex128.dtype == ms.complex128
+    assert np.all(t_complex128.asnumpy() == py_input)
+
+    #complex in numpy array
+    np_input = np.array(
+        [[1+0.1j, 2j, 3+0.3j], [4-0.4j, 5, 6]], dtype=np.complex128)
+    t_complex128 = ms.Tensor(np_input)
+    assert isinstance(t_complex128, ms.Tensor)
+    assert t_complex128.shape == (2, 3)
+    assert t_complex128.dtype == ms.complex128
+    assert np.all(t_complex128.asnumpy() == np_input)
+
+    #complex in tuple
+    py_input = (1, 2.22222222j, 3)
+    t_complex128 = ms.Tensor(py_input)
+    assert np.all(t_complex128.asnumpy() == py_input)
+
+    #complex in list
+    py_input = [[1+0.1j, 2j, 3+0.3j], [4-0.4j, 5, 6]]
+    t_complex128 = ms.Tensor(py_input)
+    assert isinstance(t_complex128, ms.Tensor)
+    assert t_complex128.shape == (2, 3)
+    assert t_complex128.dtype == ms.complex128
+    assert np.all(t_complex128.asnumpy() == py_input)
+
+def test_tensor_type_complex128_user_define():
+    np_input = np.zeros([1, 2, 3])
+    t_complex128 = ms.Tensor(np_input, ms.complex128)
+    assert isinstance(t_complex128, ms.Tensor)
+    assert t_complex128.shape == (1, 2, 3)
+    assert t_complex128.dtype == ms.complex128
+    assert np.all(t_complex128.asnumpy() == np_input)
 
 def test_tensor_type_float32():
     t_float32 = ms.Tensor(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32))
     assert isinstance(t_float32, ms.Tensor)
-    assert t_float32.shape() == (2, 3)
-    assert t_float32.dtype() == ms.float32
+    assert t_float32.shape == (2, 3)
+    assert t_float32.dtype == ms.float32
 
 
 def test_tensor_type_float32_user_define():
     t = ms.Tensor(np.zeros([1, 2, 3]), ms.float32)
     assert isinstance(t, ms.Tensor)
-    assert t.shape() == (1, 2, 3)
-    assert t.dtype() == ms.float32
+    assert t.shape == (1, 2, 3)
+    assert t.dtype == ms.float32
 
 
 def test_tensor_type_float64():
     t = ms.Tensor([[1.0, 2, 3], [4, 5, 6]])
     assert isinstance(t, ms.Tensor)
-    assert t.shape() == (2, 3)
-    assert t.dtype() == ms.float64
+    assert t.shape == (2, 3)
+    assert t.dtype == ms.float32
 
     t_zero = ms.Tensor(np.zeros([1, 2, 3]))
     assert isinstance(t_zero, ms.Tensor)
-    assert t_zero.shape() == (1, 2, 3)
-    assert t_zero.dtype() == ms.float64
+    assert t_zero.shape == (1, 2, 3)
+    assert t_zero.dtype == ms.float64
 
 
 def test_tensor_type_float64_user_define():
     t = ms.Tensor(np.array([[1, 2, 3], [4, 5, 6]], dtype=float))
     assert isinstance(t, ms.Tensor)
-    assert t.shape() == (2, 3)
-    assert t.dtype() == ms.float64
+    assert t.shape == (2, 3)
+    assert t.dtype == ms.float64
 
     t_float64 = ms.Tensor(np.array([[1, 2, 3], [4, 5, 6]]), ms.float64)
     assert isinstance(t_float64, ms.Tensor)
-    assert t_float64.shape() == (2, 3)
-    assert t_float64.dtype() == ms.float64
+    assert t_float64.shape == (2, 3)
+    assert t_float64.dtype == ms.float64
 
 
 def test_tensor_type_bool():
     # init a tensor with bool type
     ts_bool_array = ms.Tensor(np.zeros([2, 3], np.bool), ms.bool_)
     assert isinstance(ts_bool_array, ms.Tensor)
-    assert ts_bool_array.dtype() == ms.bool_
+    assert ts_bool_array.dtype == ms.bool_
 
     t_bool = ms.Tensor(True)
     assert isinstance(t_bool, ms.Tensor)
-    assert t_bool.dtype() == ms.bool_
+    assert t_bool.dtype == ms.bool_
 
     t_bool_array = ms.Tensor(np.array([[True, False, True], [False, False, False]]))
     assert isinstance(t_bool_array, ms.Tensor)
-    assert t_bool_array.shape() == (2, 3)
-    assert t_bool_array.dtype() == ms.bool_
+    assert t_bool_array.shape == (2, 3)
+    assert t_bool_array.dtype == ms.bool_
 
 
 def test_tensor_type_int8():
     t_int8_array = ms.Tensor(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int8))
     assert isinstance(t_int8_array, ms.Tensor)
-    assert t_int8_array.shape() == (2, 3)
-    assert t_int8_array.dtype() == ms.int8
+    assert t_int8_array.shape == (2, 3)
+    assert t_int8_array.dtype == ms.int8
 
 
 def test_tensor_type_int16():
     t_int16_array = ms.Tensor(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int16))
     assert isinstance(t_int16_array, ms.Tensor)
-    assert t_int16_array.shape() == (2, 3)
-    assert t_int16_array.dtype() == ms.int16
+    assert t_int16_array.shape == (2, 3)
+    assert t_int16_array.dtype == ms.int16
 
 
 def test_tensor_type_int32():
     t_int = ms.Tensor([[1, 2, 3], [4, 5, 6]])
     assert isinstance(t_int, ms.Tensor)
-    assert t_int.shape() == (2, 3)
-    assert t_int.dtype() == ms.int64
+    assert t_int.shape == (2, 3)
+    assert t_int.dtype == ms.int64
 
     t_int_array = ms.Tensor(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32))
     assert isinstance(t_int_array, ms.Tensor)
-    assert t_int_array.shape() == (2, 3)
-    assert t_int_array.dtype() == ms.int32
+    assert t_int_array.shape == (2, 3)
+    assert t_int_array.dtype == ms.int32
 
 
 def test_tensor_type_int64():
     t_int64 = ms.Tensor(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int64))
     assert isinstance(t_int64, ms.Tensor)
-    assert t_int64.shape() == (2, 3)
-    assert t_int64.dtype() == ms.int64
+    assert t_int64.shape == (2, 3)
+    assert t_int64.dtype == ms.int64
 
 
 def test_tensor_type_uint8():
     t_uint8_array = ms.Tensor(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.uint8))
     assert isinstance(t_uint8_array, ms.Tensor)
-    assert t_uint8_array.shape() == (2, 3)
-    assert t_uint8_array.dtype() == ms.uint8
+    assert t_uint8_array.shape == (2, 3)
+    assert t_uint8_array.dtype == ms.uint8
 
 
 def test_tensor_type_uint16():
     t_uint16_array = ms.Tensor(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.uint16))
     assert isinstance(t_uint16_array, ms.Tensor)
-    assert t_uint16_array.shape() == (2, 3)
-    assert t_uint16_array.dtype() == ms.uint16
+    assert t_uint16_array.shape == (2, 3)
+    assert t_uint16_array.dtype == ms.uint16
 
 
 def test_tensor_type_uint32():
     t_uint32_array = ms.Tensor(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.uint32))
     assert isinstance(t_uint32_array, ms.Tensor)
-    assert t_uint32_array.shape() == (2, 3)
-    assert t_uint32_array.dtype() == ms.uint32
+    assert t_uint32_array.shape == (2, 3)
+    assert t_uint32_array.dtype == ms.uint32
 
 
 def test_tensor_type_uint64():
     t_uint64 = ms.Tensor(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.uint64))
     assert isinstance(t_uint64, ms.Tensor)
-    assert t_uint64.shape() == (2, 3)
-    assert t_uint64.dtype() == ms.uint64
+    assert t_uint64.shape == (2, 3)
+    assert t_uint64.dtype == ms.uint64
 
 
 def test_set_type():
     t = ms.Tensor(ndarr)
     t.set_dtype(ms.float32)
-    assert t.dtype() == ms.float32
+    assert t.dtype == ms.float32
 
 
 @non_graph_engine
@@ -223,7 +282,7 @@ def test_div():
 @non_graph_engine
 def test_parameter():
     x = Parameter(initializer(1, [1], ms.float32), name="beta1_power")
-    x.init_data()
+    x = x.init_data()
     z = x / 2
     print(z)
 
@@ -245,16 +304,16 @@ def test_return_tensor():
     net = Net(0)
     input_data = ms.Tensor(np.array([[1.2, 2.1], [2.2, 3.2]]).astype('float32'))
     input_data.set_dtype(ms.float32)
-    exe = me._executor
+    exe = me._cell_graph_executor
     exe.compile(net, input_data)
     tensor_ = exe(net, input_data)
 
     # get shape
-    shape_ = tensor_.shape()
+    shape_ = tensor_.shape
     print("shape = ", shape_)
 
     # get type
-    type_ = tensor_.dtype()
+    type_ = tensor_.dtype
     print("type = ", type_)
 
     # get value
@@ -318,9 +377,9 @@ def test_tensor_input_empty():
 
 
 def test_tensor_input_ndarray_str():
-    with pytest.raises(TypeError):
-        inp = np.array(["88", 2, 4])
-        ms.Tensor(inp)
+    inp = np.array(["88", 0, 9])
+    tensor = ms.Tensor(inp)
+    assert str(tensor) == "['88' '0' '9']"
 
 
 def test_tensor_input_ndarray_bool():
@@ -329,13 +388,6 @@ def test_tensor_input_ndarray_bool():
 
     inp = np.array([False, 2, 4])
     ms.Tensor(inp)
-
-
-def test_tensor_input_ndarray_complex():
-    with pytest.raises(TypeError):
-        inp = np.array([20j, 2, 4])
-        ms.Tensor(inp)
-
 
 def test_tensor_input_ndarray_none():
     with pytest.raises(TypeError):
@@ -426,13 +478,26 @@ def test_tensor_dtype_np_int64():
         input_data = np.random.randn(32, 112, 112, 3).astype(np.int64)
         ms.Tensor(input_data, np.int64)
 
+def test_tensor_dtype_fp64_to_uint8():
+    array = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float64)
+    t = ms.Tensor(array, ms.uint8)
+    assert isinstance(t, ms.Tensor)
+    assert t.shape == (2, 3)
+    assert t.dtype == ms.uint8
 
-def test_tensor_dtype_fp32_to_bool():
-    with pytest.raises(RuntimeError):
-        input_ = np.random.randn(2, 3, 4, 5).astype(np.float32)
-        input_ = ms.Tensor(input_)
-        _ = ms.Tensor(input_, dtype=ms.bool_)
+def test_tensor_dtype_complex64_to_float32():
+    array = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.complex64)
+    t = ms.Tensor(array, ms.float32)
+    assert isinstance(t, ms.Tensor)
+    assert t.shape == (2, 3)
+    assert t.dtype == ms.float32
 
+def test_tensor_dtype_float32_to_complex64():
+    array = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
+    t = ms.Tensor(array, ms.complex64)
+    assert isinstance(t, ms.Tensor)
+    assert t.shape == (2, 3)
+    assert t.dtype == ms.complex64
 
 def test_tensor_operation():
     x = Tensor(np.ones((3, 3)) * 4)
@@ -452,5 +517,36 @@ def test_tensor_operation():
     assert np.all(res.asnumpy() == np.ones((3, 3)) * 2)
     res = 8 / x
     assert np.all(res.asnumpy() == np.ones((3, 3)) * 2)
+    res = x % 3
+    assert np.all(res.asnumpy() == np.ones((3, 3)))
+    res = x // 3
+    assert np.all(res.asnumpy() == np.ones((3, 3)))
+    x %= 3
+    assert np.all(x.asnumpy() == np.ones((3, 3)))
+    res = x * (2, 3, 4)
+    assert np.all(res.asnumpy() == np.ones((3, 3)) * (2, 3, 4))
+    res = 5 % x
+    assert np.all(x.asnumpy() == np.ones((3, 3)))
+    res = 5 // x
+    assert np.all(x.asnumpy() == np.ones((3, 3)))
+
+def test_tensor_from_numpy():
+    a = np.ones((2, 3))
+    t = ms.Tensor.from_numpy(a)
+    assert isinstance(t, ms.Tensor)
+    assert np.all(t.asnumpy() == 1)
+    # 't' and 'a' share same data.
+    a[1] = 2
+    assert np.all(t.asnumpy()[0] == 1)
+    assert np.all(t.asnumpy()[1] == 2)
+    # 't' is still valid after 'a' deleted.
+    del a
+    assert np.all(t.asnumpy()[0] == 1)
+    assert np.all(t.asnumpy()[1] == 2)
     with pytest.raises(TypeError):
-        res = x * (2, 3)
+        # incorrect input.
+        t = ms.Tensor.from_numpy([1, 2, 3])
+
+    x = np.array([[1, 2], [3, 4]], order='F')
+    b = Tensor.from_numpy(x)
+    assert np.all(b.asnumpy() == np.array([[1, 2], [3, 4]]))

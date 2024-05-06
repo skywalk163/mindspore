@@ -15,11 +15,14 @@
  */
 
 #include "common/common_test.h"
-#include "operator/ops.h"
-#include "session/ascend_session.h"
-#include "session/kernel_graph.h"
-#include "session/anf_runtime_algorithm.h"
-#include "utils/utils.h"
+#include "mindspore/core/ops/math_ops.h"
+#include "frontend/operator/ops.h"
+#include "include/backend/kernel_graph.h"
+#include "include/backend/anf_runtime_algorithm.h"
+#include "include/common/utils/utils.h"
+#include "include/common/utils/anfalgo.h"
+#include "backend/common/session/session_basic.h"
+#include "backend/common/session/session_factory.h"
 
 namespace mindspore {
 namespace session {
@@ -40,7 +43,7 @@ TEST_F(SessionBasicTest, ConstructKernelGraph) {
    *              return
    */
   auto anf_graph = std::make_shared<FuncGraph>();
-  std::vector<int> shape = {2, 32, 224, 224};
+  std::vector<int64_t> shape = {2, 32, 224, 224};
   auto abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shape);
   EXPECT_NE(abstract, nullptr);
 
@@ -52,7 +55,7 @@ TEST_F(SessionBasicTest, ConstructKernelGraph) {
   EXPECT_NE(original_y_parameter, nullptr);
   original_y_parameter->set_name("original_y_parameter");
   original_y_parameter->set_abstract(abstract);
-  std::vector<AnfNodePtr> add_inputs = {NewValueNode(prim::kPrimTensorAdd), original_x_parameter, original_y_parameter};
+  std::vector<AnfNodePtr> add_inputs = {NewValueNode(prim::kPrimAdd), original_x_parameter, original_y_parameter};
   auto original_add = anf_graph->NewCNode(add_inputs);
   EXPECT_NE(original_add, nullptr);
   original_add->set_abstract(abstract);
@@ -68,7 +71,7 @@ TEST_F(SessionBasicTest, ConstructKernelGraph) {
 
   std::vector<AnfNodePtr> lst = {original_add, original_mul};
   std::vector<AnfNodePtr> outputs = {original_mul};
-  session::SessionPtr sess = std::make_shared<session::AscendSession>();
+  auto sess = session::SessionFactory::Get().Create(kSessionBasic);
   sess->Init(0);
   auto kernel_graph = sess->ConstructKernelGraph(lst, outputs);
   EXPECT_NE(kernel_graph, nullptr);
@@ -87,11 +90,11 @@ TEST_F(SessionBasicTest, ConstructKernelGraph) {
   kernel_graph->SetExecOrderByDefault();
   auto execution_order = kernel_graph->execution_order();
   EXPECT_EQ(execution_order.size(), 2);
-  EXPECT_EQ(AnfAlgo::GetCNodeName(execution_order[0]), prim::kPrimTensorAdd->name());
-  EXPECT_EQ(AnfAlgo::GetCNodeName(execution_order[1]), prim::kPrimMul->name());
+  EXPECT_EQ(common::AnfAlgo::GetCNodeName(execution_order[0]), prim::kPrimAdd->name());
+  EXPECT_EQ(common::AnfAlgo::GetCNodeName(execution_order[1]), prim::kPrimMul->name());
   auto new_outputs = kernel_graph->outputs();
   EXPECT_EQ(new_outputs.size(), 1);
-  EXPECT_EQ(AnfAlgo::GetCNodeName(new_outputs[0]), prim::kPrimMul->name());
+  EXPECT_EQ(common::AnfAlgo::GetCNodeName(new_outputs[0]), prim::kPrimMul->name());
 };
 
 }  // namespace session

@@ -19,8 +19,8 @@
 #include "common/py_func_graph_fetcher.h"
 #include "utils/log_adapter.h"
 #include "utils/profile.h"
-#include "pipeline/parse/parse.h"
-#include "debug/draw.h"
+#include "pipeline/jit/ps/parse/parse.h"
+#include "include/common/debug/draw.h"
 
 namespace mindspore {
 namespace parse {
@@ -50,14 +50,6 @@ TEST_F(TestParserAbnormal, TestParseRecursion) {
   bool ret_ = ResolveAll(manager);
 
   ASSERT_TRUE(ret_);
-
-  // draw graph
-  int i = 0;
-  for (auto tmp : manager->func_graphs()) {
-    std::string name = "ut_parser_recursion_" + std::to_string(i) + ".dot";
-    draw::Draw(name, tmp);
-    i++;
-  }
 }
 
 int test_performance(int x) { return x; }
@@ -98,19 +90,9 @@ TEST_F(TestParserAbnormal, TestParseExprStatement) {
 
   ASSERT_TRUE(ret_);
 
-  // draw func graph
-  int i = 0;
-  for (auto tmp : manager->func_graphs()) {
-    std::string name = "ut_parser_ExprStatement_" + std::to_string(i) + ".dot";
-    draw::Draw(name, tmp);
-    i++;
-  }
-
   // check the 'append' node
   bool is_append_node = false;
   int count = 0;
-  py::object dataclass_obj;
-  // check the dataclass
   for (auto node : manager->all_nodes()) {
     if (node != nullptr && node->isa<ValueNode>() && node->cast<ValueNodePtr>()->value()->isa<StringImm>()) {
       if (GetValue<std::string>(node->cast<ValueNodePtr>()->value()) == "append") {

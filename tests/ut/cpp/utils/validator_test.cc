@@ -1,5 +1,5 @@
 /**
- * Copyright 2020 Huawei Technologies Co., Ltd
+ * Copyright 2020-2023 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,13 @@
 #include <string>
 #include "common/common_test.h"
 
+#include "ops/arithmetic_op_name.h"
 #include "utils/log_adapter.h"
-#include "pipeline/validator.h"
-#include "pipeline/parse/parse.h"
+#include "pipeline/jit/ps/validator.h"
+#include "pipeline/jit/ps/parse/parse.h"
 #include "ir/manager.h"
-#include "pipeline/static_analysis/prim.h"
-#include "operator/ops.h"
+#include "pipeline/jit/ps/static_analysis/prim.h"
+#include "frontend/operator/ops.h"
 
 namespace mindspore {
 namespace validator {
@@ -35,15 +36,15 @@ class TestValidator : public UT::Common {
 };
 
 TEST_F(TestValidator, ValidateOperation01) {
-  auto node = NewValueNode(std::make_shared<Primitive>("scalar_add"));
+  auto node = NewValueNode(std::make_shared<Primitive>("ScalarAdd"));
   ValidateOperation(node);
   // normally, the above statement should not exit, so expected the following statement execute
   EXPECT_TRUE(true);
 }
 
 TEST_F(TestValidator, ValidateAbstract01) {
-  AnfNodePtr node = NewValueNode(1);
-  abstract::AbstractBasePtr abstract_v1 = abstract::FromValue(1, false);
+  AnfNodePtr node = NewValueNode(static_cast<int64_t>(1));
+  abstract::AbstractBasePtr abstract_v1 = abstract::FromValue(static_cast<int64_t>(1), false);
   node->set_abstract(abstract_v1);
   ValidateAbstract(node);
   // normally, the above statement should not exit, so expected the following statement execute

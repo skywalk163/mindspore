@@ -21,7 +21,7 @@ import numpy as np
 
 from mindspore import ParameterTuple
 from mindspore import nn, context
-from mindspore.common.api import _executor, ms_function
+from mindspore.common.api import _cell_graph_executor, jit
 from mindspore.common.tensor import Tensor
 from mindspore.ops import functional as F
 from mindspore.ops import operations as P
@@ -39,13 +39,13 @@ def set_block_param_with_rand(net, rand_func=None):
         return
     net.init_parameters_data()
     for param in net.trainable_params():
-        param.default_input = Tensor(rand_func(param.default_input.asnumpy().shape))
+        param.set_data(Tensor(rand_func(param.data.asnumpy().shape)))
 
 
 def compile_block(net, *inputs, rand_func=None, training=True):
     set_block_training(net, training)
     set_block_param_with_rand(net, rand_func)
-    return _executor.compile(net, *inputs)
+    return _cell_graph_executor.compile(net, *inputs)
 
 
 def run_block(net, *inputs, rand_func=None, training=True):
@@ -53,7 +53,7 @@ def run_block(net, *inputs, rand_func=None, training=True):
     set_block_param_with_rand(net, rand_func)
     if context.get_context("mode") == context.PYNATIVE_MODE:
         def func_pynative(*inputs):
-            @ms_function
+            @jit
             def _func_pynative(*inputs):
                 return net(*inputs)
 
@@ -224,6 +224,18 @@ class InputOpNet(nn.Cell):
         x = self.op(x1, x2, x3, x4, x5, self.c1, self.c2, self.c3, self.c4)
         return x
 
+    def construct7_c0(self, x1, x2, x3, x4, x5, x6, x7):
+        x = self.op(x1, x2, x3, x4, x5, x6, x7)
+        return x
+
+    def construct8_c0(self, x1, x2, x3, x4, x5, x6, x7, x8):
+        x = self.op(x1, x2, x3, x4, x5, x6, x7, x8)
+        return x
+
+    def construct9_c0(self, x1, x2, x3, x4, x5, x6, x7, x8, x9):
+        x = self.op(x1, x2, x3, x4, x5, x6, x7, x8, x9)
+        return x
+
 
 def gen_net(op, input_num, training=True, desc_const=(), const_first=False, add_fake_input=False):
     if isinstance(op, nn.Cell):
@@ -331,7 +343,7 @@ def create_funcs(verification_set, block_generator, block_runner, grad_op=None, 
             # gradient
             if grad_op:
                 if num_outputs == 0:
-                    grad_op_ = GradOperation('grad', get_all=grad_op.get_all,
+                    grad_op_ = GradOperation(get_all=grad_op.get_all,
                                              get_by_list=grad_op.get_by_list, sens_param=False)
                     b = block_generator(block, grad_op_, len(inputs), desc_const=desc_const,
                                         const_first=const_first, add_fake_input=add_fake_input)

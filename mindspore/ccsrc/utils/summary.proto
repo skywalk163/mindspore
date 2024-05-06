@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ message Event {
 
   oneof what {
     // An event file was started, with the specified version.
-    // Now version is "Mindspore.Event:1"
+    // Now version is "MindSpore.Event:1"
     string version = 3;
 
     // GraphDef.
@@ -40,7 +40,34 @@ message Event {
 
     // Summary data
     Summary summary = 5;
+
+    Explain explain = 6;
   }
+}
+
+message LossLandscape{
+    message Point {
+        optional TensorProto x=1;
+        optional TensorProto y=2;
+        optional TensorProto z=3;
+    }
+
+    message LossPath {
+        repeated int32 intervals = 1; // step intervals or epoch intervals
+        optional Point points =2;
+    }
+
+    message Metadata {
+        optional string decomposition = 1;
+        optional string unit = 2; // step or epoch
+        optional int32 step_per_epoch = 3;
+    }
+
+    optional Point landscape = 1;
+    optional LossPath loss_path = 2;
+    optional Metadata metadata = 3; // maybe only record by the first value
+    optional Point convergence_point = 4;
+
 }
 
 // A Summary is a set of named values that be produced regularly during training
@@ -95,9 +122,67 @@ message Summary {
             Image image = 4;
             TensorProto tensor = 8;
             Histogram histogram = 9;
+            LossLandscape loss_landscape = 10;
         }
     }
 
     // Set of values for the summary.
     repeated Value value = 1;
+}
+
+message Explain {
+    message Inference{
+        repeated float ground_truth_prob = 1;
+        repeated int32 predicted_label = 2;
+        repeated float predicted_prob = 3;
+        repeated float ground_truth_prob_sd = 4;
+        repeated float ground_truth_prob_itl95_low = 5;
+        repeated float ground_truth_prob_itl95_hi = 6;
+        repeated float predicted_prob_sd = 7;
+        repeated float predicted_prob_itl95_low = 8;
+        repeated float predicted_prob_itl95_hi = 9;
+    }
+
+    message Explanation{
+        optional string explain_method = 1;
+        optional int32 label = 2;
+        optional string heatmap_path = 3;
+    }
+
+    message Benchmark{
+        optional string benchmark_method = 1;
+        optional string explain_method = 2;
+        optional float total_score = 3;
+        repeated float label_score = 4;
+    }
+
+    message Metadata{
+        repeated string label = 1;
+        repeated string explain_method = 2;
+        repeated string benchmark_method = 3;
+    }
+
+    message HocLayer {
+        optional float prob = 1;
+        repeated int32 box = 2;  // List of repeated x, y, w, h
+    }
+
+    message Hoc {
+        optional int32 label = 1;
+        optional string mask = 2;
+        repeated HocLayer layer = 3;
+    }
+
+    optional int32 sample_id = 1;
+    optional string image_path = 2;  // The Metadata and image path must have one fill in
+    repeated int32 ground_truth_label = 3;
+
+    optional Inference inference = 4;
+    repeated Explanation explanation = 5;
+    repeated Benchmark benchmark = 6;
+
+    optional Metadata metadata = 7;
+    optional string status = 8;  // enum value: run, end
+
+    repeated Hoc hoc = 9; // hierarchical occlusion counterfactual
 }

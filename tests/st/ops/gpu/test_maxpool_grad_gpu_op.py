@@ -20,20 +20,31 @@ import mindspore.context as context
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore.ops.operations import _grad_ops as G
+from mindspore.ops.composite import GradOperation
 
 
 class Net_Pool_Grad(nn.Cell):
     def __init__(self):
         super(Net_Pool_Grad, self).__init__()
-        self.maxpool_grad_fun = G.MaxPoolGrad(padding="VALID",
-                                              ksize=2,
+        self.maxpool_grad_fun = G.MaxPoolGrad(pad_mode="VALID",
+                                              kernel_size=2,
                                               strides=2)
 
     def construct(self, x, a, d):
         return self.maxpool_grad_fun(x, a, d)
 
 
-@pytest.mark.level0
+class Grad(nn.Cell):
+    def __init__(self, network):
+        super(Grad, self).__init__()
+        self.grad = GradOperation(get_all=True, sens_param=True)
+        self.network = network
+
+    def construct(self, x1, out, dout, grad):
+        return self.grad(self.network)(x1, out, dout, grad)
+
+
+@pytest.mark.level1
 @pytest.mark.platform_x86_gpu_training
 @pytest.mark.env_onecard
 def test_maxpool2d_grad():
@@ -45,23 +56,23 @@ def test_maxpool2d_grad():
         [24, 25, 26, 27, 28, 29],
         [30, 31, 32, 33, 34, 35]
     ]]]).astype(np.float32))
-    a = Tensor(np.array([[[
+    d = Tensor(np.array([[[
         [3, 3, 3],
         [3, 3, 3],
         [3, 3, 3]
     ]]]).astype(np.float32))
-    d = Tensor(np.array([[[
+    a = Tensor(np.array([[[
         [7, 9, 11],
         [19, 21, 23],
         [31, 33, 35]
     ]]]).astype(np.float32))
     expect_result = (np.array([[[
         [0, 0, 0, 0, 0, 0],
-        [0, 7, 0, 9, 0, 11],
+        [0, 3, 0, 3, 0, 3],
         [0, 0, 0, 0, 0, 0],
-        [0, 19, 0, 21, 0, 23],
+        [0, 3, 0, 3, 0, 3],
         [0, 0, 0, 0, 0, 0],
-        [0, 31, 0, 33, 0, 35]
+        [0, 3, 0, 3, 0, 3]
     ]]]))
 
     context.set_context(mode=context.PYNATIVE_MODE, device_target="GPU")
@@ -69,7 +80,19 @@ def test_maxpool2d_grad():
     output = maxpool2d_grad(x, a, d)
     assert (output.asnumpy() == expect_result).all()
 
+    maxpool2d_grad_grad = Grad(maxpool2d_grad)
+    outputs = maxpool2d_grad_grad(x, a, d, x)
+    assert (outputs[0].asnumpy() == 0).all()
+    assert (outputs[1].asnumpy() == 0).all()
+    assert (outputs[2].asnumpy() == a).all()
+
     context.set_context(mode=context.GRAPH_MODE, device_target="GPU")
     maxpool2d_grad = Net_Pool_Grad()
     output = maxpool2d_grad(x, a, d)
     assert (output.asnumpy() == expect_result).all()
+
+    maxpool2d_grad_grad = Grad(maxpool2d_grad)
+    outputs = maxpool2d_grad_grad(x, a, d, x)
+    assert (outputs[0].asnumpy() == 0).all()
+    assert (outputs[1].asnumpy() == 0).all()
+    assert (outputs[2].asnumpy() == a).all()

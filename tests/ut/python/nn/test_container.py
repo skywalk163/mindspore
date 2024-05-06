@@ -18,7 +18,10 @@ import numpy as np
 import pytest
 
 import mindspore.nn as nn
-from mindspore import Tensor
+from mindspore import context, Tensor
+
+context.set_context(mode=context.PYNATIVE_MODE)
+
 
 weight = Tensor(np.ones([2, 2]))
 conv2 = nn.Conv2d(3, 64, (3, 3), stride=2, padding=0)
@@ -83,6 +86,20 @@ class TestSequentialCell():
             [('cov2d', conv2), ('avg_pool', avg_pool)]))
         del m[:]
         assert type(m).__name__ == 'SequentialCell'
+
+    def test_sequentialcell_append(self):
+        input_np = np.ones((1, 3)).astype(np.float32)
+        input_me = Tensor(input_np)
+        relu = nn.ReLU()
+        tanh = nn.Tanh()
+        seq = nn.SequentialCell([relu])
+        seq.append(tanh)
+        out_me = seq(input_me)
+
+        seq1 = nn.SequentialCell([relu, tanh])
+        out = seq1(input_me)
+
+        assert out[0][0] == out_me[0][0]
 
 
 class TestCellList():

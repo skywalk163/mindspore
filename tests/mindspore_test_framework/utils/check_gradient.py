@@ -18,13 +18,12 @@
 
 from typing import Callable, List, Any
 
-import mindspore._c_expression as _c_expression
 import numpy as np
+import mindspore._c_expression as _c_expression
 
 from mindspore import ParameterTuple
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import ms_function
 from mindspore.ops.composite import GradOperation
 from .block_util import get_output_cell, gen_net, gen_grad_net, \
     get_uniform_with_shape, set_block_phase, get_output_reduce_cell, set_block_param_with_rand
@@ -36,7 +35,7 @@ class _GradChecker:
 
     Arguments:
         fn: The function under test.
-        gfn: The hight order function to compute the derivative function.
+        gfn: The high order function to compute the derivative function.
         args: The point in the function's domain where we want
             to estimate the gradient.
 
@@ -119,7 +118,6 @@ class _GradChecker:
                 def func_backward_pynative(*inputs):
                     net = gen_grad_net(f, grad_wraper, len(inputs) - 1, inputs[-1])
 
-                    @ms_function
                     def _func_pynative(*inputs):
                         return net(*inputs)
 
@@ -130,7 +128,6 @@ class _GradChecker:
             def func_forward_pynative(*inputs):
                 net = gen_net(f, len(inputs))
 
-                @ms_function
                 def _func_pynative(*inputs):
                     return net(*inputs)
 
@@ -192,7 +189,7 @@ class _GradChecker:
 
     def check_against_numeric_one_step(self, args, index, out_index):
         if isinstance(args, ParameterTuple):
-            x = args[index].default_input.asnumpy()
+            x = args[index].data.asnumpy()
         else:
             x = args[index]
         x_shape = x.shape
@@ -239,7 +236,7 @@ class _GradChecker:
 
     def check_against_numeric_jacobian_one_step(self, args, index, out_index):
         if isinstance(args, ParameterTuple):
-            x = args[index].default_input.asnumpy()
+            x = args[index].data.asnumpy()
         else:
             x = args[index]
         x_shape = x.shape
@@ -315,7 +312,7 @@ class ScalarGradChecker(_GradChecker):
                  output_selector=None,
                  sampling_times=-1,
                  reduce_output=False) -> None:
-        grad_op = GradOperation('grad', get_all=True, sens_param=True)
+        grad_op = GradOperation(get_all=True, sens_param=True)
         super(ScalarGradChecker, self).__init__(fn, grad_op, args, delta, max_error, input_selector, \
                                                 output_selector, sampling_times, reduce_output)
 
@@ -324,7 +321,7 @@ class ScalarGradChecker(_GradChecker):
             self.input_selector = [i for i in range(self.nin)]
 
     def get_sens(self, i):
-        return 1
+        return 1.0
 
     def check_against_numeric(self, out_index):
         args = list(self.args)
@@ -358,7 +355,7 @@ class OperationGradChecker(_GradChecker):
                  output_selector=None,
                  sampling_times=-1,
                  reduce_output=False) -> None:
-        grad_op = GradOperation('grad', get_all=True, sens_param=True)
+        grad_op = GradOperation(get_all=True, sens_param=True)
         super(OperationGradChecker, self).__init__(fn, grad_op, args, delta, max_error, input_selector, \
                                                    output_selector, sampling_times, reduce_output)
 
@@ -390,7 +387,7 @@ class NNGradChecker(_GradChecker):
                  output_selector=None,
                  sampling_times=-1,
                  reduce_output=False) -> None:
-        grad_op = GradOperation('grad', get_by_list=True, sens_param=True)
+        grad_op = GradOperation(get_by_list=True, sens_param=True)
         self.params = ParameterTuple(fn.trainable_params())
         super(NNGradChecker, self).__init__(fn, grad_op, args, delta, max_error, input_selector, \
                                             output_selector, sampling_times, reduce_output)

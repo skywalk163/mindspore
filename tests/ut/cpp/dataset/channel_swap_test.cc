@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,20 @@
  */
 #include "common/common.h"
 #include "common/cvop_common.h"
-#include "dataset/kernels/image/hwc_to_chw_op.h"
-#include "dataset/core/data_type.h"
+#include "minddata/dataset/kernels/image/hwc_to_chw_op.h"
+#include "minddata/dataset/core/data_type.h"
 #include "utils/log_adapter.h"
 
 using namespace mindspore::dataset;
-using mindspore::MsLogLevel::INFO;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::LogStream;
 
 class MindDataTestChannelSwap : public UT::CVOP::CVOpCommon {
  public:
   MindDataTestChannelSwap() : CVOpCommon() {}
 };
 
+/// Feature: HwcToChw op
+/// Description: Test channel swap with HwcToChw op
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestChannelSwap, TestOp) {
   MS_LOG(INFO) << "Doing MindDataTestChannelSwap.";
   // Creating a Tensor
@@ -36,10 +36,10 @@ TEST_F(MindDataTestChannelSwap, TestOp) {
   int size_buffer = s[0] * s[1] * s[2];
 
   std::unique_ptr<uchar[]> output_buffer(new uchar[size_buffer]);
-  std::shared_ptr<Tensor> output_tensor(new Tensor(s, DataType(DataType::DE_UINT8)));
+  std::shared_ptr<Tensor> output_tensor;
 
   // Decoding
-  std::unique_ptr<HwcToChwOp> op(new HwcToChwOp());
+  auto op = std::make_unique<HwcToChwOp>();
   Status status;
   status = op->Compute(input_tensor_, &output_tensor);
   EXPECT_TRUE(op->OneToOne());

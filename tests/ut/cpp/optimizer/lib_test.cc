@@ -18,15 +18,20 @@
 
 #include "common/common_test.h"
 
+#include "mindspore/core/ops/sequence_ops.h"
 #include "common/py_func_graph_fetcher.h"
 #include "ir/anf.h"
+#include "ir/func_graph.h"
 #include "ir/func_graph_cloner.h"
 #include "ir/manager.h"
-#include "ir/visitor.h"
-#include "optimizer/irpass.h"
-#include "pipeline/resource.h"
-#include "debug/draw.h"
-#include "pipeline/parse/data_converter.h"
+#include "ir/value.h"
+#include "frontend/operator/ops.h"
+#include "frontend/optimizer/irpass.h"
+#include "pipeline/jit/ps/resource.h"
+#include "include/common/debug/draw.h"
+#include "include/common/debug/anf_ir_dump.h"
+#include "pipeline/jit/ps/parse/data_converter.h"
+#include "include/common/utils/convert_utils.h"
 
 namespace mindspore {
 namespace opt {
@@ -38,6 +43,9 @@ class TestOptLib : public UT::Common {
   void SetUp() {
     UT::InitPythonPath();
     parse::data_converter::ClearObjectCache();
+    auto ms_context = MsContext::GetInstance();
+    MS_EXCEPTION_IF_NULL(ms_context);
+    ms_context->set_param<int>(MS_CTX_EXECUTION_MODE, kGraphMode);
   }
   FuncGraphPtr RunTransform(FuncGraphPtr gbefore, const SubstitutionList &transform) {
     equiv_node.clear();
@@ -60,11 +68,6 @@ class TestOptLib : public UT::Common {
     FuncGraphPtr gbefore_clone = BasicClone(gbefore);
     OptimizerPtr optimizer = std::make_shared<Optimizer>("ut_test", std::make_shared<pipeline::Resource>());
     transform(gbefore_clone, optimizer);
-    if (save_graphs) {
-      draw::Draw("before.dot", gbefore);
-      draw::Draw("after.dot", gbefore_clone);
-      draw::Draw("expected.dot", gafter);
-    }
     return Isomorphic(gbefore_clone, gafter, &equiv_graph, &equiv_node);
   }
   bool CheckOpt(FuncGraphPtr before, FuncGraphPtr after, std::vector<SubstitutionPtr> opts = {},
@@ -83,14 +86,6 @@ class TestOptLib : public UT::Common {
   irpass::OptimizeIRPassLib irpass;
 };
 
-TEST_F(TestOptLib, test_expendJ) {
-  FuncGraphPtr before = getPyFun("test_expendJ");
-
-  ASSERT_TRUE(nullptr != before);
-
-  FuncGraphPtr after = RunSubs(before, std::vector<SubstitutionPtr>({irpass.expand_jprim_}));
-}
-
 TEST_F(TestOptLib, test_simplify_always_true_false) {
   FuncGraphPtr before1 = getPyFun.CallAndParseRet("test_simplify_always_true_false", "before_1");
   FuncGraphPtr before2 = getPyFun.CallAndParseRet("test_simplify_always_true_false", "before_2");
@@ -106,12 +101,15 @@ TEST_F(TestOptLib, test_inline) {
   // add infer and renormalize
   std::shared_ptr<mindspore::pipeline::Resource> res = std::make_shared<mindspore::pipeline::Resource>();
   AbstractBasePtrList args_spec_list;
-  AbstractBasePtr abstract_v1 = abstract::FromValue(1, true);
-  AbstractBasePtr abstract_v2 = abstract::FromValue(2, true);
+  tensor::TensorPtr x_tensor = std::make_shared<tensor::Tensor>(kFloat32->type_id(), std::vector<int64_t>{2, 3});
+  tensor::TensorPtr y_tensor = std::make_shared<tensor::Tensor>(kFloat32->type_id(), std::vector<int64_t>{2, 3});
+
+  AbstractBasePtr abstract_v1 = abstract::FromValue(x_tensor, true);
+  AbstractBasePtr abstract_v2 = abstract::FromValue(y_tensor, true);
   args_spec_list.push_back(abstract_v1);
   args_spec_list.push_back(abstract_v2);
-  AnalysisResult result = pipeline::AbstractAnalyze(res, before1, args_spec_list);
-  FuncGraphPtr new_graph = pipeline::ProgramSpecialize(res, before1, result.context);
+  AnalysisResult result = pipeline::AbstractAnalyze(res->engine(), before1, args_spec_list, res->is_load());
+  FuncGraphPtr new_graph = pipeline::ProgramSpecialize(res->engine(), before1, result.context);
   auto patterns = std::vector<SubstitutionPtr>({irpass.arithmetic_simplify_, irpass.switch_simplify_, irpass.inline_});
   ASSERT_TRUE(CheckOpt(new_graph, after, patterns));
 }
@@ -147,25 +145,18 @@ TEST_F(TestOptLib, test_inline_new_closure) {
 TEST_F(TestOptLib, test_inline_while) {
   FuncGraphPtr before = getPyFun.CallAndParseRet("test_inline_while", "before");
   auto patterns = std::vector<SubstitutionPtr>({irpass.inline_});
-  FuncGraphPtr after_ = RunSubs(before, patterns);
-  ASSERT_TRUE(CheckOpt(before, before, patterns));
+  FuncGraphPtr after = RunSubs(before, patterns);
+  ASSERT_TRUE(CheckOpt(before, after, patterns, true));
 }
 
 TEST_F(TestOptLib, test_arithmetic) {
-  FuncGraphPtr b1_0 = getPyFun.CallAndParseRet("test_arithmetic", "multiply_by_zero_l");
-  FuncGraphPtr b2_0 = getPyFun.CallAndParseRet("test_arithmetic", "multiply_by_zero_r");
   FuncGraphPtr b1 = getPyFun.CallAndParseRet("test_arithmetic", "multiply_by_one_l");
   FuncGraphPtr b2 = getPyFun.CallAndParseRet("test_arithmetic", "multiply_by_one_r");
   FuncGraphPtr b3 = getPyFun.CallAndParseRet("test_arithmetic", "add_zero_l");
   FuncGraphPtr b4 = getPyFun.CallAndParseRet("test_arithmetic", "add_zero_r");
   FuncGraphPtr b5 = getPyFun.CallAndParseRet("test_arithmetic", "elim_identity");
   FuncGraphPtr after = getPyFun.CallAndParseRet("test_arithmetic", "after");
-  FuncGraphPtr after_0 = getPyFun.CallAndParseRet("test_arithmetic", "after_0");
-
   auto patterns = std::vector<SubstitutionPtr>({irpass.arithmetic_simplify_});
-
-  ASSERT_TRUE(CheckOpt(b1_0, after_0, patterns));
-  ASSERT_TRUE(CheckOpt(b2_0, after_0, patterns));
   ASSERT_TRUE(CheckOpt(b1, after, patterns));
   ASSERT_TRUE(CheckOpt(b2, after, patterns));
   ASSERT_TRUE(CheckOpt(b3, after, patterns));
@@ -185,7 +176,7 @@ TEST_F(TestOptLib, test_elim_cast_same_dtype) {
     cast_py->set_attr("DstT", TypeIdToType(kNumberTypeFloat32));
 
     auto x_node = inputs[1];
-    std::vector<int> shp = {2, 3};
+    std::vector<int64_t> shp = {2, 3};
     tensor::TensorPtr x_tensor = std::make_shared<tensor::Tensor>(kFloat32->type_id(), shp);
     auto x_abstract = x_tensor->ToAbstract();
     x_node->set_abstract(x_abstract);
@@ -215,16 +206,17 @@ TEST_F(TestOptLib, test_elim_reshape_same_shape) {
   auto &inputs = before->output()->cast<CNodePtr>()->inputs();
   if (inputs.size() > 1) {
     auto x_node = inputs[1];
-    std::vector<int> shp = {2, 3};
+    std::vector<int64_t> shp = {2, 3};
     tensor::TensorPtr x_tensor = std::make_shared<tensor::Tensor>(kFloat32->type_id(), shp);
     auto x_abstract = x_tensor->ToAbstract();
     x_node->set_abstract(x_abstract);
+    before->output()->set_abstract(x_abstract);
   }
   auto patterns = std::vector<SubstitutionPtr>({irpass.reshape_eliminate_});
   ASSERT_TRUE(CheckOpt(before, after, patterns));
   if (inputs.size() > 1) {
     auto x_node = inputs[1];
-    std::vector<int> shp = {3, 2};
+    std::vector<int64_t> shp = {3, 2};
     tensor::TensorPtr x_tensor = std::make_shared<tensor::Tensor>(kFloat32->type_id(), shp);
     auto x_abstract = x_tensor->ToAbstract();
     x_node->set_abstract(x_abstract);
@@ -240,14 +232,6 @@ TEST_F(TestOptLib, elim_two_reshape) {
   ASSERT_TRUE(CheckOpt(before, after, patterns));
 }
 
-TEST_F(TestOptLib, elim_two_cast) {
-  FuncGraphPtr before = getPyFun.CallAndParseRet("elim_two_cast", "before");
-  FuncGraphPtr after = getPyFun.CallAndParseRet("elim_two_cast", "after");
-
-  auto patterns = std::vector<SubstitutionPtr>({irpass.cast_eliminate_});
-  ASSERT_TRUE(CheckOpt(before, after, patterns));
-}
-
 TEST_F(TestOptLib, test_elim_transpose) {
   FuncGraphPtr before = getPyFun.CallAndParseRet("test_elim_transpose", "before");
   FuncGraphPtr after = getPyFun.CallAndParseRet("test_elim_transpose", "after");
@@ -256,12 +240,22 @@ TEST_F(TestOptLib, test_elim_transpose) {
   ASSERT_TRUE(CheckOpt(before, after, patterns));
 }
 
+TEST_F(TestOptLib, test_elim_depend_value) {
+  FuncGraphPtr before = getPyFun.CallAndParseRet("test_elim_depend_value", "before");
+  FuncGraphPtr after = getPyFun.CallAndParseRet("test_elim_depend_value", "after");
+
+  auto patterns = std::vector<SubstitutionPtr>({irpass.depend_value_elim_});
+  ASSERT_TRUE(CheckOpt(before, after, patterns));
+}
+
 TEST_F(TestOptLib, test_elim_tile_multiply_one) {
   FuncGraphPtr before = getPyFun.CallAndParseRet("test_elim_tile_multiply_one", "before");
   FuncGraphPtr after = getPyFun.CallAndParseRet("test_elim_tile_multiply_one", "after");
 
   auto patterns = std::vector<SubstitutionPtr>({irpass.tile_eliminate_});
-  ASSERT_TRUE(CheckOpt(before, after, patterns, true));
+  // Because can't get shape of x, not eliminate tile(x, (1,1,1)) to x.
+  // to get shape of x need re-normalize before tile
+  ASSERT_FALSE(CheckOpt(before, after, patterns, true));
 }
 
 TEST_F(TestOptLib, test_elim_reduce_mean_shape_one) {
@@ -272,7 +266,7 @@ TEST_F(TestOptLib, test_elim_reduce_mean_shape_one) {
   auto inputs = before->output()->cast<CNodePtr>()->inputs();
   if (inputs.size() > 2) {
     auto x_node = inputs[1];
-    std::vector<int> shp = {1};
+    std::vector<int64_t> shp = {1};
     tensor::TensorPtr x_tensor = std::make_shared<tensor::Tensor>(kFloat32->type_id(), shp);
     auto x_abstract = x_tensor->ToAbstract();
     x_node->set_abstract(x_abstract);
@@ -294,7 +288,7 @@ TEST_F(TestOptLib, test_elim_all_shape_one) {
   auto inputs = before->output()->cast<CNodePtr>()->inputs();
   if (inputs.size() > 2) {
     auto x_node = inputs[1];
-    std::vector<int> shp = {1};
+    std::vector<int64_t> shp = {1};
     tensor::TensorPtr x_tensor = std::make_shared<tensor::Tensor>(kFloat32->type_id(), shp);
     auto x_abstract = x_tensor->ToAbstract();
     x_node->set_abstract(x_abstract);
@@ -315,7 +309,7 @@ TEST_F(TestOptLib, test_elim_sum_shape_one) {
   auto inputs = before->output()->cast<CNodePtr>()->inputs();
   if (inputs.size() > 2) {
     auto x_node = inputs[1];
-    std::vector<int> shp = {1};
+    std::vector<int64_t> shp = {1};
     tensor::TensorPtr x_tensor = std::make_shared<tensor::Tensor>(kFloat32->type_id(), shp);
     auto x_abstract = x_tensor->ToAbstract();
     x_node->set_abstract(x_abstract);
@@ -334,9 +328,25 @@ TEST_F(TestOptLib, test_tuple_getitem) {
   FuncGraphPtr after_0 = getPyFun.CallAndParseRet("test_tuple_getitem", "after_0");
   FuncGraphPtr after_1 = getPyFun.CallAndParseRet("test_tuple_getitem", "after_1");
 
-  auto patterns = std::vector<SubstitutionPtr>({irpass.item_tuple_eliminate_});
+  FuncGraphPtr make_get_const = std::make_shared<FuncGraph>();
+  auto value_node_1 = NewValueNode(static_cast<int64_t>(1));
+  auto value_node_2 = NewValueNode(static_cast<int64_t>(2));
+  std::vector<int64_t> vec{1, 2};
+  auto value_node_tuple = NewValueNode(MakeValue(vec));
+  std::vector<AnfNodePtr> node_list{NewValueNode(prim::kPrimTupleGetItem), value_node_tuple, value_node_1};
+  auto get_item = make_get_const->NewCNode(node_list);
+  make_get_const->set_output(get_item);
+
+  FuncGraphPtr after_2 = std::make_shared<FuncGraph>();
+  after_2->set_output(value_node_2);
+
+  auto patterns = std::vector<SubstitutionPtr>(
+    {irpass.tuple_list_get_item_eliminator_, irpass.tuple_list_get_item_const_eliminator_,
+     irpass.tuple_list_set_item_eliminator_, irpass.tuple_list_get_set_item_eliminator_,
+     irpass.tuple_list_get_item_depend_reorder_, irpass.tuple_list_convert_item_index_to_positive_});
   ASSERT_TRUE(CheckOpt(make_get_0, after_0, patterns));
   ASSERT_TRUE(CheckOpt(make_get_1, after_1, patterns));
+  ASSERT_TRUE(CheckOpt(make_get_const, after_2, patterns));
 }
 
 TEST_F(TestOptLib, test_tuple_setitem) {
@@ -345,7 +355,10 @@ TEST_F(TestOptLib, test_tuple_setitem) {
   FuncGraphPtr after_0 = getPyFun.CallAndParseRet("test_tuple_setitem", "after_0");
   FuncGraphPtr after_1 = getPyFun.CallAndParseRet("test_tuple_setitem", "after_1");
 
-  auto patterns = std::vector<SubstitutionPtr>({irpass.item_tuple_eliminate_});
+  auto patterns = std::vector<SubstitutionPtr>(
+    {irpass.tuple_list_get_item_eliminator_, irpass.tuple_list_get_item_const_eliminator_,
+     irpass.tuple_list_set_item_eliminator_, irpass.tuple_list_get_set_item_eliminator_,
+     irpass.tuple_list_get_item_depend_reorder_, irpass.tuple_list_convert_item_index_to_positive_});
 
   ASSERT_TRUE(CheckOpt(before_0, after_0, patterns));
   ASSERT_TRUE(CheckOpt(before_1, after_1, patterns));
@@ -357,7 +370,10 @@ TEST_F(TestOptLib, test_tuple_get_set_item) {
   FuncGraphPtr before_1 = getPyFun.CallAndParseRet("test_tuple_get_set_item", "before_0");
   FuncGraphPtr after_1 = getPyFun.CallAndParseRet("test_tuple_get_set_item", "after_0");
 
-  auto patterns = std::vector<SubstitutionPtr>({irpass.item_tuple_eliminate_});
+  auto patterns = std::vector<SubstitutionPtr>(
+    {irpass.tuple_list_get_item_eliminator_, irpass.tuple_list_get_item_const_eliminator_,
+     irpass.tuple_list_set_item_eliminator_, irpass.tuple_list_get_set_item_eliminator_,
+     irpass.tuple_list_get_item_depend_reorder_, irpass.tuple_list_convert_item_index_to_positive_});
 
   ASSERT_TRUE(CheckOpt(before_0, after_0, patterns));
   ASSERT_TRUE(CheckOpt(before_1, after_1, patterns));
@@ -391,26 +407,6 @@ TEST_F(TestOptLib, test_specialize_on_graph_arguments) {
 
   auto patterns = std::vector<SubstitutionPtr>({irpass.specialize_transform_});
 
-  ASSERT_TRUE(CheckOpt(before, after, patterns));
-}
-
-TEST_F(TestOptLib, test_incorporate_getitem) {
-  FuncGraphPtr before1 = getPyFun.CallAndParseRet("test_incorporate_getitem", "before1");
-  FuncGraphPtr before2 = getPyFun.CallAndParseRet("test_incorporate_getitem", "before2");
-  FuncGraphPtr after1 = getPyFun.CallAndParseRet("test_incorporate_getitem", "after1");
-  FuncGraphPtr after2 = getPyFun.CallAndParseRet("test_incorporate_getitem", "after2");
-
-  auto patterns = std::vector<SubstitutionPtr>({irpass.incorporate_getitem_});
-
-  ASSERT_TRUE(CheckOpt(before1, after1, patterns));
-  ASSERT_TRUE(CheckOpt(before2, after2, patterns));
-}
-
-TEST_F(TestOptLib, test_incorporate_getitem_through_switch) {
-  FuncGraphPtr before = getPyFun.CallAndParseRet("test_incorporate_getitem_through_switch", "before");
-  FuncGraphPtr after = getPyFun.CallAndParseRet("test_incorporate_getitem_through_switch", "after");
-
-  auto patterns = std::vector<SubstitutionPtr>({irpass.incorporate_getitem_switch_});
   ASSERT_TRUE(CheckOpt(before, after, patterns));
 }
 
@@ -488,11 +484,11 @@ TEST_F(TestOptLib, test_reducesum_one) {
   FuncGraphPtr after3 = getPyFun.CallAndParseRet("test_reducesum_one", "after_3");
   auto patterns = std::vector<SubstitutionPtr>({irpass.reduce_eliminate_});
 
-  std::vector<int> shp = {3, 2, 2, 1};
+  std::vector<int64_t> shp = {3, 2, 2, 1};
   tensor::TensorPtr x_tensor = std::make_shared<tensor::Tensor>(kFloat32->type_id(), shp);
   auto x_abstract = x_tensor->ToAbstract();
 
-  std::vector<int> shp2 = {3, 2, 1, 1};
+  std::vector<int64_t> shp2 = {3, 2, 1, 1};
   tensor::TensorPtr x_tensor2 = std::make_shared<tensor::Tensor>(kFloat32->type_id(), shp2);
   auto x_abstract2 = x_tensor2->ToAbstract();
 
@@ -532,6 +528,7 @@ TEST_F(TestOptLib, test_reducesum_one) {
   ASSERT_TRUE(CheckOpt(before4, after3, patterns));
 }
 
+#ifndef ENABLE_SECURITY
 TEST_F(TestOptLib, test_print_tuple_wrapper) {
   FuncGraphPtr before1 = getPyFun.CallAndParseRet("test_print_tuple_wrapper", "before1");
   FuncGraphPtr before2 = getPyFun.CallAndParseRet("test_print_tuple_wrapper", "before2");
@@ -543,6 +540,7 @@ TEST_F(TestOptLib, test_print_tuple_wrapper) {
   ASSERT_TRUE(CheckOpt(before2, after2, patterns));
   ASSERT_TRUE(CheckOpt(before3, before3, patterns));
 }
+#endif
 
 TEST_F(TestOptLib, test_constant_duplicate_mul) {
   FuncGraphPtr beforell = getPyFun.CallAndParseRet("test_constant_duplicate_mul", "beforell");
@@ -555,6 +553,58 @@ TEST_F(TestOptLib, test_constant_duplicate_mul) {
   ASSERT_TRUE(CheckOpt(beforelr, after, patterns));
   ASSERT_TRUE(CheckOpt(beforerl, after, patterns));
   ASSERT_TRUE(CheckOpt(beforerr, after, patterns));
+}
+
+TEST_F(TestOptLib, test_adjust_allreduce_mul_add) {
+  FuncGraphPtr beforell = getPyFun.CallAndParseRet("test_adjust_allreduce_mul_add", "beforell");
+  FuncGraphPtr beforelr = getPyFun.CallAndParseRet("test_adjust_allreduce_mul_add", "beforelr");
+  FuncGraphPtr beforerl = getPyFun.CallAndParseRet("test_adjust_allreduce_mul_add", "beforerl");
+  FuncGraphPtr beforerr = getPyFun.CallAndParseRet("test_adjust_allreduce_mul_add", "beforerr");
+  FuncGraphPtr after1 = getPyFun.CallAndParseRet("test_adjust_allreduce_mul_add", "after1");
+  FuncGraphPtr before2r = getPyFun.CallAndParseRet("test_adjust_allreduce_mul_add", "before2r");
+  FuncGraphPtr before2l = getPyFun.CallAndParseRet("test_adjust_allreduce_mul_add", "before2l");
+  FuncGraphPtr after2 = getPyFun.CallAndParseRet("test_adjust_allreduce_mul_add", "after2");
+  auto patterns = std::vector<SubstitutionPtr>({irpass.adjust_all_reduce_mul_add_});
+  ASSERT_TRUE(CheckOpt(beforell, after1, patterns, true));
+  ASSERT_TRUE(CheckOpt(beforelr, after1, patterns));
+  ASSERT_TRUE(CheckOpt(beforerl, after1, patterns));
+  ASSERT_TRUE(CheckOpt(beforerr, after1, patterns));
+}
+
+TEST_F(TestOptLib, test_row_tensor) {
+  FuncGraphPtr before_get_indices = getPyFun.CallAndParseRet("test_row_tensor", "before_get_indices");
+  FuncGraphPtr after_get_indices = getPyFun.CallAndParseRet("test_row_tensor", "after_get_indices");
+  FuncGraphPtr before_get_values = getPyFun.CallAndParseRet("test_row_tensor", "before_get_values");
+  FuncGraphPtr after_get_values = getPyFun.CallAndParseRet("test_row_tensor", "after_get_values");
+  FuncGraphPtr before_get_dense_shape = getPyFun.CallAndParseRet("test_row_tensor", "before_get_dense_shape");
+  FuncGraphPtr after_get_dense_shape = getPyFun.CallAndParseRet("test_row_tensor", "after_get_dense_shape");
+  auto patterns = std::vector<SubstitutionPtr>({irpass.row_tensor_eliminate_});
+  ASSERT_TRUE(CheckOpt(before_get_indices, after_get_indices, patterns));
+  ASSERT_TRUE(CheckOpt(before_get_values, after_get_values, patterns));
+  ASSERT_TRUE(CheckOpt(before_get_dense_shape, after_get_dense_shape, patterns));
+}
+
+TEST_F(TestOptLib, test_sparse_tensor) {
+  FuncGraphPtr before_get_indices = getPyFun.CallAndParseRet("test_sparse_tensor", "before_get_indices");
+  FuncGraphPtr after_get_indices = getPyFun.CallAndParseRet("test_sparse_tensor", "after_get_indices");
+  FuncGraphPtr before_get_values = getPyFun.CallAndParseRet("test_sparse_tensor", "before_get_values");
+  FuncGraphPtr after_get_values = getPyFun.CallAndParseRet("test_sparse_tensor", "after_get_values");
+  FuncGraphPtr before_get_dense_shape = getPyFun.CallAndParseRet("test_sparse_tensor", "before_get_dense_shape");
+  FuncGraphPtr after_get_dense_shape = getPyFun.CallAndParseRet("test_sparse_tensor", "after_get_dense_shape");
+  auto patterns = std::vector<SubstitutionPtr>({irpass.sparse_tensor_eliminate_});
+  ASSERT_TRUE(CheckOpt(before_get_indices, after_get_indices, patterns));
+  ASSERT_TRUE(CheckOpt(before_get_values, after_get_values, patterns));
+  ASSERT_TRUE(CheckOpt(before_get_dense_shape, after_get_dense_shape, patterns));
+}
+
+// Feature: Eliminate the unused args of partial inputs.
+// Description: Construct a partial call.
+// Expectation: The unused args are eliminated.
+TEST_F(TestOptLib, test_partial_unused_args_eliminate) {
+  FuncGraphPtr before_fg = getPyFun.CallAndParseRet("test_partial_unused_args_eliminate", "before");
+  FuncGraphPtr after_fg = getPyFun.CallAndParseRet("test_partial_unused_args_eliminate", "after");
+  auto patterns = std::vector<SubstitutionPtr>({irpass.partial_unused_args_eliminate_});
+  ASSERT_TRUE(CheckOpt(before_fg, after_fg, patterns));
 }
 }  // namespace opt
 }  // namespace mindspore

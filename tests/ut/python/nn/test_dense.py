@@ -19,19 +19,39 @@ import pytest
 import mindspore.context as context
 import mindspore.nn as nn
 from mindspore import Tensor
-from mindspore.common.api import _executor
+from mindspore.ops import operations as P
+from mindspore.common.api import _cell_graph_executor
 from ..ut_filter import non_graph_engine
 
 
 def test_dense_none():
-    with pytest.raises(TypeError):
-        nn.Dense(3, 2, None, None)
+    dense = nn.Dense(3, 4, None, None)
+    input_data = Tensor(np.random.randint(0, 255, [2, 3]).astype(np.float32))
+    dense(input_data)
 
 
 @non_graph_engine
 def test_dense_str_activation():
     dense = nn.Dense(1, 1, activation='relu')
     assert isinstance(dense.activation, nn.ReLU)
+
+    input_data = Tensor(np.random.randint(0, 255, [1, 1]).astype(np.float32))
+    dense(input_data)
+
+
+@non_graph_engine
+def test_dense_nn_activation_():
+    dense = nn.Dense(1, 1, activation=nn.ReLU())
+    assert isinstance(dense.activation, nn.ReLU)
+
+    input_data = Tensor(np.random.randint(0, 255, [1, 1]).astype(np.float32))
+    dense(input_data)
+
+
+@non_graph_engine
+def test_dense_ops_activation_():
+    dense = nn.Dense(1, 1, activation=P.ReLU())
+    assert isinstance(dense.activation, P.ReLU)
 
     input_data = Tensor(np.random.randint(0, 255, [1, 1]).astype(np.float32))
     dense(input_data)
@@ -76,7 +96,7 @@ class Net(nn.Cell):
                  weight='normal',
                  bias='zeros',
                  has_bias=True,
-                 activation=''):
+                 activation=None):
         super(Net, self).__init__()
         self.dense = nn.Dense(input_channels,
                               output_channels,
@@ -96,12 +116,12 @@ def test_compile():
     bias = Tensor(np.random.randint(0, 255, [8]).astype(np.float32))
     net = Net(64, 8, weight=weight, bias=bias)
     input_data = Tensor(np.random.randint(0, 255, [128, 64]).astype(np.float32))
-    _executor.compile(net, input_data)
+    _cell_graph_executor.compile(net, input_data)
 
     # training
     net_train = Net(64, 8, weight=weight, bias=bias)
     net_train.set_train()
-    _executor.compile(net_train, input_data)
+    _cell_graph_executor.compile(net_train, input_data)
 
 
 def test_compile_2():
@@ -110,12 +130,12 @@ def test_compile_2():
     weight = Tensor(np.random.randint(0, 255, [8, 64]).astype(np.float32))
     net = Net(64, 8, weight=weight, has_bias=False)
     input_data = Tensor(np.random.randint(0, 255, [128, 64]).astype(np.float32))
-    _executor.compile(net, input_data)
+    _cell_graph_executor.compile(net, input_data)
 
     # training
     net_train = Net(64, 8, weight=weight, has_bias=False)
     net_train.set_train()
-    _executor.compile(net_train, input_data)
+    _cell_graph_executor.compile(net_train, input_data)
 
 
 def test_compile_3():
@@ -125,12 +145,12 @@ def test_compile_3():
     context.set_context(mode=context.GRAPH_MODE)
     net = Net(128, 10)
     input_data = Tensor(np.random.randint(0, 255, [128, 128]).astype(np.float32))
-    _executor.compile(net, input_data)
+    _cell_graph_executor.compile(net, input_data)
 
     # training
     net_train = Net(128, 10)
     net_train.set_train()
-    _executor.compile(net_train, input_data)
+    _cell_graph_executor.compile(net_train, input_data)
 
 
 def test_compile_4():
@@ -140,9 +160,9 @@ def test_compile_4():
     context.set_context(mode=context.GRAPH_MODE)
     net = Net(128, 10, has_bias=False)
     input_data = Tensor(np.random.randint(0, 255, [128, 128]).astype(np.float32))
-    _executor.compile(net, input_data)
+    _cell_graph_executor.compile(net, input_data)
 
     # training
     net_train = Net(128, 10, has_bias=False)
     net_train.set_train()
-    _executor.compile(net_train, input_data)
+    _cell_graph_executor.compile(net_train, input_data)

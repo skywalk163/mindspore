@@ -15,16 +15,26 @@
 """ test math ops """
 import functools
 import numpy as np
-import pytest
 
 import mindspore as ms
 import mindspore.context as context
 import mindspore.nn as nn
+from mindspore import ops
 from mindspore import Tensor
 from mindspore.common import dtype as mstype
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
+from mindspore.ops import functional as F
+from mindspore.ops.operations._grad_ops import IgammaGradA
 from mindspore.ops import prim_attr_register, PrimitiveWithInfer
+from mindspore.ops.operations.math_ops import Zeta, Igamma, Igammac, BatchMatMul
+from mindspore.ops.operations.math_ops import MatrixTriangularSolve
+from mindspore.ops.operations.sparse_ops import DenseToDenseSetOperation
+from mindspore.ops.operations.sparse_ops import DenseToSparseSetOperation
+from mindspore.ops.function.math_func import inplace_index_add, polar
+
+from mindspore.common.parameter import Parameter
+from mindspore.common.initializer import initializer
 from ..ut_filter import non_graph_engine
 from ....mindspore_test_framework.mindspore_test import mindspore_test
 from ....mindspore_test_framework.pipeline.forward.compile_forward \
@@ -33,10 +43,15 @@ from ....mindspore_test_framework.pipeline.forward.verify_exception \
     import pipeline_for_verify_exception_for_case_by_case_config
 
 
+context.set_context(mode=context.GRAPH_MODE)
+
 # pylint: disable=W0613
 # pylint: disable=W0231
 # W0613: unused-argument
 # W0231: super-init-not-called
+
+grad = C.GradOperation()
+
 
 def test_multiply():
     """ test_multiply """
@@ -101,10 +116,7 @@ def test_pow():
     result = testpow(input_tensor, power)
     assert np.all(result.asnumpy() == expect)
     net = PowNet()
-    with pytest.raises(TypeError):
-        net(input_tensor, True)
-    with pytest.raises(TypeError):
-        net(input_tensor, power2)
+    net(input_tensor, power2)
 
 
 def test_exp():
@@ -202,7 +214,7 @@ class GradWrap(nn.Cell):
         self.network = network
 
     def construct(self, x, y, b):
-        return C.grad(self.network)(x, y, b)
+        return grad(self.network)(x, y, b)
 
 
 class MatMulNet(nn.Cell):
@@ -215,6 +227,16 @@ class MatMulNet(nn.Cell):
 
     def construct(self, x, y, b):
         return self.biasAdd(self.matmul(x, y), b)
+
+
+class OrgqrFunc(nn.Cell):
+    def __init__(self):
+        super(OrgqrFunc, self).__init__()
+        self.orgqr_ = ops.function.math_func.orgqr
+
+    def construct(self, x, tau):
+        y = self.orgqr_(x, tau)
+        return y
 
 
 class NetWithLossSub(nn.Cell):
@@ -238,7 +260,7 @@ class GradWrapSub(nn.Cell):
         self.network = network
 
     def construct(self, x, y):
-        return C.grad(self.network)(x, y)
+        return grad(self.network)(x, y)
 
 
 class SubNet(nn.Cell):
@@ -261,7 +283,6 @@ class NpuFloatNet(nn.Cell):
         self.alloc_status = P.NPUAllocFloatStatus()
         self.get_status = P.NPUGetFloatStatus()
         self.clear_status = P.NPUClearFloatStatus()
-        self.fill = P.Fill()
         self.shape_op = P.Shape()
         self.select = P.Select()
         self.less = P.Less()
@@ -270,15 +291,17 @@ class NpuFloatNet(nn.Cell):
         self.reduce_sum = P.ReduceSum(keep_dims=True)
         self.sub = P.Sub()
         self.neg = P.Neg()
-        self.add_flags(has_effect=True)
 
     def construct(self, x):
         init = self.alloc_status()
-        self.clear_status(init)
+        clear_status = self.clear_status(init)
+        x = F.depend(x, clear_status) # let x depend on clear_status
         res = self.sub(x, self.neg(x))
-        self.get_status(init)
+        init = F.depend(init, res) # let get_status depend on res
+        get_status = self.get_status(init)
+        init = F.depend(init, get_status) # let reduce_sum depend on get_statusk
         flag_sum = self.reduce_sum(init, (0,))
-        base = self.cast(self.fill(self.dtype(res), self.shape_op(res), 0.0), self.dtype(flag_sum))
+        base = self.cast(F.fill(self.dtype(res), self.shape_op(res), 0.0), self.dtype(flag_sum))
         cond = self.less(base, flag_sum)
         out = self.select(cond, self.cast(base, self.dtype(res)), res)
         return out
@@ -289,11 +312,19 @@ class DiagNet(nn.Cell):
 
     def __init__(self):
         super(DiagNet, self).__init__()
-        self.fill = P.Fill()
         self.diag = P.Diag()
 
     def construct(self, x):
-        return x - self.diag(self.fill(mstype.float32, (3,), 1.0))
+        return x - self.diag(F.fill(mstype.float32, (3,), 1.0))
+
+
+class FmaxFunc(nn.Cell):
+    def __init__(self):
+        super(FmaxFunc, self).__init__()
+        self.fmax_ = ops.function.math_func.fmax
+
+    def construct(self, x1, x2):
+        return self.fmax_(x1, x2)
 
 
 class NetWithLossCumSum(nn.Cell):
@@ -317,7 +348,7 @@ class GradWrapCumSum(nn.Cell):
         self.network = network
 
     def construct(self, input_):
-        return C.grad(self.network)(input_)
+        return grad(self.network)(input_)
 
 
 class NetCumSum(nn.Cell):
@@ -349,7 +380,8 @@ class AssignAdd(nn.Cell):
 
     def construct(self, input_):
         self.inputdata = input_
-        return self.op(self.inputdata, input_)
+        self.op(self.inputdata, input_)
+        return self.inputdata
 
 
 class FloorNet(nn.Cell):
@@ -377,6 +409,381 @@ class ErfcNet(nn.Cell):
 
     def construct(self, x):
         return self.erfc(x)
+
+
+class LdexpFunc(nn.Cell):
+    def __init__(self):
+        super(LdexpFunc, self).__init__()
+        self.ldexp = ops.ldexp
+
+    def construct(self, x, other):
+        return self.ldexp(x, other)
+
+
+class BlockDiagFunc(nn.Cell):
+    def __init__(self):
+        super(BlockDiagFunc, self).__init__()
+        self.block_diag = ops.block_diag
+
+    def construct(self, x1, x2, x3, x4, x5):
+        return self.block_diag(x1, x2, x3, x4, x5)
+
+
+class AtLeast1DFunc(nn.Cell):
+    def __init__(self):
+        super(AtLeast1DFunc, self).__init__()
+        self.atleast_1d = ops.atleast_1d
+
+    def construct(self, x1, x2, x3):
+        return self.atleast_1d([x1, x2, x3])
+
+
+class DstackFunc(nn.Cell):
+    def __init__(self):
+        super(DstackFunc, self).__init__()
+        self.dstack = ops.dstack
+
+    def construct(self, x1, x2):
+        return self.dstack([x1, x2])
+
+
+class DiffFunc(nn.Cell):
+    def __init__(self):
+        super(DiffFunc, self).__init__()
+        self.diff = ops.diff
+
+    def construct(self, x):
+        return self.diff(x)
+
+
+class AtLeast2DFunc(nn.Cell):
+    def __init__(self):
+        super(AtLeast2DFunc, self).__init__()
+        self.atleast_2d = ops.atleast_2d
+
+    def construct(self, x1, x2, x3):
+        return self.atleast_2d([x1, x2, x3])
+
+
+class CartesianProdFunc(nn.Cell):
+    def __init__(self):
+        super(CartesianProdFunc, self).__init__()
+        self.cartesian_prod = ops.cartesian_prod
+
+    def construct(self, x1, x2):
+        return self.cartesian_prod(x1, x2)
+
+
+class AtLeast3DFunc(nn.Cell):
+    def __init__(self):
+        super(AtLeast3DFunc, self).__init__()
+        self.atleast_3d = ops.atleast_3d
+
+    def construct(self, x1, x2, x3):
+        return self.atleast_3d([x1, x2, x3])
+
+
+class VstackFunc(nn.Cell):
+    def __init__(self):
+        super(VstackFunc, self).__init__()
+        self.vstack = ops.vstack
+
+    def construct(self, x1, x2):
+        return self.vstack([x1, x2])
+
+
+class CombinationsFunc(nn.Cell):
+    def __init__(self):
+        super(CombinationsFunc, self).__init__()
+        self.combinations = ops.combinations
+
+    def construct(self, x):
+        return self.combinations(x)
+
+
+class DistFunc(nn.Cell):
+    def __init__(self):
+        super(DistFunc, self).__init__()
+        self.dist = ops.dist
+
+    def construct(self, input_x, input_y):
+        return self.dist(input_x, input_y)
+
+
+class CopysignFunc(nn.Cell):
+    def __init__(self):
+        super(CopysignFunc, self).__init__()
+        self.copysign = ops.copysign
+
+    def construct(self, x, other):
+        return self.copysign(x, other)
+
+
+class HannWindowFunc(nn.Cell):
+    def __init__(self):
+        super(HannWindowFunc, self).__init__()
+        self.hann_window = ops.hann_window
+
+    def construct(self, window_length):
+        return self.hann_window(window_length)
+
+
+class HypotFunc(nn.Cell):
+    def __init__(self):
+        super(HypotFunc, self).__init__()
+        self.hypot_ = ops.function.hypot
+
+    def construct(self, x1, x2):
+        y = self.hypot_(x1, x2)
+        return y
+
+
+class NanSumFunc(nn.Cell):
+    def __init__(self):
+        super(NanSumFunc, self).__init__()
+        self.nansum = ops.function.math_func.nansum
+
+    def construct(self, x, axes):
+        y = self.nansum(x, axes)
+        return y
+
+
+class HeavisideFunc(nn.Cell):
+    def __init__(self):
+        super(HeavisideFunc, self).__init__()
+        self.heaviside_ = ops.function.heaviside
+
+    def construct(self, x, values):
+        y = self.heaviside_(x, values)
+        return y
+
+
+class LogAddExpFunc(nn.Cell):
+    def __init__(self):
+        super(LogAddExpFunc, self).__init__()
+        self.logaddexp = ops.logaddexp
+
+    def construct(self, x1, x2):
+        y = self.logaddexp(x1, x2)
+        return y
+
+
+class LogAddExp2Func(nn.Cell):
+    def __init__(self):
+        super(LogAddExp2Func, self).__init__()
+        self.logaddexp2 = ops.logaddexp2
+
+    def construct(self, x1, x2):
+        y = self.logaddexp2(x1, x2)
+        return y
+
+
+class KaiserWindowFunc(nn.Cell):
+    def __init__(self):
+        super(KaiserWindowFunc, self).__init__()
+        self.kaiser_window = ops.kaiser_window
+
+    def construct(self, window_length):
+        return self.kaiser_window(window_length)
+
+
+class AddmvFunc(nn.Cell):
+    def __init__(self):
+        super(AddmvFunc, self).__init__()
+        self.addmv = ops.addmv
+
+    def construct(self, x, mat, vec, beta=1, alpha=1):
+        y = self.addmv(x, mat, vec, beta=beta, alpha=alpha)
+        return y
+
+
+class AddrFunc(nn.Cell):
+    def __init__(self):
+        super(AddrFunc, self).__init__()
+        self.addr = ops.addr
+
+    def construct(self, x, vec1, vec2, beta=1, alpha=1):
+        y = self.addr(x, vec1, vec2, beta=beta, alpha=alpha)
+        return y
+
+
+class MvFunc(nn.Cell):
+    def __init__(self):
+        super(MvFunc, self).__init__()
+        self.mv = ops.mv
+
+    def construct(self, mat, vec):
+        return self.mv(mat, vec)
+
+
+class OuterFunc(nn.Cell):
+    def __init__(self):
+        super(OuterFunc, self).__init__()
+        self.outer = ops.outer
+
+    def construct(self, x1, x2):
+        return self.outer(x1, x2)
+
+
+class Exp2Func(nn.Cell):
+    def __init__(self):
+        super(Exp2Func, self).__init__()
+        self.exp2 = ops.exp2
+
+    def construct(self, x):
+        y = self.exp2(x)
+        return y
+
+
+class Deg2radNet(nn.Cell):
+    def __init__(self):
+        super(Deg2radNet, self).__init__()
+        self.deg2rad = ops.deg2rad
+
+    def construct(self, x):
+        return self.deg2rad(x)
+
+
+class InplaceIndexAddFunc(nn.Cell):
+    def __init__(self):
+        super(InplaceIndexAddFunc, self).__init__()
+        self.inplace_index_add = inplace_index_add
+        self.var = Parameter(Tensor(np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]]).astype(np.float32)))
+
+    def construct(self, indices, updates, axis=1):
+        return self.inplace_index_add(self.var, indices, updates, axis)
+
+
+class IsRealFunc(nn.Cell):
+    def __init__(self):
+        super(IsRealFunc, self).__init__()
+        self.isreal = ops.isreal
+
+    def construct(self, x):
+        y = self.isreal(x)
+        return y
+
+
+class LcmFunc(nn.Cell):
+    def __init__(self):
+        super(LcmFunc, self).__init__()
+        self.lcm = ops.function.lcm
+
+    def construct(self, x1, x2):
+        return self.lcm(x1, x2)
+
+
+class GcdFunc(nn.Cell):
+    def __init__(self):
+        super(GcdFunc, self).__init__()
+        self.gcd = ops.function.gcd
+
+    def construct(self, x1, x2):
+        return self.gcd(x1, x2)
+
+
+class Rad2degNet(nn.Cell):
+    def __init__(self):
+        super(Rad2degNet, self).__init__()
+        self.rad2deg = ops.rad2deg
+
+    def construct(self, x):
+        return self.rad2deg(x)
+
+
+class BaddbmmNet(nn.Cell):
+    def __init__(self, beta=1, alpha=1):
+        super(BaddbmmNet, self).__init__()
+        self.beta = beta
+        self.alpha = alpha
+        self.baddbmm = ops.baddbmm
+
+    def construct(self, x, batch1, batch2):
+        return self.baddbmm(x, batch1, batch2, self.beta, self.alpha)
+
+
+class Log2Net(nn.Cell):
+    def __init__(self):
+        super(Log2Net, self).__init__()
+        self.log2 = ops.log2
+
+    def construct(self, x):
+        return self.log2(x)
+
+
+class Log10Net(nn.Cell):
+    def __init__(self):
+        super(Log10Net, self).__init__()
+        self.log10 = ops.log10
+
+    def construct(self, x):
+        return self.log10(x)
+
+
+class FminFunc(nn.Cell):
+    def __init__(self):
+        super(FminFunc, self).__init__()
+        self.fmin_ = ops.function.math_func.fmin
+
+    def construct(self, x1, x2):
+        return self.fmin_(x1, x2)
+
+
+class FracNet(nn.Cell):
+    def __init__(self):
+        super(FracNet, self).__init__()
+        self.frac = ops.frac
+
+    def construct(self, x):
+        return self.frac(x)
+
+
+class KronFunc(nn.Cell):
+    def __init__(self):
+        super(KronFunc, self).__init__()
+        self.kron = ops.kron
+
+    def construct(self, x, y):
+        return self.kron(x, y)
+
+
+class PolarFunc(nn.Cell):
+    def __init__(self):
+        super(PolarFunc, self).__init__()
+        self.polar = polar
+
+    def construct(self, x, y):
+        return self.polar(x, y)
+
+
+class Rot90Func(nn.Cell):
+    def __init__(self):
+        super(Rot90Func, self).__init__()
+        self.rot90 = ops.rot90
+        self.k = 0
+        self.dims = (0, 1)
+
+    def construct(self, x):
+        return self.rot90(x, self.k, self.dims)
+
+
+class RemainderNet(nn.Cell):
+    def __init__(self):
+        super(RemainderNet, self).__init__()
+        self.remainder = ops.remainder
+
+    def construct(self, x, y):
+        return self.remainder(x, y)
+
+
+class TrapzFunc(nn.Cell):
+    def __init__(self):
+        super(TrapzFunc, self).__init__()
+        self.trapz = ops.trapz
+
+    def construct(self, y, x=None, dx=1.0, dim=-1):
+        out = self.trapz(y, x, dx=dx, dim=dim)
+        return out
 
 
 test_case_math_ops = [
@@ -424,6 +831,11 @@ test_case_math_ops = [
         'desc_inputs': [Tensor(np.array([[1., 0., -2.]], np.float32))],
         'desc_bprop': [Tensor(np.array([[1., 0., -2.]], np.float32))],
         'skip': ['backward']}),
+    ('InplaceIndexAdd', {
+        'block': InplaceIndexAddFunc(),
+        'desc_inputs': [Tensor(np.array([0, 1, 2], np.int32)),
+                        Tensor(np.array([[0.5, 1.0, 1.5], [1.0, 1.5, 2.0], [2.0, 2.5, 3.0]], np.float32))],
+        'desc_bprop': [Tensor(np.array([[1, 1, 1], [1, 1, 1], [1, 1, 1]], np.float32))]}),
     ('Log1p', {
         'block': Log1pNet(),
         'desc_inputs': [Tensor(np.array([[1.0, 2.0, 4.0]], np.float32))],
@@ -434,6 +846,202 @@ test_case_math_ops = [
         'desc_inputs': [Tensor(np.array([[1.0, 2.0, 4.0]], np.float32))],
         'desc_bprop': [Tensor(np.array([[1.0, 2.0, 4.0]], np.float32))],
     }),
+    ('Ldexp', {
+        'block': LdexpFunc(),
+        'desc_inputs': [Tensor(np.array([1.]), dtype=ms.float32),
+                        Tensor(np.array([1, 2, 3, 4]), dtype=ms.int32)],
+        'skip': ['backward']
+    }),
+    ('BlockDiag', {
+        'block': BlockDiagFunc(),
+        'desc_inputs': [Tensor(np.array([[4], [3], [2]]), ms.int32),
+                        Tensor(np.array([7, 6, 5]), ms.int32),
+                        Tensor(np.array(1), ms.int32),
+                        Tensor(np.array([[5, 4, 3], [2, 1, 0]]), ms.int32),
+                        Tensor(np.array([[8, 7], [7, 8]]), ms.int32)]
+    }),
+    ('AtLeast1D', {
+        'block': AtLeast1DFunc(),
+        'desc_inputs': [Tensor(np.array([[1, 1, 1], [1, 1, 1]]), ms.float64),
+                        Tensor(np.array(1), ms.float64),
+                        Tensor(np.array([1, 1, 1, 1, 1]), ms.float64)]
+    }),
+    ('Dstack', {
+        'block': DstackFunc(),
+        'desc_inputs': [Tensor(np.array([1, 2, 3]), ms.float32),
+                        Tensor(np.array([4, 5, 6]), ms.float32)]
+    }),
+    ('Diff', {
+        'block': DiffFunc(),
+        'desc_inputs': [Tensor(np.array([1, 3, -1, 0, 4]), ms.int32)]
+    }),
+    ('AtLeast2D', {
+        'block': AtLeast2DFunc(),
+        'desc_inputs': [Tensor(np.array([[1, 1, 1], [1, 1, 1]]), ms.float64),
+                        Tensor(np.array(1), ms.float64),
+                        Tensor(np.array([1, 1, 1, 1, 1]), ms.float64)]
+    }),
+    ('CartesianProd', {
+        'block': CartesianProdFunc(),
+        'desc_inputs': [Tensor(np.array([1, 2]), ms.int32),
+                        Tensor(np.array([5]), ms.int32)]
+    }),
+    ('AtLeast3D', {
+        'block': AtLeast3DFunc(),
+        'desc_inputs': [Tensor(np.array([[1, 1, 1], [1, 1, 1]]), ms.float64),
+                        Tensor(np.array(1), ms.float64),
+                        Tensor(np.array([1, 1, 1, 1, 1]), ms.float64)]
+    }),
+    ('Vstack', {
+        'block': VstackFunc(),
+        'desc_inputs': [Tensor(np.array([1, 2, 3]), ms.int32),
+                        Tensor(np.array([4, 5, 6]), ms.int32)]
+    }),
+    ('Combinations', {
+        'block': CombinationsFunc(),
+        'desc_inputs': [Tensor(np.array([1, 3, -1, 0, 4]), ms.int32)]
+    }),
+    ('Dist', {
+        'block': DistFunc(),
+        'desc_inputs': [Tensor(np.array([[[1, 1], [2, 2]]]), ms.float32),
+                        Tensor(np.array([[[3, 3], [3, 3]]]), ms.float32)]
+    }),
+    ('Copysign', {
+        'block': CopysignFunc(),
+        'desc_inputs': [Tensor(np.array([[0.3, -0.7], [0.5, 0.5]])),
+                        Tensor(np.array([[-0.4, 0.6], [0.4, -0.6]]))]
+    }),
+    ('HannWindow', {
+        'block': HannWindowFunc(),
+        'desc_inputs': [5]
+    }),
+    ('LogAddExp2', {
+        'block': LogAddExp2Func(),
+        'desc_inputs': [Tensor(np.array([1.0, 2.0, 3.0], np.float16)), Tensor(np.array([2.0], np.float16))],
+        'desc_bprop': [Tensor(np.array([1.0, 2.0, 3.0], np.float16)), Tensor(np.array([2.0], np.float16))],
+    }),
+    ('KaiserWindow', {
+        'block': KaiserWindowFunc(),
+        'desc_inputs': [5]
+    }),
+    ('LogAddExp', {
+        'block': LogAddExpFunc(),
+        'desc_inputs': [Tensor(np.array([1.0, 2.0, 3.0], np.float16)), Tensor(np.array([2.0], np.float16))],
+        'desc_bprop': [Tensor(np.array([1.0, 2.0, 3.0], np.float16)), Tensor(np.array([2.0], np.float16))],
+    }),
+    ('Mv', {
+        'block': MvFunc(),
+        'desc_inputs': [Tensor(np.array([[3., 4.], [1., 6.], [1., 3.]])),
+                        Tensor(np.array([1., 2.]))],
+        'desc_bprop': [Tensor(np.array([[3., 4.], [1., 6.], [1., 3.]])),
+                       Tensor(np.array([1., 2.]))],
+    }),
+    ('Addr', {
+        'block': AddrFunc(),
+        'desc_inputs': [Tensor(np.array([[0., 0.], [0., 0.], [0., 0.]])),
+                        Tensor(np.array([1., 2., 3.])),
+                        Tensor(np.array([1., 2.]))],
+        'desc_bprop': [Tensor(np.array([[0., 0.], [0., 0.], [0., 0.]])),
+                       Tensor(np.array([1., 2., 3.])),
+                       Tensor(np.array([1., 2.]))],
+    }),
+    ('Outer', {
+        'block': OuterFunc(),
+        'desc_inputs': [Tensor(np.array([1., 2., 3.])),
+                        Tensor(np.array([1., 2., 3.]))],
+        'desc_bprop': [Tensor(np.array([1., 2., 3.])),
+                       Tensor(np.array([1., 2., 3.]))],
+        'skip': ['backward']
+    }),
+    ('Addmv', {
+        'block': AddmvFunc(),
+        'desc_inputs': [Tensor(np.array([1, 1], np.int32)),
+                        Tensor(np.array([[1, 2, 1], [1, 1, 1]], np.int32)),
+                        Tensor(np.array([1, 1, 1], np.int32))],
+        'desc_bprop': [Tensor(np.array([1, 1], np.int32)),
+                       Tensor(np.array([[1, 2, 1], [1, 1, 1]], np.int32)),
+                       Tensor(np.array([1, 1, 1], np.int32))],
+    }),
+    ('Exp2', {
+        'block': Exp2Func(),
+        'desc_inputs': [Tensor(np.array([1.0, 2.0, 3.0], np.float16))],
+    }),
+    ('Trapz', {
+        'block': TrapzFunc(),
+        'desc_inputs': [Tensor(np.array([[0, 1, 2], [3, 4, 5], [6, 7, 8]], np.float32))],
+        'desc_bprop': [Tensor(np.array([2, 8, 14], np.float32))],
+    }),
+    ('DenseToDenseSetOperation', {
+        'block': DenseToDenseSetOperation(set_operation="a-b", validate_indices=True),
+        'desc_inputs': [Tensor(np.array([[1, 2, 4], [3, 4, 5]], np.int32)),
+                        Tensor(np.array([[3, 2, 5], [1, 4, 7]], np.int32))],
+        'skip': ['backward']
+    }),
+    ('DenseToSparseSetOperation', {
+        'block': DenseToSparseSetOperation(set_operation="a-b", validate_indices=True),
+        'desc_inputs': [Tensor(np.array([[1, 2, 4], [3, 4, 5]], np.int32)),
+                        Tensor(np.array([[0, 1], [1, 0]], np.int64)),
+                        Tensor(np.array([1, 6], np.int32)),
+                        Tensor(np.array([2, 3], np.int64))],
+        'skip': ['backward']
+    }),
+    ('Deg2rad', {
+        'block': Deg2radNet(),
+        'desc_inputs': [Tensor(np.array([[90.0, -90.0], [180.0, -180.0], [270.0, -270.0]], np.float32))],
+        'desc_bprop': [Tensor(np.array([[90.0, -90.0], [180.0, -180.0], [270.0, -270.0]], np.float32))],
+    }),
+    ('IsReal', {
+        'block': IsRealFunc(),
+        'desc_inputs': [Tensor([1, 1+1j, 2+0j])],
+    }),
+    ('Rad2deg', {
+        'block': Rad2degNet(),
+        'desc_inputs': [Tensor(np.array([[3.142, -3.142], [6.283, -6.283], [1.570, -1.570]], np.float32))],
+        'desc_bprop': [Tensor(np.array([[3.142, -3.142], [6.283, -6.283], [1.570, -1.570]], np.float32))],
+    }),
+    ('Baddbmm', {
+        'block': BaddbmmNet(),
+        'desc_inputs': [Tensor(np.ones([1, 3, 3]).astype(np.float32)),
+                        Tensor(np.ones([1, 3, 4]).astype(np.float32)),
+                        Tensor(np.ones([1, 4, 3]).astype(np.float32))],
+        'skip': ['backward']
+    }),
+    ('Log2', {
+        'block': Log2Net(),
+        'desc_inputs': [Tensor(np.array([[1.0, 2.0, 4.0]], np.float32))],
+        'desc_bprop': [Tensor(np.array([[1.0, 2.0, 4.0]], np.float32))]}),
+    ('Log10', {
+        'block': Log10Net(),
+        'desc_inputs': [Tensor(np.array([[1.0, 2.0, 4.0]], np.float32))],
+        'desc_bprop': [Tensor(np.array([[1.0, 2.0, 4.0]], np.float32))]}),
+    ('Frac', {
+        'block': FracNet(),
+        'desc_inputs': [Tensor(np.array([2, 4.2, -2.5], np.float32))],
+        'desc_bprop': [Tensor(np.array([2, 4.2, -2.5], np.float32))],
+    }),
+    ('Kron', {
+        'block': KronFunc(),
+        'desc_inputs': [Tensor(np.array([[0, 1, 2], [3, 4, 5]]).astype(np.float32)),
+                        Tensor(np.array([[-1, -2, -3], [-4, -6, -8]]).astype(np.float32))],
+        'skip': ['backward']}),
+    ('Polar', {
+        'block': PolarFunc(),
+        'desc_inputs': [Tensor(np.array([[0, 1, 2], [3, 4, 5]]).astype(np.float32)),
+                        Tensor(np.array([[-1, -2, -3], [-4, -6, -8]]).astype(np.float32))],
+        'desc_bprop': [Tensor(np.array([1+2j, 2+3j, 3+4j], np.complex64))],
+    }),
+    ('Rot90', {
+        'block': Rot90Func(),
+        'desc_inputs': [Tensor(np.array([[0, 1], [2, 3]]).astype(np.float32))],
+        'skip': ['backward']}),
+    ('Remainder', {
+        'block': RemainderNet(),
+        'desc_inputs': [Tensor(np.array([-1.0, 5.0, 6.0]), ms.float32), Tensor(np.array([3.0, 2.0, 3.0]), ms.float32)],
+        'skip': ['backward']}),
+    ('NanSum', {
+        'block': NanSumFunc(),
+        'desc_inputs': [Tensor(np.array([1.0, 2.0, 3.0], np.float32)), int(0)],
+        'desc_bprop': [Tensor(np.array([1.0, 2.0, 3.0], np.float32))]}),
 ]
 
 test_case_lists = [test_case_math_ops]
@@ -450,6 +1058,16 @@ def test_exec():
 
 
 raise_set = [
+    ('Ldexp_Error1', {
+        'block': (LdexpFunc(), {'exception': ValueError}),
+        'desc_inputs': [Tensor(np.array([[1., 1.], [1., 2.], [1., 3.]]), dtype=ms.float32),
+                        Tensor(np.array([1, 2, 3]), dtype=ms.int32)],
+        'skip': ['backward']}),
+    ('Ldexp_Error2', {
+        'block': (LdexpFunc(), {'exception': ValueError}),
+        'desc_inputs': [Tensor(np.random.randn(5, 2), dtype=mstype.float16),
+                        Tensor(np.random.randn(5), dtype=mstype.float16)],
+        'skip': ['backward']}),
     ('StridedSlice_1_Error', {
         'block': (lambda x: P.StridedSlice(begin_mask="1"), {'exception': TypeError}),
         'desc_inputs': [0]}),
@@ -463,8 +1081,153 @@ raise_set = [
         'block': (lambda x: P.StridedSlice(new_axis_mask="1.1"), {'exception': TypeError}),
         'desc_inputs': [0]}),
     ('AssignAdd_Error', {
-        'block': (P.AssignAdd(), {'exception': IndexError}),
+        'block': (P.AssignAdd(), {'exception': ValueError}),
         'desc_inputs': [[1]]}),
+    ('Hypot', {
+        'block': HypotFunc(),
+        'desc_inputs': [Tensor(np.array([3, 5, 7]).astype(np.float32)),
+                        Tensor(np.array([4, 12, 24]).astype(np.float32))]}),
+    ('Heaviside', {
+        'block': HeavisideFunc(),
+        'desc_inputs': [Tensor(np.array([4, 4, 12]).astype(np.float32)),
+                        Tensor(np.array([4, 8, 12]).astype(np.float32))],
+        'skip': ['backward']}),
+    ('Trunc', {
+        'block': P.Trunc(),
+        'desc_inputs': [Tensor(np.array([[1.1, 2.2, -4.1]], np.float32))],
+        'skip': ['backward']}),
+    ('MatrixTriangularSolve', {
+        'block': MatrixTriangularSolve(adjoint=False, lower=True),
+        'desc_inputs': [Tensor(np.array([4, 4, 4]).astype(np.float32)),
+                        Tensor(np.array([4, 4, 4]).astype(np.float32))],
+        'desc_bprop': [Tensor(np.array([4, 4, 4]).astype(np.float32))]}),
+    ('Gcd', {
+        'block': GcdFunc(),
+        'desc_inputs': [Tensor(np.array([2, 5, 8]).astype(np.int32)),
+                        Tensor(np.array([4, 3, 12]).astype(np.int32))],
+        'skip': ['backward']}),
+    ('Fmin', {
+        'block': FminFunc(),
+        'desc_inputs': [Tensor(np.array([1.0, 2.0, 3.0], np.float32)),
+                        Tensor(np.array([2.0, 1.0, 4.0], np.float32))],
+        'desc_bprop': [Tensor(np.array([1.0, 2.0, 3.0], np.float32))]}),
+    ('Zeta', {
+        'block': Zeta(),
+        'desc_inputs': [Tensor(np.array([1, 1, 1, 1], np.float32)),
+                        Tensor([0.5, 0.5, 0.5, 0.5], mstype.float32)]}),
+    ('Fmax', {
+        'block': FmaxFunc(),
+        'desc_inputs': [Tensor(np.array([1.0, 2.0, 3.0], np.float32)),
+                        Tensor(np.array([2.0, 1.0, 4.0], np.float32))],
+        'desc_bprop': [Tensor(np.array([1.0, 2.0, 3.0], np.float32))]}),
+    ('Lcm', {
+        'block': LcmFunc(),
+        'desc_inputs': [Tensor(np.array([2, 5, 8]).astype(np.int32)),
+                        Tensor(np.array([4, 3, 12]).astype(np.int32))],
+        'skip': ['backward']}),
+    ('Igamma', {
+        'block': Igamma(),
+        'desc_inputs': [Tensor(np.array([1.1, 2.2, -4.1], np.float32)),
+                        Tensor(np.array([0.2, 1.2, 2.1], np.float32))],
+        'desc_bprop': [Tensor(np.array([2, 3], np.float32)),
+                       Tensor(np.array([2, 3], np.float32))],
+        'skip': ['backward']}),
+    ('Igammac', {
+        'block': Igammac(),
+        'desc_inputs': [Tensor(np.array([1.1, 2.2, -4.1], np.float32)),
+                        Tensor(np.array([0.2, 1.2, 2.1], np.float32))],
+        'desc_bprop': [Tensor(np.array([2, 3], np.float32)),
+                       Tensor(np.array([2, 3], np.float32))],
+        'skip': ['backward']}),
+    ('IgammaGradA', {
+        'block': IgammaGradA(),
+        'desc_inputs': [Tensor(np.array([1.1, 2.2, 8.1, 2.1], np.float32)),
+                        Tensor(np.array([0.2, 1.2, 2.1, 3.4], np.float32))],
+        'skip': ['backward']}),
+    ('Outer_Error', {
+        'block': (OuterFunc(), {'exception': ValueError}),
+        'desc_inputs': [Tensor(np.array([[1., 1.], [1., 2.], [1., 3.]]), dtype=ms.float32),
+                        Tensor(np.array([1, 2, 3]), dtype=ms.int32)],
+        'skip': ['backward']}),
+    ('Deg2rad_1_Error', {
+        'block': (lambda x: Deg2radNet(), {'exception': TypeError}),
+        'desc_inputs': [0]}),
+    ('Deg2rad_2_Error', {
+        'block': (lambda x: Deg2radNet(), {'exception': TypeError}),
+        'desc_inputs': [Tensor(np.array([[90, -90], [180, -180], [270, -270]], np.int32))]}),
+    ('Rad2deg_1_Error', {
+        'block': (lambda x: Rad2degNet(), {'exception': TypeError}),
+        'desc_inputs': [0]}),
+    ('Rad2deg_2_Error', {
+        'block': (lambda x: Rad2degNet(), {'exception': TypeError}),
+        'desc_inputs': [Tensor(np.array([[3, -3], [6, -6], [1, -1]], np.int32))]}),
+    ('Baddbmm_Error', {
+        'block': (BaddbmmNet(), {'exception': TypeError}),
+        'desc_inputs': [Tensor(np.ones([1, 3, 3]).astype(np.float32)),
+                        Tensor(np.ones([1, 3, 4]).astype(np.float32)),
+                        [1, 2]],
+        'skip': ['backward']}),
+    ('Log2_Error_2', {
+        'block': (Log2Net(), {'exception;': TypeError}),
+        'desc_inputs': [Tensor(np.array([[1, 2, 4]], np.int32))],
+        'skip': ['backward']}),
+    ('Log2_Error_1', {
+        'block': (Log2Net(), {'exception;': TypeError}),
+        'desc_inputs': [[1]],
+        'skip': ['backward']}),
+    ('Log10_Error_1', {
+        'block': (Log10Net(), {'exception': TypeError}),
+        'desc_inputs': [[1]],
+        'skip': ['backward']}),
+    ('Log10_Error_2', {
+        'block': (Log10Net(), {'exception': TypeError}),
+        'desc_inputs': [Tensor(np.array([[1, 2, 4]], np.int32))],
+        'skip': ['backward']}),
+    ('Kron_1_Error', {
+        'block': (KronFunc(), {'exception': TypeError}),
+        'desc_inputs': [[-5, -3, -1, 1, 3, 5], [-5, -3, -1, 1, 3, 5]],
+        'skip': ['backward']}),
+    ('Kron_2_Error', {
+        'block': (KronFunc(), {'exception': TypeError}),
+        'desc_inputs': [Tensor(np.random.randn(2, 5), dtype=mstype.float64),
+                        Tensor(np.random.randn(2, 5), dtype=mstype.float64)],
+        'skip': ['backward']}),
+    ('Kron_3_Error', {
+        'block': (KronFunc(), {'exception': RuntimeError}),
+        'desc_inputs': [Tensor(np.random.randn(2, 2, 3, 2, 3), dtype=mstype.float16),
+                        Tensor(np.random.randn(3, 2), dtype=mstype.float16)],
+        'skip': ['backward']}),
+    ('Rot90_1_Error', {
+        'block': (Rot90Func(), {'exception': TypeError}),
+        'desc_inputs': [[-5, -3, -1, 1, 3, 5]],
+        'skip': ['backward']}),
+    ('Rot90_2_Error', {
+        'block': (Rot90Func(), {'exception': ValueError}),
+        'desc_inputs': [Tensor(np.array([0]), dtype=mstype.float16)],
+        'skip': ['backward']}),
+    ('Orgqr', {
+        'block': OrgqrFunc(),
+        'desc_inputs': [Tensor(np.array([[-114.6, 10.9, 1.1],
+                                         [-0.304, 38.07, 69.38],
+                                         [-0.45, -0.17, 62.0]]).astype(np.float32)),
+                        Tensor(np.array([1.55, 1.94, 0.0]).astype(np.float32))
+                        ],
+        'skip': ['backward']}),
+    ('Remainder_Error_1', {
+        'block': (RemainderNet(), {'exception': TypeError}),
+        'desc_inputs': [Tensor(np.array([-4.0, 5.0, 6.0]), ms.float32),
+                        [3.0, 2.0, 3.0]],
+        'skip': ['backward']}),
+    ('Remainder_Error_2', {
+        'block': (RemainderNet(), {'exception': ValueError}),
+        'desc_inputs': [Tensor(np.array([-4.0, 5.0, 6.0]), ms.float32),
+                        Tensor(np.array([3.0, 2.0]), ms.float32)],
+        'skip': ['backward']}),
+    ('BatchMatMul', {
+        'block': BatchMatMul(),
+        'desc_inputs': [Tensor(np.ones([2, 4, 2, 2]).astype(np.float32)),
+                        Tensor(np.ones([2, 4, 2, 2]).astype(np.float32))],
+        'desc_bprop': [Tensor(np.ones([2, 4, 2, 2]).astype(np.float32))]}),
 ]
 
 

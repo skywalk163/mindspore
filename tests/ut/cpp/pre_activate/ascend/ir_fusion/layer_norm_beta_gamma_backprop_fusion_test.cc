@@ -14,14 +14,16 @@
  * limitations under the License.
  */
 #include "common/backend_common_test.h"
+#include "ops/nn_op_name.h"
 #include "common/py_func_graph_fetcher.h"
-#include "device/kernel_info.h"
-#include "debug/anf_ir_dump.h"
-#include "session/anf_runtime_algorithm.h"
+#include "include/backend/kernel_info.h"
+#include "include/common/debug/anf_ir_dump.h"
+#include "include/backend/anf_runtime_algorithm.h"
+#include "include/common/utils/anfalgo.h"
 
 #define private public
 #define protected public
-#include "pre_activate/ascend/ir_fusion/layer_norm_beta_gamma_backprop_fusion.h"
+#include "plugin/device/ascend/optimizer/ir_fusion/layer_norm_beta_gamma_backprop_fusion.h"
 #undef private
 #undef protected
 
@@ -42,7 +44,7 @@ class MockLayerNormBetaGammaBackpropFusionKernelQuery : public KernelQuery {
   MockLayerNormBetaGammaBackpropFusionKernelQuery() = default;
   ~MockLayerNormBetaGammaBackpropFusionKernelQuery() override = default;
   void Query(const CNodePtr &cnode, std::vector<std::shared_ptr<kernel::KernelBuildInfo>> *kernel_info_list) override {
-    if (AnfAlgo::GetCNodeName(cnode) == kLayerNormBetaGammaBackpropOpName) {
+    if (common::AnfAlgo::GetCNodeName(cnode) == kLayerNormBetaGammaBackpropOpName) {
       kernel::KernelBuildInfo::KernelBuildInfoBuilder builder;
       builder.SetInputsFormat({kOpFormat_DEFAULT, kOpFormat_DEFAULT, kOpFormat_DEFAULT, kOpFormat_DEFAULT});
       builder.SetOutputsFormat({kOpFormat_DEFAULT, kOpFormat_DEFAULT});
@@ -63,7 +65,7 @@ TEST_F(TestHWLayerNormBetaGammaBackpropFusion, layernorm_beta_gamma_backprop_fus
    *     return add
    */
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_layer_norm_beta_gamma_backprop_fusion", "before");
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   auto ret = g->get_return();
   EXPECT_NE(ret, nullptr);
@@ -99,7 +101,7 @@ TEST_F(TestHWLayerNormBetaGammaBackpropFusion, layernorm_beta_gamma_backprop_fus
   builder2.SetOutputsDeviceType({kNumberTypeFloat16, kNumberTypeFloat16});
   layer->set_kernel_info(std::make_shared<device::KernelInfo>());
   AnfAlgo::SetSelectKernelBuildInfo(builder2.Build(), layer.get());
-  AnfAlgo::SetNodeAttr("shape_gamma", MakeValue(""), layer);
+  common::AnfAlgo::SetNodeAttr("shape_gamma", MakeValue(""), layer);
 
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
   auto pm = std::make_shared<opt::PassManager>();
@@ -124,7 +126,7 @@ TEST_F(TestHWLayerNormBetaGammaBackpropFusion, layernorm_beta_gamma_backprop_fus
    */
   FuncGraphPtr g =
     get_py_fun_.CallAndParseRet("test_layer_norm_beta_gamma_backprop_fusion", "before_unmatched_inputs_size");
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   auto ret = g->get_return();
   EXPECT_NE(ret, nullptr);
@@ -158,7 +160,7 @@ TEST_F(TestHWLayerNormBetaGammaBackpropFusion, layernorm_beta_gamma_backprop_fus
   builder2.SetOutputsDeviceType({kNumberTypeFloat16, kNumberTypeFloat16});
   layer->set_kernel_info(std::make_shared<device::KernelInfo>());
   AnfAlgo::SetSelectKernelBuildInfo(builder2.Build(), layer.get());
-  AnfAlgo::SetNodeAttr("shape_gamma", MakeValue(""), layer);
+  common::AnfAlgo::SetNodeAttr("shape_gamma", MakeValue(""), layer);
 
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
   auto pm = std::make_shared<opt::PassManager>();
@@ -183,7 +185,7 @@ TEST_F(TestHWLayerNormBetaGammaBackpropFusion, layernorm_beta_gamma_backprop_fus
    *     return add
    */
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_layer_norm_beta_gamma_backprop_fusion", "before");
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   auto ret = g->get_return();
   EXPECT_NE(ret, nullptr);
@@ -217,7 +219,7 @@ TEST_F(TestHWLayerNormBetaGammaBackpropFusion, layernorm_beta_gamma_backprop_fus
   builder2.SetOutputsDeviceType({kNumberTypeFloat16, kNumberTypeFloat16});
   layer->set_kernel_info(std::make_shared<device::KernelInfo>());
   AnfAlgo::SetSelectKernelBuildInfo(builder2.Build(), layer.get());
-  AnfAlgo::EraseNodeAttr("shape_gamma", layer);
+  common::AnfAlgo::EraseNodeAttr("shape_gamma", layer);
 
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
   auto pm = std::make_shared<opt::PassManager>();
@@ -241,7 +243,7 @@ TEST_F(TestHWLayerNormBetaGammaBackpropFusion, layernorm_beta_gamma_backprop_fus
    */
   FuncGraphPtr g =
     get_py_fun_.CallAndParseRet("test_layer_norm_beta_gamma_backprop_fusion", "before_unmatched_outputs_size");
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   auto ret = g->get_return();
   EXPECT_NE(ret, nullptr);
@@ -266,7 +268,7 @@ TEST_F(TestHWLayerNormBetaGammaBackpropFusion, layernorm_beta_gamma_backprop_fus
   builder2.SetOutputsDeviceType({kNumberTypeFloat16, kNumberTypeFloat16});
   layer->set_kernel_info(std::make_shared<device::KernelInfo>());
   AnfAlgo::SetSelectKernelBuildInfo(builder2.Build(), layer.get());
-  AnfAlgo::SetNodeAttr("shape_gamma", MakeValue(""), layer);
+  common::AnfAlgo::SetNodeAttr("shape_gamma", MakeValue(""), layer);
 
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
   auto pm = std::make_shared<opt::PassManager>();
@@ -291,7 +293,7 @@ TEST_F(TestHWLayerNormBetaGammaBackpropFusion, layernorm_beta_gamma_backprop_fus
    *     return add
    */
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_layer_norm_beta_gamma_backprop_fusion", "before");
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   auto ret = g->get_return();
   EXPECT_NE(ret, nullptr);
@@ -325,7 +327,7 @@ TEST_F(TestHWLayerNormBetaGammaBackpropFusion, layernorm_beta_gamma_backprop_fus
   builder2.SetOutputsDeviceType({kNumberTypeFloat16, kNumberTypeFloat16});
   layer->set_kernel_info(std::make_shared<device::KernelInfo>());
   AnfAlgo::SetSelectKernelBuildInfo(builder2.Build(), layer.get());
-  AnfAlgo::SetNodeAttr("shape_gamma", MakeValue(""), layer);
+  common::AnfAlgo::SetNodeAttr("shape_gamma", MakeValue(""), layer);
 
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
   auto pm = std::make_shared<opt::PassManager>();

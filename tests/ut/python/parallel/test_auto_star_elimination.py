@@ -19,11 +19,18 @@ import mindspore.nn as nn
 from mindspore import Tensor, Parameter
 from mindspore import context
 from mindspore.common import dtype as mstype
-from mindspore.common.api import _executor
-from mindspore.nn.loss.loss import _Loss
+from mindspore.common.api import _cell_graph_executor
+from mindspore.nn.loss.loss import LossBase
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
 from tests.ut.python.ops.test_math_ops import VirtualLoss
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
+grad_all = C.GradOperation(get_all=True)
 
 
 class NetWithLoss(nn.Cell):
@@ -43,7 +50,7 @@ class GradWrap(nn.Cell):
         self.network = network
 
     def construct(self, x, y):
-        return C.grad_all(self.network)(x, y)
+        return grad_all(self.network)(x, y)
 
 
 class CustomMatMul(nn.Cell):
@@ -56,7 +63,7 @@ class CustomMatMul(nn.Cell):
         return out
 
 
-class MarginCE(_Loss):
+class MarginCE(LossBase):
     def __init__(self):
         super(MarginCE, self).__init__()
         self.fc = CustomMatMul(transpose_b=True)
@@ -78,12 +85,17 @@ class MarginCE(_Loss):
 
 
 def test_marin_loss():
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
     context.set_auto_parallel_context(device_num=4, global_rank=0)
 
     x = Tensor(np.ones([512, 512]), dtype=ms.float32)
     y = Tensor(np.ones([512, 512]), dtype=ms.float32)
 
     net = GradWrap(NetWithLoss(MarginCE()))
-    context.set_auto_parallel_context(parallel_mode="auto_parallel")
-    net.set_auto_parallel()
-    _executor.compile(net, x, y)
+    context.set_auto_parallel_context(parallel_mode="auto_parallel", search_mode="dynamic_programming")
+    net.set_train()
+    _cell_graph_executor.compile(net, x, y)

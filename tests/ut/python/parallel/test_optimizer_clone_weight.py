@@ -18,16 +18,20 @@ import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor, Parameter
 from mindspore import context
-from mindspore.common.api import _Executor
+from mindspore.common.api import _CellGraphExecutor
 from mindspore.nn import TrainOneStepCell
 from mindspore.nn.optim import AdamWeightDecay
 from mindspore.ops import operations as P
 
 
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
 class NetWithLoss(nn.Cell):
     def __init__(self, network, strategy3):
         super(NetWithLoss, self).__init__()
-        self.loss = P.SoftmaxCrossEntropyWithLogits().set_strategy(strategy3)
+        self.loss = P.SoftmaxCrossEntropyWithLogits().shard(strategy3)
         self.network = network
 
     def construct(self, x, b):
@@ -36,8 +40,7 @@ class NetWithLoss(nn.Cell):
 
 
 def compile_net(net, x, b):
-    net.set_auto_parallel()
-    _Executor().compile(net, x, b)
+    _CellGraphExecutor().compile(net, x, b)
 
 
 def test_optimizer_clone_weight():
@@ -45,8 +48,8 @@ def test_optimizer_clone_weight():
         def __init__(self, strategy1, strategy2, weight):
             super().__init__()
             self.weight = Parameter(weight, "w1")
-            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).set_strategy(strategy1)
-            self.relu = P.ReLU().set_strategy(strategy2)
+            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).shard(strategy1)
+            self.relu = P.ReLU().shard(strategy2)
 
         def construct(self, x):
             out = self.matmul(x, self.weight)
@@ -54,6 +57,7 @@ def test_optimizer_clone_weight():
             return out
 
     context.set_auto_parallel_context(device_num=4, global_rank=0)
+    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
 
     strategy1 = ((2, 1), (2, 1))
     strategy2 = ((4, 1),)
@@ -70,7 +74,6 @@ def test_optimizer_clone_weight():
     net_with_loss = NetWithLoss(net, strategy3)
 
     train_net = TrainOneStepCell(net_with_loss, optimizer)
-    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
 
     compile_net(train_net, x, b)
 
@@ -80,8 +83,8 @@ def test_optimizer_clone_weight2():
         def __init__(self, strategy1, strategy2, weight):
             super().__init__()
             self.weight = Parameter(weight, "w1")
-            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).set_strategy(strategy1)
-            self.relu = P.ReLU().set_strategy(strategy2)
+            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).shard(strategy1)
+            self.relu = P.ReLU().shard(strategy2)
 
         def construct(self, x):
             out = self.matmul(x, self.weight)
@@ -89,6 +92,7 @@ def test_optimizer_clone_weight2():
             return out
 
     context.set_auto_parallel_context(device_num=4, global_rank=0)
+    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
 
     strategy1 = ((2, 1), (2, 1))
     strategy2 = ((4, 1),)
@@ -105,6 +109,5 @@ def test_optimizer_clone_weight2():
     net_with_loss = NetWithLoss(net, strategy3)
 
     train_net = TrainOneStepCell(net_with_loss, optimizer)
-    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
 
     compile_net(train_net, x, b)

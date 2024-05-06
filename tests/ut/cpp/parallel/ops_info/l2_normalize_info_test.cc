@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@
 #include <list>
 #include <vector>
 #include "common/common_test.h"
-#include "parallel/strategy.h"
-#include "parallel/ops_info/l2_normalize_info.h"
-#include "parallel/device_manager.h"
-#include "parallel/step_parallel.h"
+#include "frontend/parallel/strategy.h"
+#include "frontend/parallel/ops_info/l2_normalize_info.h"
+#include "frontend/parallel/device_manager.h"
+#include "frontend/parallel/step_parallel.h"
 
 namespace mindspore {
 namespace parallel {
@@ -38,13 +38,13 @@ class TestL2NormalizeInfo : public UT::Common {
 };
 
 void TestL2NormalizeInfo::SetUp() {
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 34; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(32);
   stage_map.push_back(2);
 
@@ -54,8 +54,8 @@ void TestL2NormalizeInfo::SetUp() {
   g_device_manager = std::make_shared<DeviceManager>();
   g_device_manager->Init(dev_list, local_dev, stage_map, "hccl");
 
-  ValuePtr axis = MakeValue(1);
-  std::unordered_map<std::string, ValuePtr> attr = {{AXIS, axis}};
+  ValuePtr axis = MakeValue(std::vector<int64_t>{1});
+  mindspore::HashMap<std::string, ValuePtr> attr = {{AXIS, axis}};
 
   Shapes inputs_shape = {{32, 64, 96}};
   Shapes outputs_shape = {{32, 64, 96}};
@@ -64,21 +64,21 @@ void TestL2NormalizeInfo::SetUp() {
 }
 
 TEST_F(TestL2NormalizeInfo, InferDevMatrixShape1) {
-  std::vector<Dimensions> inputs = {{4, 1, 8}};
+  Strategies inputs = {{4, 1, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  norm->Init(strategy);
-  std::vector<int32_t> dev_matrix_shape = norm->dev_matrix_shape();
+  norm->Init(strategy, nullptr);
+  Shape dev_matrix_shape = norm->dev_matrix_shape();
 
-  std::vector<int32_t> expect = {4, 1, 8};
+  Shape expect = {4, 1, 8};
   ASSERT_EQ(dev_matrix_shape, expect);
 }
 
 TEST_F(TestL2NormalizeInfo, InferSliceShape1) {
-  std::vector<Dimensions> str = {{4, 1, 8}};
+  Strategies str = {{4, 1, 8}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  norm->Init(strategy);
+  norm->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = norm->inputs_tensor_info();
   std::vector<TensorInfo> outputs = norm->outputs_tensor_info();
 
@@ -96,10 +96,10 @@ TEST_F(TestL2NormalizeInfo, InferSliceShape1) {
 }
 
 TEST_F(TestL2NormalizeInfo, GetTensorLayout1) {
-  std::vector<Dimensions> str = {{4, 1, 8}};
+  Strategies str = {{4, 1, 8}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  norm->Init(strategy);
+  norm->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = norm->inputs_tensor_info();
   std::vector<TensorInfo> outputs = norm->outputs_tensor_info();
 
@@ -117,10 +117,10 @@ TEST_F(TestL2NormalizeInfo, GetTensorLayout1) {
 }
 
 TEST_F(TestL2NormalizeInfo, GetForwardOp1) {
-  std::vector<Dimensions> inputs = {{4, 1, 8}};
+  Strategies inputs = {{4, 1, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  norm->Init(strategy);
+  norm->Init(strategy, nullptr);
   OperatorVector forward_op = norm->forward_op();
   size_t size = forward_op.size();
 
@@ -128,10 +128,10 @@ TEST_F(TestL2NormalizeInfo, GetForwardOp1) {
 }
 
 TEST_F(TestL2NormalizeInfo, GetMirrorOPs1) {
-  std::vector<Dimensions> inputs = {{4, 1, 8}};
+  Strategies inputs = {{4, 1, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  norm->Init(strategy);
+  norm->Init(strategy, nullptr);
   MirrorOps mirror_ops = norm->mirror_ops();
 
   size_t size = mirror_ops.size();
@@ -140,42 +140,42 @@ TEST_F(TestL2NormalizeInfo, GetMirrorOPs1) {
 }
 
 TEST_F(TestL2NormalizeInfo, CheckStrategy1) {
-  std::vector<Dimensions> inputs = {{4, 1, 8}, {4, 1, 8}};
+  Strategies inputs = {{4, 1, 8}, {4, 1, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = norm->Init(strategy);
+  Status ret = norm->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 
 TEST_F(TestL2NormalizeInfo, CheckStrategy2) {
-  std::vector<Dimensions> inputs = {{4, 2, 3}};
+  Strategies inputs = {{4, 2, 3}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = norm->Init(strategy);
+  Status ret = norm->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 
 TEST_F(TestL2NormalizeInfo, CheckStrategy3) {
-  std::vector<Dimensions> inputs = {{4, 2, 3, 4}};
+  Strategies inputs = {{4, 2, 3, 4}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = norm->Init(strategy);
+  Status ret = norm->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 
 TEST_F(TestL2NormalizeInfo, CheckStrategy4) {
-  std::vector<Dimensions> inputs = {{4, 1, 8}};
+  Strategies inputs = {{4, 1, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = norm->Init(strategy);
+  Status ret = norm->Init(strategy, nullptr);
   ASSERT_EQ(ret, SUCCESS);
 }
 
 TEST_F(TestL2NormalizeInfo, mirror_ops) {
-  std::vector<Dimensions> inputs = {{2, 1, 8}};
+  Strategies inputs = {{2, 1, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  norm->Init(strategy);
+  norm->Init(strategy, nullptr);
   MirrorOps mirror_ops = norm->mirror_ops();
   OperatorVector mirror_op = mirror_ops.at(0);
 

@@ -15,11 +15,12 @@
 
 from mindspore.ops import Primitive
 from mindspore.ops import operations as P
+from mindspore.ops import _constants as Constants
 
 batch_norm = P.BatchNorm(is_training=False)
 bn_infer = Primitive('BNInfer')
-make_tuple = Primitive('make_tuple')
-tuple_getitem = Primitive('tuple_getitem')
+make_tuple = Primitive('MakeTuple')
+tuple_getitem = Primitive(Constants.kTupleGetItem)
 
 
 class FnDict:
@@ -45,6 +46,8 @@ def test_batchnorm_to_bninfer(tag):
     @fns
     def after(input0, input1, input2, input3, input4):
         res = bn_infer(input0, input1, input2, input3, input4)
+        res = make_tuple(res)
+        res = tuple_getitem(res, 0)
         return make_tuple(res)
 
     @fns

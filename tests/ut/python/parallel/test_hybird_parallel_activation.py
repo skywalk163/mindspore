@@ -18,10 +18,18 @@ import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
+from mindspore.ops.operations._inner_ops import SiLU
 from tests.ut.python.ops.test_math_ops import VirtualLoss
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
+grad_all = C.GradOperation(get_all=True)
 
 
 class NetWithLoss(nn.Cell):
@@ -41,21 +49,50 @@ class GradWrap(nn.Cell):
         self.network = network
 
     def construct(self, x, y, b):
-        return C.grad_all(self.network)(x, y, b)
+        return grad_all(self.network)(x, y, b)
 
 
 def compile_net(net, x, y, b):
-    net.set_auto_parallel()
-    _executor.compile(net, x, y, b)
+    net.set_train()
+    _cell_graph_executor.compile(net, x, y, b)
 
+def test_matmul_silu():
+    """
+    Feature: op silu support distribution
+    Description: test silu op with input and strategy
+    Expectation: compile success
+    """
+    class Net(nn.Cell):
+        def __init__(self, strategy1, strategy2, strategy3):
+            super().__init__()
+            self.matmul1 = P.MatMul().shard(strategy1)
+            self.matmul2 = P.MatMul().shard(strategy2)
+            self.silu = SiLU().shard(strategy3)
+
+        def construct(self, x, y, b):
+            out = self.silu(self.matmul1(x, y))
+            out = self.matmul2(out, b)
+            return out
+
+    strategy1 = ((16, 1), (1, 1))
+    strategy2 = ((1, 1), (1, 16))
+    strategy3 = ((4, 4),)
+    net = GradWrap(NetWithLoss(Net(strategy1, strategy2, strategy3)))
+    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
+    context.set_auto_parallel_context(device_num=16, global_rank=0)
+
+    x = Tensor(np.ones([128, 32]), dtype=ms.float32)
+    y = Tensor(np.ones([32, 64]), dtype=ms.float32)
+    b = Tensor(np.ones([64, 64]), dtype=ms.float32)
+    compile_net(net, x, y, b)
 
 def test_matmul_tanh():
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2, strategy3):
             super().__init__()
-            self.matmul1 = P.MatMul().set_strategy(strategy1)
-            self.matmul2 = P.MatMul().set_strategy(strategy2)
-            self.tanh = P.Tanh().set_strategy(strategy3)
+            self.matmul1 = P.MatMul().shard(strategy1)
+            self.matmul2 = P.MatMul().shard(strategy2)
+            self.tanh = P.Tanh().shard(strategy3)
 
         def construct(self, x, y, b):
             out = self.tanh(self.matmul1(x, y))
@@ -79,9 +116,9 @@ def test_matmul_activation():
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2, strategy3):
             super().__init__()
-            self.matmul1 = P.MatMul().set_strategy(strategy1)
-            self.matmul2 = P.MatMul().set_strategy(strategy2)
-            self.activation = P.ReLU().set_strategy(strategy3)
+            self.matmul1 = P.MatMul().shard(strategy1)
+            self.matmul2 = P.MatMul().shard(strategy2)
+            self.activation = P.ReLU().shard(strategy3)
 
         def construct(self, x, y, b):
             out = self.activation(self.matmul1(x, y))
@@ -105,9 +142,9 @@ def test_matmul_softmax():
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2, strategy3):
             super().__init__()
-            self.matmul1 = P.MatMul().set_strategy(strategy1)
-            self.matmul2 = P.MatMul().set_strategy(strategy2)
-            self.softmax = P.Softmax().set_strategy(strategy3)
+            self.matmul1 = P.MatMul().shard(strategy1)
+            self.matmul2 = P.MatMul().shard(strategy2)
+            self.softmax = P.Softmax().shard(strategy3)
 
         def construct(self, x, y, b):
             out = self.softmax(self.matmul1(x, y))
@@ -131,9 +168,9 @@ def test_matmul_logsoftmax():
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2, strategy3):
             super().__init__()
-            self.matmul1 = P.MatMul().set_strategy(strategy1)
-            self.matmul2 = P.MatMul().set_strategy(strategy2)
-            self.logsoftmax = P.LogSoftmax().set_strategy(strategy3)
+            self.matmul1 = P.MatMul().shard(strategy1)
+            self.matmul2 = P.MatMul().shard(strategy2)
+            self.logsoftmax = P.LogSoftmax().shard(strategy3)
 
         def construct(self, x, y, b):
             out = self.logsoftmax(self.matmul1(x, y))
@@ -157,12 +194,12 @@ def test_activations():
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2, strategy3):
             super().__init__()
-            self.matmul1 = P.MatMul().set_strategy(strategy1)
-            self.matmul2 = P.MatMul().set_strategy(strategy2)
-            self.gelu = P.Gelu().set_strategy(strategy3)
-            self.tanh = P.Tanh().set_strategy(strategy3)
-            self.softmax = P.Softmax().set_strategy(strategy3)
-            self.logsoftmax = P.LogSoftmax().set_strategy(strategy3)
+            self.matmul1 = P.MatMul().shard(strategy1)
+            self.matmul2 = P.MatMul().shard(strategy2)
+            self.gelu = P.GeLU().shard(strategy3)
+            self.tanh = P.Tanh().shard(strategy3)
+            self.softmax = P.Softmax().shard(strategy3)
+            self.logsoftmax = P.LogSoftmax().shard(strategy3)
 
         def construct(self, x, y, b):
             out = self.gelu(self.tanh(self.matmul1(x, y)))
@@ -186,12 +223,12 @@ def test_activations_repeated_calculation():
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2, strategy3, strategy4, strategy5, strategy6):
             super().__init__()
-            self.matmul1 = P.MatMul().set_strategy(strategy1)
-            self.matmul2 = P.MatMul().set_strategy(strategy2)
-            self.gelu = P.Gelu().set_strategy(strategy3)
-            self.tanh = P.Tanh().set_strategy(strategy4)
-            self.softmax = P.Softmax().set_strategy(strategy5)
-            self.logsoftmax = P.LogSoftmax().set_strategy(strategy6)
+            self.matmul1 = P.MatMul().shard(strategy1)
+            self.matmul2 = P.MatMul().shard(strategy2)
+            self.gelu = P.GeLU().shard(strategy3)
+            self.tanh = P.Tanh().shard(strategy4)
+            self.softmax = P.Softmax().shard(strategy5)
+            self.logsoftmax = P.LogSoftmax().shard(strategy6)
 
         def construct(self, x, y, b):
             out = self.gelu(self.tanh(self.matmul1(x, y)))
@@ -218,12 +255,12 @@ def test_activations_axis_tuple():
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2, strategy3, strategy4, strategy5, strategy6):
             super().__init__()
-            self.matmul1 = P.MatMul().set_strategy(strategy1)
-            self.matmul2 = P.MatMul().set_strategy(strategy2)
-            self.gelu = P.Gelu().set_strategy(strategy3)
-            self.tanh = P.Tanh().set_strategy(strategy4)
-            self.softmax = P.Softmax(axis=(0, 1)).set_strategy(strategy5)
-            self.logsoftmax = P.LogSoftmax().set_strategy(strategy6)
+            self.matmul1 = P.MatMul().shard(strategy1)
+            self.matmul2 = P.MatMul().shard(strategy2)
+            self.gelu = P.GeLU().shard(strategy3)
+            self.tanh = P.Tanh().shard(strategy4)
+            self.softmax = P.Softmax(axis=(0, 1)).shard(strategy5)
+            self.logsoftmax = P.LogSoftmax().shard(strategy6)
 
         def construct(self, x, y, b):
             out = self.gelu(self.tanh(self.matmul1(x, y)))

@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,42 +15,34 @@
  */
 
 #include <sstream>
-#include "dataset/util/btree.h"
-#include "dataset/util/auto_index.h"
-#include "dataset/util/system_pool.h"
-#include "dataset/util/task_manager.h"
+#include "minddata/dataset/util/btree.h"
+#include "minddata/dataset/util/auto_index.h"
+#include "minddata/dataset/util/system_pool.h"
+#include "minddata/dataset/util/task_manager.h"
 #include "common/common.h"
 #include "gtest/gtest.h"
-#include "dataset/util/de_error.h"
 #include "utils/log_adapter.h"
 
 using namespace mindspore::dataset;
-using mindspore::MsLogLevel::INFO;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::LogStream;
 
 // For testing purposes, we will make the branching factor very low.
 struct mytraits {
-    using slot_type = uint16_t;
-
-    static const slot_type kLeafSlots = 6;
-
-    static const slot_type kInnerSlots = 3;
-
-    static const bool kAppendMode = false;
-
+  using slot_type = uint16_t;
+  static const slot_type kLeafSlots = 6;
+  static const slot_type kInnerSlots = 3;
 };
-
 
 class MindDataTestBPlusTree : public UT::Common {
  public:
-    MindDataTestBPlusTree() = default;
+  MindDataTestBPlusTree() = default;
 };
 
-// Test serial insert.
+/// Feature: Btree
+/// Description: Test Btree serial insert
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestBPlusTree, Test1) {
   Allocator<std::string> alloc(std::make_shared<SystemPool>());
-  BPlusTree<uint64_t, std::string, Allocator<std::string>, std::less<uint64_t>, mytraits> btree(alloc);
+  BPlusTree<uint64_t, std::string, Allocator<std::string>, std::less<>, mytraits> btree(alloc);
   Status rc;
   for (int i = 0; i < 100; i++) {
     uint64_t key = 2 * i;
@@ -95,42 +87,46 @@ TEST_F(MindDataTestBPlusTree, Test1) {
   // Test search
   {
     MS_LOG(INFO) << "Locate key " << 100 << " Expect found.";
-    auto it = btree.Search(100);
-    EXPECT_FALSE(it == btree.end());
+    auto r = btree.Search(100);
+    auto &it = r.first;
+    EXPECT_TRUE(r.second);
     EXPECT_EQ(it.key(), 100);
     EXPECT_EQ(it.value(), "Hello World. I am 100");
     MS_LOG(INFO) << "Locate key " << 300 << " Expect not found.";
-    it = btree.Search(300);
-    EXPECT_TRUE(it == btree.end());
+    auto q = btree.Search(300);
+    EXPECT_FALSE(q.second);
   }
 
   // Test duplicate key
   {
     rc = btree.DoInsert(100, "Expect error");
-    EXPECT_EQ(rc, Status(StatusCode::kDuplicateKey));
+    EXPECT_EQ(rc, Status(StatusCode::kMDDuplicateKey));
   }
 }
 
-// Test concurrent insert.
+/// Feature: Btree
+/// Description: Test Btree concurrent insert
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestBPlusTree, Test2) {
   Allocator<std::string> alloc(std::make_shared<SystemPool>());
-  BPlusTree<uint64_t, std::string, Allocator<std::string>, std::less<uint64_t>, mytraits> btree(alloc);
+  BPlusTree<uint64_t, std::string, Allocator<std::string>, std::less<>, mytraits> btree(alloc);
   TaskGroup vg;
   auto f = [&](int k) -> Status {
     TaskManager::FindMe()->Post();
-      for (int i = 0; i < 100; i++) {
-        uint64_t key = k * 100 + i;
-        std::ostringstream oss;
-        oss << "Hello World. I am " << key;
-        Status rc = btree.DoInsert(key, oss.str());
-        EXPECT_TRUE(rc.IsOk());
-      }
-      return Status::OK();
+    for (int i = 0; i < 100; i++) {
+      uint64_t key = k * 100 + i;
+      std::ostringstream oss;
+      oss << "Hello World. I am " << key;
+      Status rc = btree.DoInsert(key, oss.str());
+      EXPECT_TRUE(rc.IsOk());
+    }
+    return Status::OK();
   };
   auto g = [&](int k) -> Status {
     TaskManager::FindMe()->Post();
     for (int i = 0; i < 1000; i++) {
-      uint64_t key = rand() % 10000;;
+      uint64_t key = rand() % 10000;
+      ;
       auto it = btree.Search(key);
     }
     return Status::OK();
@@ -169,29 +165,24 @@ TEST_F(MindDataTestBPlusTree, Test2) {
   {
     MS_LOG(INFO) << "Locating key from 0 to 9999. Expect found.";
     for (int i = 0; i < 10000; i++) {
-      auto it = btree.Search(i);
-      bool eoS = (it == btree.end());
-      EXPECT_FALSE(eoS);
-      if (!eoS) {
+      auto r = btree.Search(i);
+      EXPECT_TRUE(r.second);
+      if (r.second) {
+        auto &it = r.first;
         EXPECT_EQ(it.key(), i);
         std::string val = "Hello World. I am " + std::to_string(i);
         EXPECT_EQ(it.value(), val);
       }
     }
     MS_LOG(INFO) << "Locate key " << 10000 << ". Expect not found";
-    auto it = btree.Search(10000);
-    EXPECT_TRUE(it == btree.end());
-  }
-
-  // Test to retrieve key at certain position.
-  {
-    for (int i = 0; i < 10000; i++) {
-      int k = btree.KeyAtPos(i);
-      EXPECT_EQ(k, i);
-    }
+    auto q = btree.Search(10000);
+    EXPECT_FALSE(q.second);
   }
 }
 
+/// Feature: AutoIndexObj
+/// Description: Test AutoIndexObj basic usage
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestBPlusTree, Test3) {
   Allocator<std::string> alloc(std::make_shared<SystemPool>());
   AutoIndexObj<std::string, Allocator<std::string>> ai(alloc);
@@ -202,9 +193,10 @@ TEST_F(MindDataTestBPlusTree, Test3) {
   EXPECT_TRUE(rc.IsOk());
   uint64_t min = ai.min_key();
   uint64_t max = ai.max_key();
-  EXPECT_EQ(min, 1);
-  EXPECT_EQ(max, 4);
-  auto it = ai.Search(3);
+  EXPECT_EQ(min, 0);
+  EXPECT_EQ(max, 3);
+  auto r = ai.Search(2);
+  auto &it = r.first;
   EXPECT_EQ(it.value(), "b");
   MS_LOG(INFO) << "Dump all the values using [] operator.";
   for (uint64_t i = min; i <= max; i++) {
@@ -212,6 +204,9 @@ TEST_F(MindDataTestBPlusTree, Test3) {
   }
 }
 
+/// Feature: AutoIndexObj
+/// Description: Test AutoIndexObj iterator function
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestBPlusTree, Test4) {
   Allocator<int64_t> alloc(std::make_shared<SystemPool>());
   AutoIndexObj<int64_t, Allocator<int64_t>> ai(alloc);
@@ -237,4 +232,26 @@ TEST_F(MindDataTestBPlusTree, Test4) {
     }
     EXPECT_EQ(cnt, 1000);
   }
+}
+
+/// Feature: Btree
+/// Description: Test Btree with no locking
+/// Expectation: Output is equal to the expected output
+TEST_F(MindDataTestBPlusTree, TestPerfNoLocking) {
+  AutoIndexObj<int64_t> btree;
+  // No locking test
+  btree.SetLocking(false);
+  // Insert a million entries using the default traits.
+  for (auto i = 0; i < 1000000; ++i) {
+    ASSERT_TRUE(btree.insert(i));
+  }
+  std::cout << "Tree height : " << btree.GetHeight() << std::endl;
+  std::cout << "Tree Order : " << btree.GetOrder() << std::endl;
+  std::cout << "Number of leaves : " << btree.GetNumLeaves() << std::endl;
+  std::cout << "Number of inner nodes : " << btree.GetNumInnerNodes() << std::endl;
+
+  auto r = btree.Search(3);
+  EXPECT_TRUE(r.second);
+  r = btree.Search(999999);
+  EXPECT_TRUE(r.second);
 }

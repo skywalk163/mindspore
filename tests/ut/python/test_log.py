@@ -29,12 +29,13 @@ def test_log_stdout():
     # print the logs without raising an exception.
     from mindspore import log as logger
     log_str = 'print informations'
-    logger.error("1 test log message info :%s", log_str)
-    logger.info("2 test log message info")
-    logger.warning("3 test log message warning")
-    logger.debug("4 test log message debug:%s", log_str)
+    logger.debug("test log message debug:%s", log_str)
+    logger.info("test log message info :%s", log_str)
+    logger.warning("test log message warning :%s", log_str)
+    logger.error("test log message error :%s", log_str)
+    logger.critical("test log message critical :%s", log_str)
     # Clean up _global_logger to avoid affecting for next usecase
-    logger._global_logger = None
+    _clear_logger(logger)
 
 
 def test_log_default():
@@ -44,7 +45,7 @@ def test_log_default():
     targetdict = {'GLOG_v': '2', 'GLOG_logtostderr': '1'}
     assert configdict == targetdict
     # Clean up _global_logger to avoid affecting for next usecase
-    logger._global_logger = None
+    _clear_logger(logger)
 
 
 def test_log_setlevel():
@@ -53,49 +54,51 @@ def test_log_setlevel():
     from mindspore import log as logger
     # logger_instance = logger._get_logger()
     # del logger_instance
+    _clear_logger(logger)
     loglevel = logger.get_level()
     log_str = 'print debug informations'
     logger.debug("5 test log message debug:%s", log_str)
     assert loglevel == '0'
     # Clean up _global_logger to avoid affecting for next usecase
-    logger._global_logger = None
+    _clear_logger(logger)
 
 
 def test_log_file():
     """
-    test the log contect written in log file
+    test the log content written in log file
     """
     _rm_env_config()
     file_path = '/tmp/log/mindspore_test'
-    os.environ['GLOG_v'] = '0'
+    os.environ['GLOG_v'] = '2'
     os.environ['GLOG_logtostderr'] = '0'
     os.environ['GLOG_log_dir'] = file_path
-
-    from mindspore import log as logger
-    filename = f'{file_path}/mindspore.log'
     if os.path.exists(file_path):
         shutil.rmtree(file_path)
-
+    filename = ''
     os.makedirs(file_path, exist_ok=True)
-    # Clear test file
-    if os.path.exists(filename):
-        os.remove(filename)
+    from mindspore import log as logger
+    _clear_logger(logger)
     logger.warning("test log message warning")
+    file_path += '/rank_0/logs'
+    f_list = os.listdir(file_path)
+    # print f_list
+    for file_name in f_list:
+        if file_name.startswith('mindspore.log'):
+            filename = f'{file_path}/{file_name}'
     cmd = f'cat {filename}'
     result = os.popen(cmd).read()
     # pylint: disable=anomalous-backslash-in-string
+
     pattern = "\[WARNING\] ME\(.*[0-9]:.*[0-9]\,.*[a-zA-Z0-9]\):.* " \
               "\[.*:.*[0-9]\] test log message warning"
     match_obj = re.match(pattern, result)
-
     # Clear test file
     if os.path.exists(file_path):
         shutil.rmtree(file_path)
 
     assert match_obj
     # Clean up _global_logger to avoid affecting for next usecase
-    logger._global_logger = None
-
+    _clear_logger(logger)
 
 def test_log_backup_count():
     """
@@ -111,16 +114,18 @@ def test_log_backup_count():
     os.environ['logger_maxBytes'] = '1000'
     os.environ['logger_backupCount'] = '10'
 
-    from mindspore import log as logger
     if os.path.exists(file_path):
         shutil.rmtree(file_path)
     os.makedirs(file_path, exist_ok=True)
+    from mindspore import log as logger
+    _clear_logger(logger)
 
     log_count = 100
     for i in range(0, log_count, 1):
         logger.warning("test log message warning %r", i)
 
-    cmd = f'cd {file_path};ls |wc -l'
+    file_path += '/rank_0/logs'
+    cmd = f'cd {file_path};ls -l | grep \'mindspore.log.*\'|wc -l'
     backup_count = '11'
     file_count = os.popen(cmd).read().strip()
 
@@ -128,7 +133,7 @@ def test_log_backup_count():
         shutil.rmtree(file_path)
     assert file_count == backup_count
     # Clean up _global_logger to avoid affecting for next usecase
-    logger._global_logger = None
+    _clear_logger(logger)
 
 
 def test_log_verify_envconfig():
@@ -162,7 +167,6 @@ def test_log_verify_envconfig():
     # path does not exist
     _rm_env_config()
     os.environ['GLOG_logtostderr'] = '0'
-    os.environ['GLOG_log_dir'] = '/test'
     verify_dict_4 = logger._get_env_config()
 
     # path is not configured
@@ -173,7 +177,6 @@ def test_log_verify_envconfig():
     # logger_maxBytes is not a number
     _rm_env_config()
     os.environ['GLOG_logtostderr'] = '0'
-    os.environ['GLOG_log_dir'] = '/tmp'
     os.environ['logger_maxBytes'] = 'test'
     os.environ['logger_backupCount'] = '10'
     verify_dict_6 = logger._get_env_config()
@@ -181,7 +184,6 @@ def test_log_verify_envconfig():
     # logger_maxBytes is a negative number
     _rm_env_config()
     os.environ['GLOG_logtostderr'] = '0'
-    os.environ['GLOG_log_dir'] = '/tmp'
     os.environ['logger_maxBytes'] = '-1'
     os.environ['logger_backupCount'] = '10'
     verify_dict_7 = logger._get_env_config()
@@ -189,7 +191,6 @@ def test_log_verify_envconfig():
     # logger_backupCount is not a number
     _rm_env_config()
     os.environ['GLOG_logtostderr'] = '0'
-    os.environ['GLOG_log_dir'] = '/tmp'
     os.environ['logger_maxBytes'] = '0'
     os.environ['logger_backupCount'] = 'test'
     verify_dict_8 = logger._get_env_config()
@@ -197,7 +198,6 @@ def test_log_verify_envconfig():
     # logger_backupCount is a negative number
     _rm_env_config()
     os.environ['GLOG_logtostderr'] = '0'
-    os.environ['GLOG_log_dir'] = '/tmp'
     os.environ['logger_maxBytes'] = '0'
     os.environ['logger_backupCount'] = '-1'
     verify_dict_9 = logger._get_env_config()
@@ -211,6 +211,8 @@ def test_log_verify_envconfig():
             logger._verify_config(verify_dict)
         except ValueError as ve:
             print(ve)
+            # avoid c++ glog error causing ut failed
+            os.environ['GLOG_log_dir'] = '/tmp/log/'
             assert True
         except TypeError as te:
             print(te)
@@ -218,7 +220,7 @@ def test_log_verify_envconfig():
         else:
             assert False
     # Clean up _global_logger to avoid affecting for next usecase
-    logger._global_logger = None
+    _clear_logger(logger)
 
 
 def test_log_repeated_print():
@@ -234,7 +236,7 @@ def test_log_repeated_print():
     py_logging.addHandler(handler)
     logger.info("test log message info test ")
     # Clean up _global_logger to avoid affecting for next usecase
-    logger._global_logger = None
+    _clear_logger(logger)
 
 
 def test_log_getconfig():
@@ -245,13 +247,15 @@ def test_log_getconfig():
     os.environ['logger_maxBytes'] = '1000'
     os.environ['logger_backupCount'] = '10'
     from mindspore import log as logger
-    logger.info("test log message info test ")
+    _clear_logger(logger)
+    logger.info("test log message info test")
     configdict = logger.get_log_config()
-    targetdict = {'GLOG_v': '3', 'GLOG_log_dir': '/tmp/log',
-                  'GLOG_logtostderr': '0', 'logger_maxBytes': 1000, 'logger_backupCount': 10}
+    targetdict = {'GLOG_v': '3', 'GLOG_log_dir': '/tmp/log/rank_0/logs',
+                  'GLOG_logtostderr': '0', 'logger_maxBytes': 1000,
+                  'logger_backupCount': 10, 'GLOG_stderrthreshold': '2'}
     assert configdict == targetdict
     # Clean up _global_logger to avoid affecting for next usecase
-    logger._global_logger = None
+    _clear_logger(logger)
 
 
 def test_log_perf():
@@ -297,7 +301,7 @@ def test_log_perf():
     std_time = 2000
     assert time_diff < std_time
     # Clean up _global_logger to avoid affecting for next usecase
-    logger._global_logger = None
+    _clear_logger(logger)
 
 
 def test_log_ms_import():
@@ -307,6 +311,13 @@ def test_log_ms_import():
     targetdict = {'GLOG_v': '2', 'GLOG_logtostderr': '1'}
     level = ms.get_level()
     assert configdict == targetdict and level == '2'
+
+
+def _clear_logger(logger):
+    if logger.GLOBAL_LOGGER:
+        for handler in logger.GLOBAL_LOGGER.handlers:
+            logger.GLOBAL_LOGGER.removeHandler(handler)
+        logger.GLOBAL_LOGGER = None
 
 
 def _rm_env_config():

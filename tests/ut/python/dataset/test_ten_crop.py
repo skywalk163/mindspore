@@ -1,4 +1,4 @@
-# Copyright 2020 Huawei Technologies Co., Ltd.
+# Copyright 2020-2022 Huawei Technologies Co., Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,9 +18,10 @@ import pytest
 import numpy as np
 
 import mindspore.dataset as ds
-import mindspore.dataset.transforms.vision.py_transforms as vision
-from util import visualize, save_and_check_md5
+import mindspore.dataset.transforms
+import mindspore.dataset.vision as vision
 from mindspore import log as logger
+from util import visualize_list, save_and_check_md5_pil
 
 GENERATE_GOLDEN = False
 
@@ -34,23 +35,24 @@ def util_test_ten_crop(crop_size, vertical_flip=False, plot=False):
     """
     data1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
     transforms_1 = [
-        vision.Decode(),
+        vision.Decode(True),
         vision.ToTensor(),
     ]
-    transform_1 = vision.ComposeOp(transforms_1)
-    data1 = data1.map(input_columns=["image"], operations=transform_1())
+    transform_1 = mindspore.dataset.transforms.Compose(transforms_1)
+    data1 = data1.map(operations=transform_1, input_columns=["image"])
 
     # Second dataset
     data2 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
     transforms_2 = [
-        vision.Decode(),
+        vision.Decode(True),
         vision.TenCrop(crop_size, use_vertical_flip=vertical_flip),
-        lambda images: np.stack([vision.ToTensor()(image) for image in images])  # 4D stack of 10 images
+        lambda *images: np.stack([vision.ToTensor()(image) for image in images])  # 4D stack of 10 images
     ]
-    transform_2 = vision.ComposeOp(transforms_2)
-    data2 = data2.map(input_columns=["image"], operations=transform_2())
+    transform_2 = mindspore.dataset.transforms.Compose(transforms_2)
+    data2 = data2.map(operations=transform_2, input_columns=["image"])
     num_iter = 0
-    for item1, item2 in zip(data1.create_dict_iterator(), data2.create_dict_iterator()):
+    for item1, item2 in zip(data1.create_dict_iterator(num_epochs=1, output_numpy=True),
+                            data2.create_dict_iterator(num_epochs=1, output_numpy=True)):
         num_iter += 1
         image_1 = (item1["image"].transpose(1, 2, 0) * 255).astype(np.uint8)
         image_2 = item2["image"]
@@ -62,7 +64,7 @@ def util_test_ten_crop(crop_size, vertical_flip=False, plot=False):
         logger.info("dtype of image_2: {}".format(image_2.dtype))
 
         if plot:
-            visualize(np.array([image_1]*10), (image_2 * 255).astype(np.uint8).transpose(0, 2, 3, 1))
+            visualize_list(np.array([image_1] * 10), (image_2 * 255).astype(np.uint8).transpose(0, 2, 3, 1))
 
         # The output data should be of a 4D tensor shape, a stack of 10 images.
         assert len(image_2.shape) == 4
@@ -71,7 +73,9 @@ def util_test_ten_crop(crop_size, vertical_flip=False, plot=False):
 
 def test_ten_crop_op_square(plot=False):
     """
-    Tests TenCrop for a square crop
+    Feature: TenCrop op
+    Description: Test TenCrop op for a square crop
+    Expectation: Output's shape is equal to the expected output's shape
     """
 
     logger.info("test_ten_crop_op_square")
@@ -80,7 +84,9 @@ def test_ten_crop_op_square(plot=False):
 
 def test_ten_crop_op_rectangle(plot=False):
     """
-    Tests TenCrop for a rectangle crop
+    Feature: TenCrop op
+    Description: Test TenCrop op for a rectangle crop
+    Expectation: Output's shape is equal to the expected output's shape
     """
 
     logger.info("test_ten_crop_op_rectangle")
@@ -89,7 +95,9 @@ def test_ten_crop_op_rectangle(plot=False):
 
 def test_ten_crop_op_vertical_flip(plot=False):
     """
-    Tests TenCrop with vertical flip set to True
+    Feature: TenCrop op
+    Description: Test TenCrop op with vertical flip set to True
+    Expectation: Output's shape is equal to the expected output's shape
     """
 
     logger.info("test_ten_crop_op_vertical_flip")
@@ -98,33 +106,36 @@ def test_ten_crop_op_vertical_flip(plot=False):
 
 def test_ten_crop_md5():
     """
-    Tests TenCrops for giving the same results in multiple runs.
-    Since TenCrop is a deterministic function, we expect it to return the same result for a specific input every time
+    Feature: TenCrop op
+    Description: Test TenCrop op for giving the same results in multiple run for a specific input (since deterministic)
+    Expectation: Passes the md5 check test
     """
     logger.info("test_ten_crop_md5")
 
     data2 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
     transforms_2 = [
-        vision.Decode(),
+        vision.Decode(True),
         vision.TenCrop((200, 100), use_vertical_flip=True),
-        lambda images: np.stack([vision.ToTensor()(image) for image in images])  # 4D stack of 10 images
+        lambda *images: np.stack([vision.ToTensor()(image) for image in images])  # 4D stack of 10 images
     ]
-    transform_2 = vision.ComposeOp(transforms_2)
-    data2 = data2.map(input_columns=["image"], operations=transform_2())
+    transform_2 = mindspore.dataset.transforms.Compose(transforms_2)
+    data2 = data2.map(operations=transform_2, input_columns=["image"])
     # Compare with expected md5 from images
     filename = "ten_crop_01_result.npz"
-    save_and_check_md5(data2, filename, generate_golden=GENERATE_GOLDEN)
+    save_and_check_md5_pil(data2, filename, generate_golden=GENERATE_GOLDEN)
 
 
 def test_ten_crop_list_size_error_msg():
     """
-    Tests TenCrop error message when the size arg has more than 2 elements
+    Feature: TenCrop op
+    Description: Test TenCrop op when size arg has more than 2 elements
+    Expectation: Error is raised as expected
     """
     logger.info("test_ten_crop_list_size_error_msg")
 
     with pytest.raises(TypeError) as info:
-        transforms = [
-            vision.Decode(),
+        _ = [
+            vision.Decode(True),
             vision.TenCrop([200, 200, 200]),
             lambda images: np.stack([vision.ToTensor()(image) for image in images])  # 4D stack of 10 images
         ]
@@ -134,22 +145,24 @@ def test_ten_crop_list_size_error_msg():
 
 def test_ten_crop_invalid_size_error_msg():
     """
-    Tests TenCrop error message when the size arg is not positive
+    Feature: TenCrop op
+    Description: Test TenCrop op when size arg is not positive
+    Expectation: Error is raised as expected
     """
     logger.info("test_ten_crop_invalid_size_error_msg")
 
     with pytest.raises(ValueError) as info:
-        transforms = [
-            vision.Decode(),
+        _ = [
+            vision.Decode(True),
             vision.TenCrop(0),
             lambda images: np.stack([vision.ToTensor()(image) for image in images])  # 4D stack of 10 images
         ]
-    error_msg = "Input is not within the required range"
+    error_msg = "Input is not within the required interval of [1, 16777216]."
     assert error_msg == str(info.value)
 
     with pytest.raises(ValueError) as info:
-        transforms = [
-            vision.Decode(),
+        _ = [
+            vision.Decode(True),
             vision.TenCrop(-10),
             lambda images: np.stack([vision.ToTensor()(image) for image in images])  # 4D stack of 10 images
         ]
@@ -159,24 +172,26 @@ def test_ten_crop_invalid_size_error_msg():
 
 def test_ten_crop_wrong_img_error_msg():
     """
-    Tests TenCrop error message when the image is not in the correct format.
+    Feature: TenCrop op
+    Description: Test TenCrop op when the input image is not in the correct format
+    Expectation: Error is raised as expected
     """
+
     logger.info("test_ten_crop_wrong_img_error_msg")
 
     data = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
     transforms = [
-        vision.Decode(),
+        vision.Decode(True),
         vision.TenCrop(200),
         vision.ToTensor()
     ]
-    transform = vision.ComposeOp(transforms)
-    data = data.map(input_columns=["image"], operations=transform())
+    transform = mindspore.dataset.transforms.Compose(transforms)
+    data = data.map(operations=transform, input_columns=["image"])
 
     with pytest.raises(RuntimeError) as info:
-        data.create_tuple_iterator().get_next()
-    error_msg = "TypeError: img should be PIL Image or Numpy array. Got <class 'tuple'>"
-
-    # error msg comes from ToTensor()
+        data.create_tuple_iterator(num_epochs=1).__next__()
+    error_msg = \
+        "map operation: [ToTensor] failed. The op is OneToOne, can only accept one tensor as input."
     assert error_msg in str(info.value)
 
 

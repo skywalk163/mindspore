@@ -18,7 +18,8 @@
 #include "common/py_func_graph_fetcher.h"
 #define private public
 #define protected public
-#include "pre_activate/ascend/ir_fission/addn_fission.h"
+#include "plugin/device/ascend/optimizer/ir_fission/addn_fission.h"
+#include "plugin/device/ascend/optimizer/ir_fission/ascend_convert_tuple_input_to_dynamic_input.h"
 #undef private
 #undef protected
 
@@ -35,7 +36,7 @@ class TestHWAddnFission : public BackendCommon {
 TEST_F(TestHWAddnFission, test_addn_fission_divided_by_2) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_addn_fission", "before");
   EXPECT_NE(g, nullptr);
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list;
   for (size_t i = 0; i < 9; ++i) {
@@ -45,6 +46,7 @@ TEST_F(TestHWAddnFission, test_addn_fission_divided_by_2) {
 
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
   auto pm = std::make_shared<opt::PassManager>();
+  pm->AddPass(std::make_shared<opt::AscendConvertTupleInputToDynamicInput>());
   auto addn_fission = std::make_shared<opt::AddnFission>();
   addn_fission->inputs_divisor_ = 2;
   pm->AddPass(addn_fission);
@@ -54,13 +56,19 @@ TEST_F(TestHWAddnFission, test_addn_fission_divided_by_2) {
   FuncGraphPtr g_after = get_py_fun_.CallAndParseRet("test_addn_fission", "after_divided_by_2");
   EXPECT_NE(g_after, nullptr);
   auto kg_after = GetKernelGraph(g_after, args_spec_list);
-  EXPECT_TRUE(CheckEqualGraph(kg_after, new_graph));
+  auto optimizer2 = std::make_shared<opt::GraphOptimizer>();
+  auto pm2 = std::make_shared<opt::PassManager>();
+  pm2->AddPass(std::make_shared<opt::AscendConvertTupleInputToDynamicInput>());
+  optimizer2->AddPassManager(pm2);
+  auto kg_after2 = optimizer2->Optimize(kg_after);
+
+  EXPECT_TRUE(CheckEqualGraph(kg_after2, new_graph));
 }
 
 TEST_F(TestHWAddnFission, test_addn_fission_divided_by_3) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_addn_fission", "before");
   EXPECT_NE(g, nullptr);
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list;
   for (size_t i = 0; i < 9; ++i) {
@@ -70,6 +78,7 @@ TEST_F(TestHWAddnFission, test_addn_fission_divided_by_3) {
 
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
   auto pm = std::make_shared<opt::PassManager>();
+  pm->AddPass(std::make_shared<opt::AscendConvertTupleInputToDynamicInput>());
   auto addn_fission = std::make_shared<opt::AddnFission>();
   addn_fission->inputs_divisor_ = 3;
   pm->AddPass(addn_fission);
@@ -79,13 +88,19 @@ TEST_F(TestHWAddnFission, test_addn_fission_divided_by_3) {
   FuncGraphPtr g_after = get_py_fun_.CallAndParseRet("test_addn_fission", "after_divided_by_3");
   EXPECT_NE(g_after, nullptr);
   auto kg_after = GetKernelGraph(g_after, args_spec_list);
-  EXPECT_TRUE(CheckEqualGraph(kg_after, new_graph));
+  auto optimizer2 = std::make_shared<opt::GraphOptimizer>();
+  auto pm2 = std::make_shared<opt::PassManager>();
+  pm2->AddPass(std::make_shared<opt::AscendConvertTupleInputToDynamicInput>());
+  optimizer2->AddPassManager(pm2);
+  auto kg_after2 = optimizer2->Optimize(kg_after);
+
+  EXPECT_TRUE(CheckEqualGraph(kg_after2, new_graph));
 }
 
 TEST_F(TestHWAddnFission, test_addn_fission_divided_by_4) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_addn_fission", "before");
   EXPECT_NE(g, nullptr);
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list;
   for (size_t i = 0; i < 9; ++i) {
@@ -95,6 +110,7 @@ TEST_F(TestHWAddnFission, test_addn_fission_divided_by_4) {
 
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
   auto pm = std::make_shared<opt::PassManager>();
+  pm->AddPass(std::make_shared<opt::AscendConvertTupleInputToDynamicInput>());
   auto addn_fission = std::make_shared<opt::AddnFission>();
   addn_fission->inputs_divisor_ = 4;
   pm->AddPass(addn_fission);
@@ -104,13 +120,19 @@ TEST_F(TestHWAddnFission, test_addn_fission_divided_by_4) {
   FuncGraphPtr g_after = get_py_fun_.CallAndParseRet("test_addn_fission", "after_divided_by_4");
   EXPECT_NE(g_after, nullptr);
   auto kg_after = GetKernelGraph(g_after, args_spec_list);
-  EXPECT_TRUE(CheckEqualGraph(kg_after, new_graph));
+  auto optimizer2 = std::make_shared<opt::GraphOptimizer>();
+  auto pm2 = std::make_shared<opt::PassManager>();
+  pm2->AddPass(std::make_shared<opt::AscendConvertTupleInputToDynamicInput>());
+  optimizer2->AddPassManager(pm2);
+  auto kg_after2 = optimizer2->Optimize(kg_after);
+
+  EXPECT_TRUE(CheckEqualGraph(kg_after2, new_graph));
 }
 
 TEST_F(TestHWAddnFission, test_addn_fission_divided_by_8) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_addn_fission", "before");
   EXPECT_NE(g, nullptr);
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list;
   for (size_t i = 0; i < 9; ++i) {
@@ -120,6 +142,7 @@ TEST_F(TestHWAddnFission, test_addn_fission_divided_by_8) {
 
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
   auto pm = std::make_shared<opt::PassManager>();
+  pm->AddPass(std::make_shared<opt::AscendConvertTupleInputToDynamicInput>());
   auto addn_fission = std::make_shared<opt::AddnFission>();
   addn_fission->inputs_divisor_ = 8;
   pm->AddPass(addn_fission);
@@ -129,13 +152,19 @@ TEST_F(TestHWAddnFission, test_addn_fission_divided_by_8) {
   FuncGraphPtr g_after = get_py_fun_.CallAndParseRet("test_addn_fission", "after_divided_by_8");
   EXPECT_NE(g_after, nullptr);
   auto kg_after = GetKernelGraph(g_after, args_spec_list);
-  EXPECT_TRUE(CheckEqualGraph(kg_after, new_graph));
+  auto optimizer2 = std::make_shared<opt::GraphOptimizer>();
+  auto pm2 = std::make_shared<opt::PassManager>();
+  pm2->AddPass(std::make_shared<opt::AscendConvertTupleInputToDynamicInput>());
+  optimizer2->AddPassManager(pm2);
+  auto kg_after2 = optimizer2->Optimize(kg_after);
+
+  EXPECT_TRUE(CheckEqualGraph(kg_after2, new_graph));
 }
 
 TEST_F(TestHWAddnFission, test_addn_fission_divided_by_9) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_addn_fission", "before");
   EXPECT_NE(g, nullptr);
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list;
   for (size_t i = 0; i < 9; ++i) {

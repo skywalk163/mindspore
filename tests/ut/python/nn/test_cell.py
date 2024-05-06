@@ -13,12 +13,16 @@
 # limitations under the License.
 # ============================================================================
 """ test cell """
+import copy
 import numpy as np
 import pytest
 
+import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor, Parameter
-from mindspore.common.api import _executor
+from mindspore.ops import operations as P
+from mindspore.common.api import _cell_graph_executor
+from mindspore.common.initializer import initializer, One
 
 
 class ModA(nn.Cell):
@@ -196,8 +200,13 @@ def test_exceptions():
         ModError2(t)
 
     m = nn.Cell()
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(AttributeError):
         m.construct()
+
+
+def test_cell_copy():
+    net = ConvNet()
+    copy.deepcopy(net)
 
 
 def test_del():
@@ -259,6 +268,25 @@ def test_add_attr():
         ModAddCellError(ta)
 
 
+def test_apply():
+    """
+    Feature: Cell.apply.
+    Description: Verify Cell.apply.
+    Expectation: No exception.
+    """
+    net = nn.SequentialCell(nn.Dense(2, 2), nn.Dense(2, 2))
+
+    def func(cell):
+        if isinstance(cell, nn.Dense):
+            cell.weight.set_data(initializer(One(), cell.weight.shape, cell.weight.dtype))
+
+    net.apply(func)
+
+    target = np.ones((2, 2), ms.dtype_to_nptype(net[0].weight.dtype))
+    assert np.allclose(target, net[0].weight.asnumpy())
+    assert np.allclose(target, net[1].weight.asnumpy())
+
+
 def test_train_eval():
     m = nn.Cell()
     assert not m.training
@@ -294,4 +322,26 @@ def test_cell_names():
     ta = Tensor(np.ones([2, 3]))
     mn = ModelName(ta)
     with pytest.raises(ValueError):
-        _executor.compile(mn)
+        _cell_graph_executor.compile(mn)
+
+
+class TestKwargsNet(nn.Cell):
+    def construct(self, p1, p2, p3=False, p4=False):
+        if p3:
+            return p1
+        if p4:
+            return P.Add()(p1, p2)
+        return p2
+
+
+def test_kwargs_default_value1():
+    """
+    Feature: Supports Cell kwargs inputs.
+    Description: Pass kwargs.
+    Expectation: No exception.
+    """
+    x = Tensor([[1], [2], [3]], ms.float32)
+    y = Tensor([[4], [5], [6]], ms.float32)
+    net = TestKwargsNet()
+    res = net(x, y, p4=True)
+    print(res)

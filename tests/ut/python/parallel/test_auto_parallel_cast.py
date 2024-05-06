@@ -19,11 +19,18 @@ import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
 from mindspore.common import dtype as mstype
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
 from mindspore.parallel._utils import _reset_op_id as reset_op_id
 from tests.ut.python.ops.test_math_ops import VirtualLoss
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
+grad_all = C.GradOperation(get_all=True)
 
 
 class NetWithLoss(nn.Cell):
@@ -43,12 +50,18 @@ class GradWrap(nn.Cell):
         self.network = network
 
     def construct(self, x, y, z, w):
-        return C.grad_all(self.network)(x, y, z, w)
+        return grad_all(self.network)(x, y, z, w)
 
     # model_parallel test
 
 
 def test_double_star_graph():
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
+
     class Net(nn.Cell):
         def __init__(self):
             super().__init__()
@@ -74,15 +87,14 @@ def test_double_star_graph():
     w = Tensor(np.ones([16, 32]), dtype=ms.float32)
 
     net = NetWithLoss(Net())
-    context.set_auto_parallel_context(parallel_mode="auto_parallel")
-    net.set_auto_parallel()
+    context.set_auto_parallel_context(parallel_mode="auto_parallel", search_mode="dynamic_programming")
     reset_op_id()
 
-    _executor.compile(net, x, y, z, w, phase='train')
-    strategies = _executor._get_strategy(net)
-    expected_strategies = {'Default/network-Net/Cast-op1': [[8, 1]],
-                           'Default/network-Net/Cast-op3': [[1, 8]],
-                           'Default/network-Net/MatMul-op2': [[8, 1], [1, 1]],
-                           'Default/network-Net/MatMul-op4': [[1, 1], [1, 8]],
-                           'Default/network-Net/MatMul-op0': [[1, 8], [8, 1]]}
+    net.set_train()
+    _cell_graph_executor.compile(net, x, y, z, w, phase='train')
+    strategies = _cell_graph_executor._get_shard_strategy(net)
+    expected_strategies = {'Default/network-Net/MatMul-op1': [[1, 1], [1, 8]],
+                           'Default/network-Net/MatMul-op2': [[1, 1], [1, 1]],
+                           'Default/network-Net/MatMul-op0': [[1, 1], [1, 8]],
+                           'Default/_VirtualDataset-op0': [[1, 1], [1, 1], [1, 1], [1, 1]]}
     assert strategies == expected_strategies

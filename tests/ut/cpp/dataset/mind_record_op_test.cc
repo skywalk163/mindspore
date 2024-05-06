@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,166 +16,52 @@
 #include <iostream>
 #include <memory>
 #include <vector>
-#include "dataset/core/client.h"
+#include "minddata/dataset/core/client.h"
 #include "common/common.h"
-#include "common/utils.h"
+#include "utils/ms_utils.h"
 #include "gtest/gtest.h"
-#include "mindrecord/include/shard_category.h"
-#include "mindrecord/include/shard_error.h"
-#include "mindrecord/include/shard_sample.h"
-#include "mindrecord/include/shard_shuffle.h"
+#include "minddata/dataset/engine/datasetops/source/mindrecord_op.h"
+#include "minddata/dataset/engine/datasetops/source/sampler/mind_record_sampler.h"
+#include "minddata/mindrecord/include/shard_category.h"
+#include "minddata/mindrecord/include/shard_error.h"
+#include "minddata/mindrecord/include/shard_sample.h"
+#include "minddata/mindrecord/include/shard_shuffle.h"
 #include "utils/log_adapter.h"
 
 namespace common = mindspore::common;
 
 using namespace mindspore::dataset;
-using mindspore::MsLogLevel::INFO;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::LogStream;
 
-class MindDataTestMindRecordOp : public UT::DatasetOpTesting {
-};
+class MindDataTestMindRecordOp : public UT::DatasetOpTesting {};
 
-TEST_F(MindDataTestMindRecordOp, TestMindRecordBasic) {
-  // single MindRecord op and nothing else
-  //
-  //    MindRecordOp
+// Helper function to create a MindRecordOp, sample MindRecord constructor
+// MindRecordOp::MindRecordOp(int32_t num_mind_record_workers,
+//                            std::vector<std::string> dataset_file, bool load_dataset, int32_t op_connector_queue_size,
+//                            const std::vector<std::string> &columns_to_load,
+//                            const std::vector<std::shared_ptr<ShardOperator>> &operators, int64_t num_padded,
+//                            const mindrecord::json &sample_json, const std::map<std::string, std::string>
+//                            &sample_bytes)
 
-  MS_LOG(INFO) << "UT test TestMindRecordBasic";
-
-  Status rc;
-
-  // Start with an empty execution tree
-  auto my_tree = std::make_shared<ExecutionTree>();
-
-  // Test info:
-  // Dataset from testDataset1 has 10 rows, 2 columns.
-  // RowsPerBuffer buffer setting of 3 yields 4 buffers with the last buffer having single row
-  // only.  2 workers.
-  // Test a column selection instead of all columns as well.
-
-  std::vector<std::string> column_list;
-  std::string label_col_name("file_name");
-  column_list.push_back(label_col_name);
-  label_col_name = "label";
-  column_list.push_back(label_col_name);
-
-  std::shared_ptr<MindRecordOp> my_mindrecord_op;
-  MindRecordOp::Builder builder;
-  builder.SetDatasetFile({mindrecord_root_path_ + "/testMindDataSet/testImageNetData/imagenet.mindrecord0"})
-      .SetLoadDataset(true)
-      .SetRowsPerBuffer(3)
-      .SetNumMindRecordWorkers(4)
-      .SetColumnsToLoad(column_list);
-  rc = builder.Build(&my_mindrecord_op);
-  ASSERT_TRUE(rc.IsOk());
-
-  MS_LOG(DEBUG) << (*my_mindrecord_op);
-
-  my_tree->AssociateNode(my_mindrecord_op);
-
-  // Set children/root layout.
-  my_tree->AssignRoot(my_mindrecord_op);
-
-  MS_LOG(INFO) << "Launching tree and begin iteration";
-  my_tree->Prepare();
-  my_tree->Launch();
-
-  // Start the loop of reading tensors from our pipeline
-  DatasetIterator di(my_tree);
-  TensorRow tensor_list;
-  rc = di.FetchNextTensorRow(&tensor_list);
-  ASSERT_TRUE(rc.IsOk());
-
-  int row_count = 0;
-  while (!tensor_list.empty()) {
-    MS_LOG(INFO) << "Row display for row #: " << row_count;
-
-    // Display the tensor by calling the printer on it
-    for (int i = 0; i < tensor_list.size(); i++) {
-      std::ostringstream ss;
-      ss << "(" << tensor_list[i] << "): " << (*tensor_list[i]) << std::endl;
-      MS_LOG(INFO) << "Tensor print: " << common::SafeCStr(ss.str());
-    }
-
-    rc = di.FetchNextTensorRow(&tensor_list);
-    ASSERT_TRUE(rc.IsOk());
-    row_count++;
-  }
+std::shared_ptr<MindRecordOp> CreateMindRecord(int32_t mind_record_workers, bool load,
+                                               std::vector<std::string> dataset_files,
+                                               const std::vector<std::string> &columns_to_load,
+                                               const std::vector<std::shared_ptr<ShardOperator>> &operators) {
+  std::shared_ptr<ConfigManager> cfg = GlobalContext::config_manager();
+  auto op_connector_queue_size = cfg->op_connector_size();
+  std::map<std::string, std::string> sample_bytes = {};
+  std::unique_ptr<ShardReader> shard_reader = std::make_unique<ShardReader>();
+  std::shared_ptr<MindRecordSamplerRT> sampler = std::make_shared<MindRecordSamplerRT>(shard_reader.get());
+  ShuffleMode shuffle_mode = ShuffleMode::kGlobal;
+  std::shared_ptr<MindRecordOp> op = std::make_shared<MindRecordOp>(
+    mind_record_workers, dataset_files, load, op_connector_queue_size, columns_to_load, std::move(operators), 0,
+    nullptr, sample_bytes, shuffle_mode, std::move(shard_reader), std::move(sampler));
+  (void)op->Init();
+  return op;
 }
 
-TEST_F(MindDataTestMindRecordOp, TestMindRecordSample) {
-  // single MindRecord op and nothing else
-  //
-  //    MindRecordOp
-
-  MS_LOG(INFO) << "UT test TestMindRecordSample";
-
-  Status rc;
-
-  // Start with an empty execution tree
-  auto my_tree = std::make_shared<ExecutionTree>();
-
-  // Test info:
-  // Dataset from testDataset1 has 10 rows, 2 columns.
-  // RowsPerBuffer buffer setting of 3 yields 4 buffers with the last buffer having single row
-  // only.  2 workers.
-  // Test a column selection instead of all columns as well.
-
-  std::vector<std::string> column_list;
-  std::string label_col_name("file_name");
-  column_list.push_back(label_col_name);
-  label_col_name = "label";
-  column_list.push_back(label_col_name);
-
-  std::vector<std::shared_ptr<mindspore::mindrecord::ShardOperator>> operators;
-  operators.push_back(std::make_shared<mindspore::mindrecord::ShardSample>(4));
-
-  std::shared_ptr<MindRecordOp> my_mindrecord_op;
-  MindRecordOp::Builder builder;
-  builder.SetDatasetFile({mindrecord_root_path_ + "/testMindDataSet/testImageNetData/imagenet.mindrecord0"})
-      .SetLoadDataset(true)
-      .SetRowsPerBuffer(3)
-      .SetNumMindRecordWorkers(4)
-      .SetColumnsToLoad(column_list)
-      .SetOperators(operators);
-  rc = builder.Build(&my_mindrecord_op);
-  ASSERT_TRUE(rc.IsOk());
-
-  MS_LOG(DEBUG) << (*my_mindrecord_op);
-
-  my_tree->AssociateNode(my_mindrecord_op);
-
-  // Set children/root layout.
-  my_tree->AssignRoot(my_mindrecord_op);
-
-  MS_LOG(INFO) << "Launching tree and begin iteration";
-  my_tree->Prepare();
-  my_tree->Launch();
-
-  // Start the loop of reading tensors from our pipeline
-  DatasetIterator di(my_tree);
-  TensorRow tensor_list;
-  rc = di.FetchNextTensorRow(&tensor_list);
-  ASSERT_TRUE(rc.IsOk());
-
-  int row_count = 0;
-  while (!tensor_list.empty()) {
-    MS_LOG(INFO) << "Row display for row #: " << row_count;
-
-    // Display the tensor by calling the printer on it
-    for (int i = 0; i < tensor_list.size(); i++) {
-      std::ostringstream ss;
-      ss << "(" << tensor_list[i] << "): " << (*tensor_list[i]) << std::endl;
-      MS_LOG(INFO) << "Tensor print: " << common::SafeCStr(ss.str());
-    }
-
-    rc = di.FetchNextTensorRow(&tensor_list);
-    ASSERT_TRUE(rc.IsOk());
-    row_count++;
-  }
-}
-
+/// Feature: MindRecord op
+/// Description: Test MindRecordOp ShardShuffle in ExecutionTree
+/// Expectation: Runs successfully
 TEST_F(MindDataTestMindRecordOp, TestMindRecordShuffle) {
   // single MindRecord op and nothing else
   //
@@ -203,16 +89,9 @@ TEST_F(MindDataTestMindRecordOp, TestMindRecordShuffle) {
   std::vector<std::shared_ptr<mindspore::mindrecord::ShardOperator>> operators;
   operators.push_back(std::make_shared<mindspore::mindrecord::ShardShuffle>(1));
 
-  std::shared_ptr<MindRecordOp> my_mindrecord_op;
-  MindRecordOp::Builder builder;
-  builder.SetDatasetFile({mindrecord_root_path_ + "/testMindDataSet/testImageNetData/imagenet.mindrecord0"})
-      .SetLoadDataset(true)
-      .SetRowsPerBuffer(3)
-      .SetNumMindRecordWorkers(4)
-      .SetColumnsToLoad(column_list)
-      .SetOperators(operators);
-  rc = builder.Build(&my_mindrecord_op);
-  ASSERT_TRUE(rc.IsOk());
+  std::shared_ptr<MindRecordOp> my_mindrecord_op =
+    CreateMindRecord(4, true, {mindrecord_root_path_ + "/testMindDataSet/testImageNetData/imagenet.mindrecord0"},
+                     column_list, operators);
 
   MS_LOG(DEBUG) << (*my_mindrecord_op);
 
@@ -248,6 +127,9 @@ TEST_F(MindDataTestMindRecordOp, TestMindRecordShuffle) {
   }
 }
 
+/// Feature: MindRecord op
+/// Description: Test MindRecordOp ShardCategory in ExecutionTree
+/// Expectation: Runs successfully
 TEST_F(MindDataTestMindRecordOp, TestMindRecordCategory) {
   // single MindRecord op and nothing else
   //
@@ -278,16 +160,9 @@ TEST_F(MindDataTestMindRecordOp, TestMindRecordCategory) {
   categories.push_back(std::make_pair("label", "171"));
   operators.push_back(std::make_shared<mindspore::mindrecord::ShardCategory>(categories));
 
-  std::shared_ptr<MindRecordOp> my_mindrecord_op;
-  MindRecordOp::Builder builder;
-  builder.SetDatasetFile({mindrecord_root_path_ + "/testMindDataSet/testImageNetData/imagenet.mindrecord0"})
-      .SetLoadDataset(true)
-      .SetRowsPerBuffer(3)
-      .SetNumMindRecordWorkers(4)
-      .SetColumnsToLoad(column_list)
-      .SetOperators(operators);
-  rc = builder.Build(&my_mindrecord_op);
-  ASSERT_TRUE(rc.IsOk());
+  std::shared_ptr<MindRecordOp> my_mindrecord_op =
+    CreateMindRecord(4, true, {mindrecord_root_path_ + "/testMindDataSet/testImageNetData/imagenet.mindrecord0"},
+                     column_list, operators);
 
   MS_LOG(DEBUG) << (*my_mindrecord_op);
 
@@ -321,204 +196,4 @@ TEST_F(MindDataTestMindRecordOp, TestMindRecordCategory) {
     ASSERT_TRUE(rc.IsOk());
     row_count++;
   }
-}
-
-TEST_F(MindDataTestMindRecordOp, TestMindRecordRepeat) {
-  // single MindRecord op and nothing else
-  //
-  //    MindRecordOp
-
-  MS_LOG(INFO) << "UT test TestMindRecordRepeat";
-
-  Status rc;
-
-  // Start with an empty execution tree
-  auto my_tree = std::make_shared<ExecutionTree>();
-
-  // Test info:
-  // Dataset from testDataset1 has 10 rows, 2 columns.
-  // RowsPerBuffer buffer setting of 3 yields 4 buffers with the last buffer having single row
-  // only.  2 workers.
-  // Test a column selection instead of all columns as well.
-
-  std::vector<std::string> column_list;
-  std::string label_col_name("file_name");
-  column_list.push_back(label_col_name);
-  label_col_name = "label";
-  column_list.push_back(label_col_name);
-
-  std::shared_ptr<MindRecordOp> my_mindrecord_op;
-  MindRecordOp::Builder builder;
-  builder.SetDatasetFile({mindrecord_root_path_ + "/testMindDataSet/testImageNetData/imagenet.mindrecord0"})
-      .SetLoadDataset(true)
-      .SetRowsPerBuffer(3)
-      .SetNumMindRecordWorkers(4)
-      .SetColumnsToLoad(column_list);
-  rc = builder.Build(&my_mindrecord_op);
-  ASSERT_TRUE(rc.IsOk());
-
-  MS_LOG(DEBUG) << (*my_mindrecord_op);
-
-  rc = my_tree->AssociateNode(my_mindrecord_op);
-  EXPECT_TRUE(rc.IsOk());
-
-  uint32_t num_repeats = 2;
-  std::shared_ptr<RepeatOp> my_repeat_op;
-  rc = RepeatOp::Builder(num_repeats)
-      .Build(&my_repeat_op);
-  EXPECT_TRUE(rc.IsOk());
-  rc = my_tree->AssociateNode(my_repeat_op);
-  EXPECT_TRUE(rc.IsOk());
-
-  rc = my_repeat_op->AddChild(my_mindrecord_op);
-  EXPECT_TRUE(rc.IsOk());
-
-  // Set children/root layout.
-  rc = my_tree->AssignRoot(my_repeat_op);
-  EXPECT_TRUE(rc.IsOk());
-
-  MS_LOG(INFO) << "Launching tree and begin iteration";
-  my_tree->Prepare();
-  my_tree->Launch();
-
-  // Start the loop of reading tensors from our pipeline
-  DatasetIterator di(my_tree);
-  TensorRow tensor_list;
-  rc = di.FetchNextTensorRow(&tensor_list);
-  ASSERT_TRUE(rc.IsOk());
-
-  int row_count = 0;
-  while (!tensor_list.empty()) {
-    MS_LOG(INFO) << "Row display for row #: " << row_count;
-
-    // Display the tensor by calling the printer on it
-    for (int i = 0; i < tensor_list.size(); i++) {
-      std::ostringstream ss;
-      ss << "(" << tensor_list[i] << "): " << (*tensor_list[i]) << std::endl;
-      MS_LOG(INFO) << "Tensor print: " << common::SafeCStr(ss.str());
-    }
-
-    rc = di.FetchNextTensorRow(&tensor_list);
-    ASSERT_TRUE(rc.IsOk());
-    row_count++;
-  }
-}
-
-
-TEST_F(MindDataTestMindRecordOp, TestMindRecordBlockReaderRepeat) {
-  // single MindRecord op and nothing else
-  //
-  //    MindRecordOp
-
-  MS_LOG(INFO) << "UT test TestMindRecordBlockReaderRepeat";
-
-  Status rc;
-
-  // Start with an empty execution tree
-  auto my_tree = std::make_shared<ExecutionTree>();
-
-  // Test info:
-  // Dataset from testDataset1 has 10 rows, 2 columns.
-  // RowsPerBuffer buffer setting of 3 yields 4 buffers with the last buffer having single row
-  // only.  2 workers.
-  // Test a column selection instead of all columns as well.
-
-  std::vector<std::string> column_list;
-  std::string label_col_name("file_name");
-  column_list.push_back(label_col_name);
-  label_col_name = "label";
-  column_list.push_back(label_col_name);
-
-  std::shared_ptr<MindRecordOp> my_mindrecord_op;
-  MindRecordOp::Builder builder;
-  builder.SetDatasetFile({mindrecord_root_path_ + "/testMindDataSet/testImageNetData/imagenet.mindrecord0"})
-      .SetLoadDataset(true)
-      .SetRowsPerBuffer(3)
-      .SetNumMindRecordWorkers(4)
-      .SetBlockReader()
-      .SetColumnsToLoad(column_list);
-  rc = builder.Build(&my_mindrecord_op);
-  ASSERT_TRUE(rc.IsOk());
-
-  MS_LOG(DEBUG) << (*my_mindrecord_op);
-
-  rc = my_tree->AssociateNode(my_mindrecord_op);
-  EXPECT_TRUE(rc.IsOk());
-
-  uint32_t num_repeats = 2;
-  std::shared_ptr<RepeatOp> my_repeat_op;
-  rc = RepeatOp::Builder(num_repeats)
-      .Build(&my_repeat_op);
-  EXPECT_TRUE(rc.IsOk());
-  rc = my_tree->AssociateNode(my_repeat_op);
-  EXPECT_TRUE(rc.IsOk());
-
-  rc = my_repeat_op->AddChild(my_mindrecord_op);
-  EXPECT_TRUE(rc.IsOk());
-
-  // Set children/root layout.
-  rc = my_tree->AssignRoot(my_repeat_op);
-  EXPECT_TRUE(rc.IsOk());
-
-  MS_LOG(INFO) << "Launching tree and begin iteration";
-  my_tree->Prepare();
-  my_tree->Launch();
-
-  // Start the loop of reading tensors from our pipeline
-  DatasetIterator di(my_tree);
-  TensorRow tensor_list;
-  rc = di.FetchNextTensorRow(&tensor_list);
-  ASSERT_TRUE(rc.IsOk());
-
-  int row_count = 0;
-  while (!tensor_list.empty()) {
-    MS_LOG(INFO) << "Row display for row #: " << row_count;
-
-    // Display the tensor by calling the printer on it
-    for (int i = 0; i < tensor_list.size(); i++) {
-      std::ostringstream ss;
-      ss << "(" << tensor_list[i] << "): " << (*tensor_list[i]) << std::endl;
-      MS_LOG(INFO) << "Tensor print: " << common::SafeCStr(ss.str());
-    }
-
-    rc = di.FetchNextTensorRow(&tensor_list);
-    ASSERT_TRUE(rc.IsOk());
-    row_count++;
-  }
-}
-
-TEST_F(MindDataTestMindRecordOp, TestMindRecordInvalidColumnList) {
-  // single MindRecord op and nothing else
-  //
-  //    MindRecordOp
-
-  MS_LOG(INFO) << "UT test TestMindRecordInvalidColumnList";
-
-  Status rc;
-
-  // Start with an empty execution tree
-  auto my_tree = std::make_shared<ExecutionTree>();
-
-  // Test info:
-  // Dataset from testDataset1 has 10 rows, 2 columns.
-  // RowsPerBuffer buffer setting of 3 yields 4 buffers with the last buffer having single row
-  // only.  2 workers.
-  // Test a column selection instead of all columns as well.
-
-  std::vector<std::string> column_list;
-  std::string label_col_name("file_name_2");
-  column_list.push_back(label_col_name);
-  label_col_name = "label";
-  column_list.push_back(label_col_name);
-
-  std::shared_ptr<MindRecordOp> my_mindrecord_op;
-  MindRecordOp::Builder builder;
-  builder.SetDatasetFile({mindrecord_root_path_ + "/testMindDataSet/testImageNetData/imagenet.mindrecord0"})
-      .SetLoadDataset(true)
-      .SetRowsPerBuffer(3)
-      .SetNumMindRecordWorkers(4)
-      .SetColumnsToLoad(column_list);
-  rc = builder.Build(&my_mindrecord_op);
-  ASSERT_TRUE(rc.IsError());
-  ASSERT_TRUE(rc.ToString().find_first_of("illegal column list") != std::string::npos);
 }

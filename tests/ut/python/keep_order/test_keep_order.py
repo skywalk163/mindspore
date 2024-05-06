@@ -13,19 +13,21 @@
 # limitations under the License.
 # ============================================================================
 import numpy as np
-
+import mindspore as ms
 import mindspore.context as context
 import mindspore.nn as nn
 import mindspore.ops.functional as F
+from mindspore import ops
 from mindspore.common import dtype as mstype
 from mindspore.common.tensor import Tensor
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
+from mindspore.common.parameter import Parameter
 
 context.set_context(mode=context.GRAPH_MODE)
-add1 = P.TensorAdd()
+add1 = P.Add()
 mul1 = P.MatMul()
-add2 = P.TensorAdd()
+add2 = P.Add()
 
 
 def add(x, y):
@@ -43,14 +45,19 @@ class Func(nn.Cell):
         init = self.alloc_status()
         sum_ = add(x, y)
         product = mul1(x, y)
-        flag = self.get_status(init)
+        init = F.depend(init, sum_)
+        init = F.depend(init, product)
+        get_status = self.get_status(init)
+        sum_ = F.depend(sum_, get_status)
+        product = F.depend(product, get_status)
         out = add2(sum_, product)
-        clear = self.clear_status(flag)
+        init = F.depend(init, out)
+        clear = self.clear_status(init)
         out = F.depend(out, clear)
         return out
 
 
-grad_s = C.GradOperation('grad_with_sens', get_all=True, sens_param=True)
+grad_s = C.GradOperation(get_all=True, sens_param=True)
 
 
 class Net(nn.Cell):
@@ -65,11 +72,16 @@ class Net(nn.Cell):
         init = self.alloc_status()
         sum1 = add(x, y)
         dx = grad_s(self.func)(x, y, sens)
-        flag = self.get_status(init)
+        init = F.depend(init, sum1)
+        init = F.depend(init, dx)
+        get_status = self.get_status(init)
+        sum1 = F.depend(sum1, get_status)
+        dx = F.depend(dx, get_status)
         sum2 = add2(sum1, dx[0])
         sum3 = add2(y, dx[1])
         out = add2(sum2, sum3)
-        clear = self.clear_status(flag)
+        init = F.depend(init, out)
+        clear = self.clear_status(init)
         out = F.depend(out, clear)
         return out
 
@@ -78,7 +90,6 @@ def test_add():
     x = Tensor(np.ones([3, 3]).astype(np.float32))
     y = Tensor(np.ones([3, 3]).astype(np.float32))
     func = Func()
-    func.add_flags(has_effect=True)
     func(x, y)
 
 
@@ -87,7 +98,6 @@ def test_sens():
     y = Tensor(np.ones([3, 3]).astype(np.float32))
     sens = Tensor(np.ones([3, 3]).astype(np.float32))
     net = Net()
-    net.add_flags(has_effect=True)
     _ = net(x, y, sens)
 
 
@@ -104,11 +114,16 @@ class Net_hyper(nn.Cell):
         add1 = add(x, y)
         sum1 = C.hyper_add([add1, add1], [x, y])
         dx = grad_s(self.func)(x, y, sens)
-        flag = self.get_status(init)
+        init = F.depend(init, sum1)
+        init = F.depend(init, dx)
+        get_status = self.get_status(init)
+        sum1 = F.depend(sum1, get_status)
+        dx = F.depend(dx, get_status)
         sum2 = add2(sum1[0], dx[0])
         sum3 = add2(sum1[1], dx[1])
         out = C.hyper_add([sum2, sum2], [sum3, sum3])
-        clear = self.clear_status(flag)
+        init = F.depend(init, out)
+        clear = self.clear_status(init)
         out = F.depend(out, clear)
         return out
 
@@ -118,7 +133,6 @@ def test_hyper_add():
     y = Tensor(np.ones([3, 3]).astype(np.float32))
     sens = Tensor(np.ones([3, 3]).astype(np.float32))
     net = Net_hyper()
-    net.add_flags(has_effect=True)
     _ = net(x, y, sens)
 
 
@@ -133,13 +147,15 @@ def test_keep_order_io_effect_exception_return_dtype():
             self.dtype = P.DType()
             self.sub = P.Sub()
             self.neg = P.Neg()
-            self.add_flags(has_effect=True)
 
         def construct(self, x):
             init = self.alloc_status()
-            self.clear_status(init)
+            clear_status = self.clear_status(init)
+            x = F.depend(x, clear_status)
             res = self.sub(x, self.neg(x))
-            self.get_status(init)
+            init = F.depend(init, res)
+            get_status = self.get_status(init)
+            res = F.depend(res, get_status)
             dtype = self.dtype(res)
             return dtype
 
@@ -148,3 +164,30 @@ def test_keep_order_io_effect_exception_return_dtype():
     x = Tensor(data, dtype=mstype.float16)
     net = Net()
     data = net(x)
+
+
+def test_print_effect_trace():
+    """
+    Feature: Auto Monad
+    Description: Test print effect trace.
+    Expectation: No exception and no warning.
+    """
+    class Network(nn.Cell):
+        def __init__(self):
+            super().__init__()
+            self.w = Parameter(Tensor(np.random.randn(5, 3), ms.float32), name='w')
+            self.b = Parameter(Tensor(np.random.randn(3,), ms.float32), name='b')
+
+        def construct(self, x):
+            out = ops.matmul(x, self.w)
+            print('matmul: ', out)
+            out = out + self.b
+            print('add bias: ', out)
+            return out
+
+    ms.set_context(mode=ms.GRAPH_MODE)
+    model = Network()
+    x = ops.ones(5, ms.float32)
+    model.compile(x)
+    out = model(x)
+    print('out: ', out)

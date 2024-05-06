@@ -17,7 +17,7 @@ import numpy as np
 import mindspore.context as context
 import mindspore.nn as nn
 from mindspore import Tensor
-from mindspore.common.api import ms_function
+from mindspore.common.api import jit
 from mindspore.ops import operations as P
 from mindspore.ops.composite import GradOperation
 
@@ -29,7 +29,7 @@ class Net(nn.Cell):
         super(Net, self).__init__()
         self.sigmoid_cross_entropy_with_logits = P.SigmoidCrossEntropyWithLogits()
 
-    @ms_function
+    @jit
     def construct(self, features, labels):
         return self.sigmoid_cross_entropy_with_logits(features, labels)
 
@@ -37,10 +37,10 @@ class Net(nn.Cell):
 class Grad(nn.Cell):
     def __init__(self, network):
         super(Grad, self).__init__()
-        self.grad = GradOperation(name="get_all", get_all=True, sens_param=True)
+        self.grad = GradOperation(get_all=True, sens_param=True)
         self.network = network
 
-    @ms_function
+    @jit
     def construct(self, features, labels, dout):
         return self.grad(self.network)(features, labels, dout)
 

@@ -17,16 +17,16 @@ import numpy as np
 import mindspore.context as context
 import mindspore.nn as nn
 from mindspore import Tensor
-from mindspore.common.api import ms_function
+from mindspore.common.api import jit
 from mindspore.ops import operations as P
 
 
 class Net(nn.Cell):
     def __init__(self):
         super(Net, self).__init__()
-        self.maxpool = P.MaxPool(padding="SAME", ksize=3, strides=2)
+        self.maxpool = P.MaxPool(pad_mode="SAME", kernel_size=3, strides=2)
 
-    @ms_function
+    @jit
     def construct(self, x):
         output = self.maxpool(x)
         return output

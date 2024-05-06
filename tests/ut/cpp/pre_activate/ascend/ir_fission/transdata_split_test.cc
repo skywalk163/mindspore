@@ -15,20 +15,28 @@
  */
 
 #include "common/backend_common_test.h"
+#include "ops/array_op_name.h"
 #include "common/py_func_graph_fetcher.h"
-#include "device/kernel_info.h"
-#include "session/anf_runtime_algorithm.h"
+#include "include/backend/kernel_info.h"
+#include "include/backend/anf_runtime_algorithm.h"
 #include "kernel/oplib/oplib.h"
-#include "debug/anf_ir_dump.h"
+#include "include/common/debug/anf_ir_dump.h"
+#include "utils/ms_context.h"
+#include "include/common/utils/anfalgo.h"
+
 #define private public
 #define protected public
-#include "pre_activate/ascend/format_type/insert_trans_op.h"
-#include "pre_activate/ascend/ir_fission/transdata_split.h"
+#include "plugin/device/ascend/optimizer/format_type/insert_trans_op.h"
+#include "plugin/device/ascend/optimizer/ir_fission/transdata_split.h"
 #undef private
 #undef protected
 
 namespace mindspore {
 namespace opt {
+namespace {
+constexpr auto kPatternElemWise = "ElemWise";
+}
+
 using KernelBuildInfoBuilder = kernel::KernelBuildInfo::KernelBuildInfoBuilder;
 class TestHWTransdataSplit : public BackendCommon {
  public:
@@ -43,12 +51,16 @@ class MockInsertTransOpKernelSelectTrans4Dto5D : public KernelSelect {
   MockInsertTransOpKernelSelectTrans4Dto5D() = default;
   ~MockInsertTransOpKernelSelectTrans4Dto5D() override = default;
   void SelectKernel(const CNodePtr &cnode) override {
-    if (AnfAlgo::GetCNodeName(cnode) == "Four2Five") {
+    if (common::AnfAlgo::GetCNodeName(cnode) == "Four2Five") {
       KernelBuildInfoBuilder builder;
       builder.SetInputsFormat({"NCHW"});
       builder.SetInputsDeviceType({kFloat16->type_id()});
       builder.SetOutputsFormat({"NC1HWC0"});
       builder.SetOutputsDeviceType({kFloat16->type_id()});
+      builder.SetInputsReshapeType({""});
+      builder.SetOutputsReshapeType({""});
+      builder.SetInputsKernelObjectType({kernel::KernelObjectType::TENSOR});
+      builder.SetOutputsKernelObjectType({kernel::KernelObjectType::TENSOR});
       AnfAlgo::SetSelectKernelBuildInfo(builder.Build(), cnode.get());
     } else {
       KernelBuildInfoBuilder builder;
@@ -56,6 +68,10 @@ class MockInsertTransOpKernelSelectTrans4Dto5D : public KernelSelect {
       builder.SetInputsDeviceType({kFloat16->type_id()});
       builder.SetOutputsFormat({"NC1HWC0"});
       builder.SetOutputsDeviceType({kFloat16->type_id()});
+      builder.SetInputsReshapeType({""});
+      builder.SetOutputsReshapeType({""});
+      builder.SetInputsKernelObjectType({kernel::KernelObjectType::TENSOR});
+      builder.SetOutputsKernelObjectType({kernel::KernelObjectType::TENSOR});
       AnfAlgo::SetSelectKernelBuildInfo(builder.Build(), cnode.get());
     }
   }
@@ -66,12 +82,16 @@ class MockTransdataSplitKernelSelect : public KernelSelect {
   MockTransdataSplitKernelSelect() = default;
   ~MockTransdataSplitKernelSelect() override = default;
   void SelectKernel(const CNodePtr &cnode) override {
-    if (AnfAlgo::GetCNodeName(cnode) == kTransDataOpName) {
+    if (common::AnfAlgo::GetCNodeName(cnode) == kTransDataOpName) {
       KernelBuildInfoBuilder builder;
       builder.SetInputsFormat({"NCHW"});
       builder.SetInputsDeviceType({kFloat16->type_id()});
       builder.SetOutputsFormat({"NCHW"});
       builder.SetOutputsDeviceType({kFloat16->type_id()});
+      builder.SetInputsReshapeType({""});
+      builder.SetOutputsReshapeType({""});
+      builder.SetInputsKernelObjectType({kernel::KernelObjectType::TENSOR});
+      builder.SetOutputsKernelObjectType({kernel::KernelObjectType::TENSOR});
       AnfAlgo::SetSelectKernelBuildInfo(builder.Build(), cnode.get());
     } else {
       KernelBuildInfoBuilder builder;
@@ -79,6 +99,10 @@ class MockTransdataSplitKernelSelect : public KernelSelect {
       builder.SetInputsDeviceType({kFloat16->type_id()});
       builder.SetOutputsFormat({"NCHW"});
       builder.SetOutputsDeviceType({kFloat16->type_id()});
+      builder.SetInputsReshapeType({""});
+      builder.SetOutputsReshapeType({""});
+      builder.SetInputsKernelObjectType({kernel::KernelObjectType::TENSOR});
+      builder.SetOutputsKernelObjectType({kernel::KernelObjectType::TENSOR});
       AnfAlgo::SetSelectKernelBuildInfo(builder.Build(), cnode.get());
     }
   }
@@ -91,8 +115,11 @@ TEST_F(TestHWTransdataSplit, test_transdata_split_fraz_nchw) {
    * transdata = Transdata(transpose)
    * return transdata
    */
+  auto ms_context = MsContext::GetInstance();
+  MS_EXCEPTION_IF_NULL(ms_context);
+  ms_context->set_param<int>(MS_CTX_EXECUTION_MODE, kGraphMode);
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_transdata_split_fraz_nchw", "before");
-  std::vector<int> shp{2, 4, 8, 16};
+  std::vector<int64_t> shp{2, 4, 8, 16};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list{x_abstract};
   auto kg = GetKernelGraph(g, args_spec_list);
@@ -109,8 +136,12 @@ TEST_F(TestHWTransdataSplit, test_transdata_split_fraz_nchw) {
   builder.SetOutputsFormat({kOpFormat_C1HWNCoC0});
   builder.SetOutputsDeviceType({kFloat16->type_id()});
   builder.SetKernelType(KernelType::TBE_KERNEL);
-  builder.SetFusionType(kernel::FusionType::ELEMWISE);
+  builder.SetFusionType(kPatternElemWise);
   builder.SetProcessor(kernel::Processor::AICORE);
+  builder.SetInputsReshapeType({""});
+  builder.SetOutputsReshapeType({""});
+  builder.SetInputsKernelObjectType({kernel::KernelObjectType::TENSOR});
+  builder.SetOutputsKernelObjectType({kernel::KernelObjectType::TENSOR});
   auto kernel_info = std::make_shared<device::KernelInfo>();
   kernel_info->set_select_kernel_build_info(builder.Build());
   transpose->set_kernel_info(kernel_info);
@@ -138,7 +169,7 @@ TEST_F(TestHWTransdataSplit, test_transdata_split_nchw_fraz) {
    * return transdata
    */
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_transdata_split_nchw_fraz", "before");
-  std::vector<int> shp{2, 4, 8, 16};
+  std::vector<int64_t> shp{2, 4, 8, 16};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list{x_abstract};
   auto kg = GetKernelGraph(g, args_spec_list);
@@ -155,8 +186,12 @@ TEST_F(TestHWTransdataSplit, test_transdata_split_nchw_fraz) {
   builder.SetOutputsFormat({"NCHW"});
   builder.SetOutputsDeviceType({kFloat16->type_id()});
   builder.SetKernelType(KernelType::TBE_KERNEL);
-  builder.SetFusionType(kernel::FusionType::ELEMWISE);
+  builder.SetFusionType(kPatternElemWise);
   builder.SetProcessor(kernel::Processor::AICORE);
+  builder.SetInputsReshapeType({""});
+  builder.SetOutputsReshapeType({""});
+  builder.SetInputsKernelObjectType({kernel::KernelObjectType::TENSOR});
+  builder.SetOutputsKernelObjectType({kernel::KernelObjectType::TENSOR});
   auto kernel_info = std::make_shared<device::KernelInfo>();
   kernel_info->set_select_kernel_build_info(builder.Build());
   transpose->set_kernel_info(kernel_info);

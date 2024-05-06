@@ -15,17 +15,19 @@
  */
 #include "common/backend_common_test.h"
 #include "common/py_func_graph_fetcher.h"
-#include "session/anf_runtime_algorithm.h"
-#include "operator/ops.h"
+#include "include/backend/anf_runtime_algorithm.h"
+#include "frontend/operator/ops.h"
 #include "ir/tensor.h"
-#include "debug/anf_ir_dump.h"
-#include "utils/utils.h"
+#include "include/common/debug/anf_ir_dump.h"
+#include "include/common/utils/utils.h"
 #include "kernel/kernel_build_info.h"
-#include "pre_activate/common/optimizer.h"
+#include "include/backend/optimizer/optimizer.h"
+#include "include/common/utils/anfalgo.h"
+#include "ops/ascend_op_name.h"
 
 #define private public
 #define protected public
-#include "pre_activate/ascend/format_type/merge_cast_to_op.h"
+#include "plugin/device/ascend/optimizer/format_type/merge_cast_to_op.h"
 #undef private
 #undef protected
 
@@ -45,7 +47,7 @@ class MockMergeCastToOpKernelQuery : public KernelQuery {
   ~MockMergeCastToOpKernelQuery() override = default;
   void Query(const CNodePtr &kernel_node,
              std::vector<std::shared_ptr<kernel::KernelBuildInfo>> *kernel_info_list) override {
-    std::string op_name = AnfAlgo::GetCNodeName(kernel_node);
+    std::string op_name = common::AnfAlgo::GetCNodeName(kernel_node);
     if (op_name == kFour2FiveOpName) {
       kernel::KernelBuildInfo::KernelBuildInfoBuilder builder;
       builder.SetInputsFormat({kOpFormat_NCHW});
@@ -69,7 +71,7 @@ TEST_F(TestHWMergeCastToOp, test_merge_cast_to_next_op) {
   ASSERT_NE(g, nullptr);
 
   // set abstract because four2five node cannot infer
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   g->parameters()[0]->set_abstract(x_abstract);
   g->get_return()->set_abstract(x_abstract);
@@ -131,7 +133,7 @@ TEST_F(TestHWMergeCastToOp, test_merge_cast_to_prior_op) {
   ASSERT_NE(g, nullptr);
 
   // set abstract because five2four node cannot infer
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   g->parameters()[0]->set_abstract(x_abstract);
   g->get_return()->set_abstract(x_abstract);
@@ -153,7 +155,7 @@ TEST_F(TestHWMergeCastToOp, test_merge_cast_to_prior_op) {
   EXPECT_NE(make_tuple->input(1), nullptr);
   EXPECT_TRUE(make_tuple->input(1)->isa<CNode>());
   auto cast = make_tuple->input(1)->cast<CNodePtr>();
-  AnfAlgo::SetNodeAttr("dst_type", MakeValue("float32"), cast);
+  common::AnfAlgo::SetNodeAttr("dst_type", MakeValue("float32"), cast);
 
   // set kernel for cast
   kernel::KernelBuildInfo::KernelBuildInfoBuilder builder1;

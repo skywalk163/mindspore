@@ -1,4 +1,4 @@
-# Copyright 2019 Huawei Technologies Co., Ltd
+# Copyright 2019-2022 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,15 +17,20 @@ from mindspore import log as logger
 
 
 def test_imagefolder_shardings(print_res=False):
+    """
+    Feature: Sharding
+    Description: Test ImageFolderDataset sharding
+    Expectation: The dataset is processed as expected
+    """
     image_folder_dir = "../data/dataset/testPK/data"
 
     def sharding_config(num_shards, shard_id, num_samples, shuffle, class_index, repeat_cnt=1):
-        data1 = ds.ImageFolderDatasetV2(image_folder_dir, num_samples=num_samples, num_shards=num_shards,
-                                        shard_id=shard_id,
-                                        shuffle=shuffle, class_indexing=class_index, decode=True)
+        data1 = ds.ImageFolderDataset(image_folder_dir, num_samples=num_samples, num_shards=num_shards,
+                                      shard_id=shard_id,
+                                      shuffle=shuffle, class_indexing=class_index, decode=True)
         data1 = data1.repeat(repeat_cnt)
         res = []
-        for item in data1.create_dict_iterator():  # each data is a dictionary
+        for item in data1.create_dict_iterator(num_epochs=1, output_numpy=True):  # each data is a dictionary
             res.append(item["label"].item())
         if print_res:
             logger.info("labels of dataset: {}".format(res))
@@ -48,7 +53,11 @@ def test_imagefolder_shardings(print_res=False):
 
 
 def test_tfrecord_shardings1(print_res=False):
-    """ Test TFRecordDataset sharding with num_parallel_workers=1 """
+    """
+    Feature: Sharding
+    Description: Test TFRecordDataset sharding with num_parallel_workers=1
+    Expectation: The dataset is processed as expected
+    """
 
     # total 40 rows in dataset
     tf_files = ["../data/dataset/tf_file_dataset/test1.data", "../data/dataset/tf_file_dataset/test2.data",
@@ -59,7 +68,7 @@ def test_tfrecord_shardings1(print_res=False):
                                    shuffle=ds.Shuffle.FILES, num_parallel_workers=1)
         data1 = data1.repeat(repeat_cnt)
         res = []
-        for item in data1.create_dict_iterator():  # each data is a dictionary
+        for item in data1.create_dict_iterator(num_epochs=1, output_numpy=True):  # each data is a dictionary
             res.append(item["scalars"][0])
         if print_res:
             logger.info("scalars of dataset: {}".format(res))
@@ -86,7 +95,11 @@ def test_tfrecord_shardings1(print_res=False):
 
 
 def test_tfrecord_shardings4(print_res=False):
-    """ Test TFRecordDataset sharding with num_parallel_workers=4 """
+    """
+    Feature: Sharding
+    Description: Test TFRecordDataset sharding with num_parallel_workers=4
+    Expectation: The dataset is processed as expected
+    """
 
     # total 40 rows in dataset
     tf_files = ["../data/dataset/tf_file_dataset/test1.data", "../data/dataset/tf_file_dataset/test2.data",
@@ -97,7 +110,7 @@ def test_tfrecord_shardings4(print_res=False):
                                    shuffle=ds.Shuffle.FILES, num_parallel_workers=4)
         data1 = data1.repeat(repeat_cnt)
         res = []
-        for item in data1.create_dict_iterator():  # each data is a dictionary
+        for item in data1.create_dict_iterator(num_epochs=1, output_numpy=True):  # each data is a dictionary
             res.append(item["scalars"][0])
         if print_res:
             logger.info("scalars of dataset: {}".format(res))
@@ -134,6 +147,11 @@ def test_tfrecord_shardings4(print_res=False):
 
 
 def test_manifest_shardings(print_res=False):
+    """
+    Feature: Sharding
+    Description: Test ManifestDataset sharding
+    Expectation: The dataset is processed as expected
+    """
     manifest_file = "../data/dataset/testManifestData/test5trainimgs.json"
 
     def sharding_config(num_shards, shard_id, num_samples, shuffle, repeat_cnt=1):
@@ -141,7 +159,7 @@ def test_manifest_shardings(print_res=False):
                                    shuffle=shuffle, decode=True)
         data1 = data1.repeat(repeat_cnt)
         res = []
-        for item in data1.create_dict_iterator():  # each data is a dictionary
+        for item in data1.create_dict_iterator(num_epochs=1, output_numpy=True):  # each data is a dictionary
             res.append(item["label"].item())
         if print_res:
             logger.info("labels of dataset: {}".format(res))
@@ -159,14 +177,19 @@ def test_manifest_shardings(print_res=False):
 
 
 def test_voc_shardings(print_res=False):
+    """
+    Feature: Sharding
+    Description: Test VOCDataset sharding
+    Expectation: The dataset is processed as expected
+    """
     voc_dir = "../data/dataset/testVOC2012"
 
     def sharding_config(num_shards, shard_id, num_samples, shuffle, repeat_cnt=1):
-        sampler = ds.DistributedSampler(num_shards, shard_id, shuffle=shuffle)
-        data1 = ds.VOCDataset(voc_dir, decode=True, sampler=sampler, num_samples=num_samples)
+        sampler = ds.DistributedSampler(num_shards, shard_id, shuffle=shuffle, num_samples=num_samples)
+        data1 = ds.VOCDataset(voc_dir, decode=True, sampler=sampler)
         data1 = data1.repeat(repeat_cnt)
         res = []
-        for item in data1.create_dict_iterator():  # each data is a dictionary
+        for item in data1.create_dict_iterator(num_epochs=1, output_numpy=True):  # each data is a dictionary
             res.append(item["image"].shape[0])
         if print_res:
             logger.info("labels of dataset: {}".format(res))
@@ -187,6 +210,11 @@ def test_voc_shardings(print_res=False):
 
 
 def test_cifar10_shardings(print_res=False):
+    """
+    Feature: Sharding
+    Description: Test Cifar10Dataset sharding
+    Expectation: The dataset is processed as expected
+    """
     cifar10_dir = "../data/dataset/testCifar10Data"
 
     def sharding_config(num_shards, shard_id, num_samples, shuffle, repeat_cnt=1):
@@ -194,19 +222,24 @@ def test_cifar10_shardings(print_res=False):
                                   shuffle=shuffle)
         data1 = data1.repeat(repeat_cnt)
         res = []
-        for item in data1.create_dict_iterator():  # each data is a dictionary
+        for item in data1.create_dict_iterator(num_epochs=1, output_numpy=True):  # each data is a dictionary
             res.append(item["label"].item())
         if print_res:
             logger.info("labels of dataset: {}".format(res))
         return res
 
-    # 60000 rows in total. CIFAR reads everything in memory which would make each test case very slow
+    # 10000 rows in total. CIFAR reads everything in memory which would make each test case very slow
     # therefore, only 2 test cases for now.
     assert sharding_config(10000, 9999, 7, False, 1) == [9]
     assert sharding_config(10000, 0, 4, False, 3) == [0, 0, 0]
 
 
 def test_cifar100_shardings(print_res=False):
+    """
+    Feature: Sharding
+    Description: Test Cifar100Dataset sharding
+    Expectation: The dataset is processed as expected
+    """
     cifar100_dir = "../data/dataset/testCifar100Data"
 
     def sharding_config(num_shards, shard_id, num_samples, shuffle, repeat_cnt=1):
@@ -214,7 +247,7 @@ def test_cifar100_shardings(print_res=False):
                                    shuffle=shuffle)
         data1 = data1.repeat(repeat_cnt)
         res = []
-        for item in data1.create_dict_iterator():  # each data is a dictionary
+        for item in data1.create_dict_iterator(num_epochs=1, output_numpy=True):  # each data is a dictionary
             res.append(item["coarse_label"].item())
         if print_res:
             logger.info("labels of dataset: {}".format(res))
@@ -226,6 +259,11 @@ def test_cifar100_shardings(print_res=False):
 
 
 def test_mnist_shardings(print_res=False):
+    """
+    Feature: Sharding
+    Description: Test MnistDataset sharding
+    Expectation: The dataset is processed as expected
+    """
     mnist_dir = "../data/dataset/testMnistData"
 
     def sharding_config(num_shards, shard_id, num_samples, shuffle, repeat_cnt=1):
@@ -233,7 +271,7 @@ def test_mnist_shardings(print_res=False):
                                 shuffle=shuffle)
         data1 = data1.repeat(repeat_cnt)
         res = []
-        for item in data1.create_dict_iterator():  # each data is a dictionary
+        for item in data1.create_dict_iterator(num_epochs=1, output_numpy=True):  # each data is a dictionary
             res.append(item["label"].item())
         if print_res:
             logger.info("labels of dataset: {}".format(res))

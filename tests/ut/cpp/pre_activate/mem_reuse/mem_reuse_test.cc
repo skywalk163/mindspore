@@ -16,25 +16,29 @@
 #include <memory>
 #include <vector>
 #include <string>
-#include "session/kernel_graph.h"
-#include "session/session_basic.h"
-#include "session/ascend_session.h"
-#include "pre_activate/mem_reuse/kernel_refcount.h"
-#include "pre_activate/mem_reuse/mem_reuse_allocator.h"
-#include "device/kernel_info.h"
-#include "kernel/tbe/tbe_kernel_mod.h"
-#include "operator/ops.h"
+#include "include/backend/kernel_graph.h"
+#include "mindspore/core/ops/math_ops.h"
+#include "backend/common/session/session_basic.h"
+#include "backend/common/mem_reuse/kernel_refcount.h"
+#include "include/backend/kernel_info.h"
+#include "frontend/operator/ops.h"
 #include "utils/log_adapter.h"
-#include "session/anf_runtime_algorithm.h"
-#include "common/utils.h"
-#include "pipeline/resource.h"
-#include "pre_activate/mem_reuse/mem_reuse.h"
+#include "include/backend/anf_runtime_algorithm.h"
+#include "include/common/utils/anfalgo.h"
+#include "utils/ms_utils.h"
+#include "pipeline/jit/ps/resource.h"
+#include "backend/common/mem_reuse/mem_reuse.h"
 
 #include "common/common_test.h"
 #include "common/py_func_graph_fetcher.h"
 
 namespace mindspore {
 namespace memreuse {
+namespace {
+constexpr auto kPatternElemWise = "ElemWise";
+constexpr auto kPatternConvolution = "Convolution";
+}  // namespace
+
 using session::KernelGraph;
 using KernelBuildInfoBuilder = kernel::KernelBuildInfo::KernelBuildInfoBuilder;
 class TestMemReuseWithPy : public UT::Common {
@@ -56,7 +60,7 @@ static KernelGraphPtr CreateKernelGraph() {
    */
   KernelGraphPtr g = std::make_shared<KernelGraph>();
   std::vector<AnfNodePtr> inputs;
-  std::vector<int> shp = {1, 3, 3, 4};
+  std::vector<int64_t> shp = {1, 3, 3, 4};
   TensorTypePtr tensor_type = std::make_shared<TensorType>(kFloat32);
   tensor::DeviceInfo device_info{kOpFormat_NCHW, tensor_type};
 
@@ -97,7 +101,7 @@ static KernelGraphPtr CreateKernelGraph() {
   builder.SetOutputsFormat({kOpFormat_NCHW});
   builder.SetOutputsDeviceType({kFloat32->type_id()});
   builder.SetKernelType(KernelType::TBE_KERNEL);
-  builder.SetFusionType(mindspore::kernel::CONVLUTION);
+  builder.SetFusionType(kPatternConvolution);
   builder.SetProcessor(kernel::Processor::AICORE);
   AnfAlgo::SetSelectKernelBuildInfo(builder.Build(), kernelptr_first.get());
 
@@ -127,13 +131,13 @@ static KernelGraphPtr CreateKernelGraph() {
   relu_builder.SetInputsDeviceType({kFloat32->type_id()});
   relu_builder.SetOutputsDeviceType({kFloat32->type_id()});
   relu_builder.SetKernelType(KernelType::TBE_KERNEL);
-  relu_builder.SetFusionType(kernel::FusionType::ELEMWISE);
+  relu_builder.SetFusionType(kPatternElemWise);
   relu_builder.SetProcessor(kernel::Processor::AICORE);
   AnfAlgo::SetSelectKernelBuildInfo(builder.Build(), kernelptr_floor.get());
   next_cnode_ptr = kernelptr_floor;
 
   // return res
-  auto p_return = std::make_shared<Primitive>("return");
+  auto p_return = std::make_shared<Primitive>("Return");
   inputs.clear();
   inputs.push_back(NewValueNode(p_return));
   inputs.push_back(next_cnode_ptr);
@@ -152,7 +156,7 @@ static KernelGraphPtr CreateGraphWithExecOrder() {
    *              return
    */
   auto anf_graph = std::make_shared<FuncGraph>();
-  std::vector<int> shape = {2, 32, 224, 224};
+  std::vector<int64_t> shape = {2, 32, 224, 224};
   auto abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shape);
   EXPECT_NE(abstract, nullptr);
   auto original_x_parameter = anf_graph->add_parameter();
@@ -163,7 +167,7 @@ static KernelGraphPtr CreateGraphWithExecOrder() {
   EXPECT_NE(original_y_parameter, nullptr);
   original_y_parameter->set_name("original_y_parameter");
   original_y_parameter->set_abstract(abstract);
-  std::vector<AnfNodePtr> add_inputs = {NewValueNode(prim::kPrimTensorAdd), original_x_parameter, original_y_parameter};
+  std::vector<AnfNodePtr> add_inputs = {NewValueNode(prim::kPrimAdd), original_x_parameter, original_y_parameter};
   auto original_add = anf_graph->NewCNode(add_inputs);
   EXPECT_NE(original_add, nullptr);
   original_add->set_abstract(abstract);
@@ -179,7 +183,7 @@ static KernelGraphPtr CreateGraphWithExecOrder() {
 
   std::vector<AnfNodePtr> lst = {original_add, original_mul};
   std::vector<AnfNodePtr> outputs = {original_mul};
-  session::SessionPtr sess = std::make_shared<session::AscendSession>();
+  session::SessionPtr sess = session::SessionFactory::Get().Create(kSessionBasic);
   sess->Init(0);
   auto kernel_graph = sess->ConstructKernelGraph(lst, outputs);
   EXPECT_NE(kernel_graph, nullptr);
@@ -198,11 +202,11 @@ static KernelGraphPtr CreateGraphWithExecOrder() {
   kernel_graph->SetExecOrderByDefault();
   auto execution_order = kernel_graph->execution_order();
   EXPECT_EQ(execution_order.size(), 2);
-  EXPECT_EQ(AnfAlgo::GetCNodeName(execution_order[0]), prim::kPrimTensorAdd->name());
-  EXPECT_EQ(AnfAlgo::GetCNodeName(execution_order[1]), prim::kPrimMul->name());
+  EXPECT_EQ(common::AnfAlgo::GetCNodeName(execution_order[0]), prim::kPrimAdd->name());
+  EXPECT_EQ(common::AnfAlgo::GetCNodeName(execution_order[1]), prim::kPrimMul->name());
   auto new_outputs = kernel_graph->outputs();
   EXPECT_EQ(new_outputs.size(), 1);
-  EXPECT_EQ(AnfAlgo::GetCNodeName(new_outputs[0]), prim::kPrimMul->name());
+  EXPECT_EQ(common::AnfAlgo::GetCNodeName(new_outputs[0]), prim::kPrimMul->name());
   return kernel_graph;
 }
 
@@ -225,22 +229,8 @@ TEST_F(TestMemReuseWithPy, KernelRef) {
   ASSERT_EQ(kernel_ref_count_ptr->size_, 512);
   KernelDefPtr kernel_def_ptr = std::make_shared<KernelDef>();
   ASSERT_NE(kernel_def_ptr, nullptr);
-  ASSERT_EQ(kernel_def_ptr->dirty, false);
   MembufPtr membuf_ptr = std::make_shared<Membuf>();
   ASSERT_NE(membuf_ptr, nullptr);
-}
-
-TEST_F(TestMemReuseWithPy, ReuseAssignDynamicMemory) {
-  MemReuseUtilPtr mem_reuse_util_ptr = std::make_shared<MemReuseUtil>();
-  ASSERT_NE(mem_reuse_util_ptr, nullptr);
-  auto bestfit_mem_reuse = std::make_shared<BestFitMemReuse>();
-  ASSERT_NE(bestfit_mem_reuse, nullptr);
-  bestfit_mem_reuse->Reuse(mem_reuse_util_ptr.get());
-  auto total_size = bestfit_mem_reuse->GetAllocatedSize();
-  ASSERT_EQ(total_size, 0);
-  KernelGraphPtr kernel_graph = std::make_shared<KernelGraph>();
-  bool ret = mem_reuse_util_ptr->InitDynamicKernelRef(kernel_graph.get());
-  ASSERT_EQ(ret, true);
 }
 
 TEST_F(TestMemReuseWithPy, TestSetInfo) {

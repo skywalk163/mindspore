@@ -22,9 +22,9 @@
 #include "ir/primitive.h"
 #include "ir/manager.h"
 #include "ir/func_graph.h"
-#include "pipeline/parse/parse_base.h"
-#include "pipeline/parse/parse.h"
-#include "./common.h"
+#include "pipeline/jit/ps/parse/parse_base.h"
+#include "pipeline/jit/ps/parse/parse.h"
+#include "pipeline/jit/ps/parse/resolve.h"
 
 namespace UT {
 
@@ -32,8 +32,8 @@ void InitPythonPath();
 
 class PyFuncGraphFetcher {
  public:
-  explicit PyFuncGraphFetcher(std::string model_path, bool doResolve = false)
-      : model_path_(model_path), doResolve_(doResolve) {
+  explicit PyFuncGraphFetcher(std::string model_path, bool doResolve = false, bool do_signature = false)
+      : model_path_(model_path), doResolve_(doResolve), do_signatue_(do_signature) {
     InitPythonPath();
   }
   void SetDoResolve(bool doResolve = true) { doResolve_ = doResolve; }
@@ -44,15 +44,15 @@ class PyFuncGraphFetcher {
   template <class... T>
   mindspore::FuncGraphPtr CallAndParseRet(std::string func_name, T... args) {
     try {
-      py::function fn = mindspore::parse::python_adapter::CallPyFn(model_path_.c_str(), func_name.c_str(), args...);
+      py::function fn = mindspore::python_adapter::CallPyFn(model_path_.c_str(), func_name.c_str(), args...);
       mindspore::FuncGraphPtr func_graph = mindspore::parse::ParsePythonCode(fn);
       if (doResolve_) {
         std::shared_ptr<mindspore::FuncGraphManager> manager = mindspore::Manage(func_graph, false);
-        mindspore::parse::python_adapter::set_use_signature_in_resolve(false);
+        mindspore::python_adapter::set_use_signature_in_resolve(do_signatue_);
         mindspore::parse::ResolveAll(manager);
       }
       return func_graph;
-    } catch (py::error_already_set& e) {
+    } catch (py::error_already_set &e) {
       MS_LOG(ERROR) << "Call and parse fn failed!!! error:" << e.what();
       return nullptr;
     } catch (...) {
@@ -68,14 +68,15 @@ class PyFuncGraphFetcher {
       if ("" != model_path) {
         path = model_path;
       }
-      py::function fn = mindspore::parse::python_adapter::GetPyFn(path.c_str(), func_name.c_str());
+      py::function fn = mindspore::python_adapter::GetPyFn(path.c_str(), func_name.c_str());
       mindspore::FuncGraphPtr func_graph = mindspore::parse::ParsePythonCode(fn);
       if (doResolve_) {
         std::shared_ptr<mindspore::FuncGraphManager> manager = mindspore::Manage(func_graph, false);
+        mindspore::python_adapter::set_use_signature_in_resolve(false);
         mindspore::parse::ResolveAll(manager);
       }
       return func_graph;
-    } catch (py::error_already_set& e) {
+    } catch (py::error_already_set &e) {
       MS_LOG(ERROR) << "get fn failed!!! error:" << e.what();
       return nullptr;
     } catch (...) {
@@ -87,6 +88,7 @@ class PyFuncGraphFetcher {
  private:
   std::string model_path_;
   bool doResolve_;
+  bool do_signatue_;
 };
 
 }  // namespace UT

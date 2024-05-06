@@ -1,4 +1,4 @@
-# Copyright 2019 Huawei Technologies Co., Ltd
+# Copyright 2022 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,63 +18,49 @@ import pytest
 
 import mindspore.context as context
 import mindspore.nn as nn
+import mindspore.ops.operations as P
+from mindspore.ops import composite as C
 from mindspore import Tensor
-from mindspore.common.initializer import initializer
-from mindspore.common.parameter import Parameter
-from mindspore.ops.operations import _grad_ops as G
+from mindspore.ops.functional import vmap
 
 context.set_context(mode=context.GRAPH_MODE, device_target='CPU')
 
 
-class Net_Pool_Grad(nn.Cell):
-    def __init__(self):
-        super(Net_Pool_Grad, self).__init__()
-        self.maxpool_grad_fun = G.MaxPoolGrad(padding="VALID",
-                                              ksize=2,
-                                              strides=2)
+class MaxPool(nn.Cell):
+    def __init__(self, kernel_size, strides, pad_mode):
+        super().__init__()
+        self.maxpool = P.MaxPool(kernel_size=kernel_size, strides=strides, pad_mode=pad_mode)
 
-        self.x = Parameter(initializer(
-            Tensor(np.array([[[
-                [0, 1, 2, 3, 4, 5],
-                [6, 7, 8, 9, 10, 11],
-                [12, 13, 14, 15, 16, 17],
-                [18, 19, 20, 21, 22, 23],
-                [24, 25, 26, 27, 28, 29],
-                [30, 31, 32, 33, 34, 35]
-            ]]]).astype(np.float32)), [1, 1, 6, 6]), name='x')
-
-        self.a = Parameter(initializer(
-            Tensor(np.array([[[
-                [3, 3, 3],
-                [3, 3, 3],
-                [3, 3, 3]
-            ]]]).astype(np.float32)), [1, 1, 3, 3]), name='a')
-
-        self.d = Parameter(initializer(
-            Tensor(np.array([[[
-                [7, 9, 11],
-                [19, 21, 23],
-                [31, 33, 35]
-            ]]]).astype(np.float32)), [1, 1, 3, 3]), name='d')
-
-    def construct(self):
-        return self.maxpool_grad_fun(self.x, self.a, self.d)
+    def construct(self, x):
+        return self.maxpool(x)
 
 
-@pytest.mark.level0
+class MaxPoolGrad(nn.Cell):
+    def __init__(self, forward):
+        super().__init__()
+        self.forward = forward
+        self.grad = C.GradOperation(get_all=True, sens_param=True)
+
+    def construct(self, x, sens):
+        return self.grad(self.forward)(x, sens)
+
+
+@pytest.mark.level1
 @pytest.mark.platform_x86_cpu
 @pytest.mark.env_onecard
-def test_maxpool2d_grad():
-    maxpool2d_grad = Net_Pool_Grad()
-    output = maxpool2d_grad()
-    print(output)
+def test_maxpool_grad_vmap():
+    """
+    Feature: test MaxPoolGrad vmap feature.
+    Description: test MaxPoolGrad vmap feature.
+    Expectation: success.
+    """
+    in_axes = -1
+    seed = np.random.RandomState()
+    x = Tensor(seed.random((1, 1, 6, 6, 3, 6)).astype(np.float32))
+    sens = Tensor(seed.random((1, 1, 3, 3, 3, 6)).astype(np.float32))
+    maxpool = MaxPool(kernel_size=2, strides=2, pad_mode="VALID")
+    bp = MaxPoolGrad(maxpool)
+    maxpoolgrad_vmap = vmap(vmap(bp, in_axes=in_axes, out_axes=0), in_axes=in_axes, out_axes=0)
+    out = maxpoolgrad_vmap(x, sens)
 
-    expect_result = (np.array([[[
-        [0, 0, 0, 0, 0, 0],
-        [0, 7, 0, 9, 0, 11],
-        [0, 0, 0, 0, 0, 0],
-        [0, 19, 0, 21, 0, 23],
-        [0, 0, 0, 0, 0, 0],
-        [0, 31, 0, 33, 0, 35]
-    ]]]))
-    assert (output.asnumpy() == expect_result).all()
+    assert out[0].shape == (6, 3, 1, 1, 6, 6)

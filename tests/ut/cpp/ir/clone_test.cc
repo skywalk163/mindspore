@@ -17,26 +17,108 @@
 
 #include "common/common_test.h"
 #include "common/py_func_graph_fetcher.h"
+#include "ops/arithmetic_ops.h"
 
-#include "ir/manager.h"
-#include "utils/log_adapter.h"
+#include "include/common/debug/draw.h"
 #include "ir/func_graph_cloner.h"
-#include "pipeline/parse/parse.h"
-#include "utils/graph_utils.h"
-#include "debug/draw.h"
-#include "./common.h"
+#include "ir/graph_utils.h"
+#include "ir/manager.h"
+#include "pipeline/jit/ps/parse/parse.h"
+#include "utils/log_adapter.h"
 
 namespace mindspore {
+class FuncGraphIndex {
+ public:
+  using SearchFunc = std::function<AnfNodePtrList(const AnfNodePtr &, const IncludeFunc &)>;
+
+  explicit FuncGraphIndex(const FuncGraphPtr &fg, const SearchFunc &search = DeepScopedGraphSearch,
+                          const IncludeFunc &include = AlwaysInclude);
+  FuncGraphIndex(const FuncGraphIndex &) = delete;
+  FuncGraphIndex &operator=(const FuncGraphIndex &) = delete;
+
+  virtual ~FuncGraphIndex() {}
+
+  std::set<FuncGraphPtr> GetFuncGraphs(const std::string &key);
+  std::set<AnfNodePtr> GetNodes(const std::string &key);
+  FuncGraphPtr GetFirstFuncGraph(const std::string &key);
+  AnfNodePtr GetFirstNode(const std::string &key);
+
+ private:
+  void Acquire(const FuncGraphPtr &key);
+  void Acquire(const AnfNodePtr &key);
+
+  std::map<std::string, std::set<FuncGraphPtr>> index_func_graph_;
+  std::map<std::string, std::set<AnfNodePtr>> index_node_;
+};
+
+FuncGraphIndex::FuncGraphIndex(const FuncGraphPtr &fg, const SearchFunc &search, const IncludeFunc &include) {
+  MS_EXCEPTION_IF_NULL(fg);
+  Acquire(fg);
+  auto vec = search(fg->get_return(), include);
+  for (auto &node : vec) {
+    MS_EXCEPTION_IF_NULL(node);
+    Acquire(node);
+    if (node->func_graph() != nullptr) {
+      Acquire(node->func_graph());
+    }
+  }
+}
+
+std::set<FuncGraphPtr> FuncGraphIndex::GetFuncGraphs(const std::string &key) {
+  std::set<FuncGraphPtr> func_graphs;
+  if (index_func_graph_.find(key) != index_func_graph_.end()) {
+    func_graphs = index_func_graph_[key];
+  }
+  return func_graphs;
+}
+
+std::set<AnfNodePtr> FuncGraphIndex::GetNodes(const std::string &key) {
+  if (index_node_.find(key) != index_node_.end()) {
+    return index_node_[key];
+  }
+  return std::set<AnfNodePtr>();
+}
+
+FuncGraphPtr FuncGraphIndex::GetFirstFuncGraph(const std::string &key) {
+  if (GetFuncGraphs(key).empty()) {
+    return nullptr;
+  }
+  auto fg = *GetFuncGraphs(key).begin();
+  return fg;
+}
+
+AnfNodePtr FuncGraphIndex::GetFirstNode(const std::string &key) {
+  if (GetNodes(key).empty()) {
+    return nullptr;
+  }
+  auto node = *GetNodes(key).begin();
+  return node;
+}
+
+void FuncGraphIndex::Acquire(const FuncGraphPtr &key) {
+  std::string name = trace::Label(key->debug_info());
+  if (!name.empty()) {
+    (void)index_func_graph_[name].insert(key);
+  }
+}
+
+void FuncGraphIndex::Acquire(const AnfNodePtr &key) {
+  std::string name = trace::Label(key->debug_info());
+  if (!name.empty()) {
+    (void)index_node_[name].insert(key);
+  }
+}
+
 class TestCloner : public UT::Common {
  public:
   TestCloner() : getPyFun("gtest_input.ir.clone_test", true) {
-    one = NewValueNode(1);
-    two = NewValueNode(2);
-    three = NewValueNode(3);
+    one = NewValueNode(static_cast<int64_t>(1));
+    two = NewValueNode(static_cast<int64_t>(2));
+    three = NewValueNode(static_cast<int64_t>(3));
   }
 
   FuncGraphPtr GraphForInline() { return nullptr; }
-  void SuccessfulInlining(const std::shared_ptr<Cloner> cl, FuncGraphPtr orig, const std::vector<AnfNodePtr>& params,
+  void SuccessfulInlining(const std::shared_ptr<Cloner> cl, FuncGraphPtr orig, const std::vector<AnfNodePtr> &params,
                           FuncGraphPtr target);
 
  public:
@@ -48,7 +130,7 @@ class TestCloner : public UT::Common {
 };
 
 void TestCloner::SuccessfulInlining(const std::shared_ptr<Cloner> cl, FuncGraphPtr orig,
-                                    const std::vector<AnfNodePtr>& params, FuncGraphPtr target) {
+                                    const std::vector<AnfNodePtr> &params, FuncGraphPtr target) {
   auto g = (*cl)[orig];
   ASSERT_TRUE(g != target);
   ASSERT_TRUE(g == orig);
@@ -59,11 +141,11 @@ void TestCloner::SuccessfulInlining(const std::shared_ptr<Cloner> cl, FuncGraphP
   AnfNodeSet orig_nodes = AnfNodeSet(DeepLinkedGraphSearch(orig->output()));
   AnfNodeSet new_nodes = AnfNodeSet(DeepLinkedGraphSearch(new_root));
 
-  for (auto& p : params) {
+  for (auto &p : params) {
     ASSERT_TRUE(new_nodes.contains(p));
   }
 
-  for (auto& node : orig_nodes) {
+  for (auto &node : orig_nodes) {
     if (node->func_graph() == orig) {
       ASSERT_TRUE((*cl)[node]);
     }
@@ -90,10 +172,10 @@ TEST_F(TestCloner, test_clone_simple) {
   Cloner cl2(gs);
   auto g3 = cl2[g];
 
-  std::vector<Primitive> results = {Primitive("scalar_add"), Primitive("scalar_mul"), Primitive("return")};
+  std::vector<Primitive> results = {Primitive("ScalarAdd"), Primitive("ScalarMul"), Primitive("Return")};
   AnfNodeSet d3 = AnfNodeSet(DeepScopedGraphSearch(g3->get_return()));
   common = d1 & d3;
-  for (auto& x : common) {
+  for (auto &x : common) {
     ASSERT_TRUE(x->isa<ValueNode>());
     ASSERT_TRUE(find(results.begin(), results.end(), *x->cast<ValueNodePtr>()->value()->cast<PrimitivePtr>()) !=
                 results.end());
@@ -113,7 +195,6 @@ TEST_F(TestCloner, test_clone_closure) {
   Cloner cl(gs, true);
 
   auto g_clone = cl[g];
-  draw::Draw("test_clone_closure_g_clone.dot", g_clone);
   FuncGraphIndex idx2(g_clone, DeepLinkedGraphSearch);
 
   std::string name_list = "xy";
@@ -130,10 +211,8 @@ TEST_F(TestCloner, test_clone_lifting) {
 
   // parse ast to graph
   FuncGraphPtr parsed_f = getPyFun(py_code);
-  draw::Draw("test_clone_before_lifting.dot", parsed_f);
 
   auto g_lifting = LiftingClone(parsed_f);
-  draw::Draw("test_clone_after_lifting.dot", g_lifting);
 
   FuncGraphIndex idx(g_lifting);
   auto g = idx.GetFirstFuncGraph("j");

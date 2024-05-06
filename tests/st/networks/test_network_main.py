@@ -19,12 +19,8 @@ Usage:
     python test_network_main.py --net lenet --target Ascend
 """
 import argparse
+
 import numpy as np
-import os
-import time
-from models.alexnet import AlexNet
-from models.lenet import LeNet
-from models.resnetv1_5 import resnet50
 
 import mindspore.context as context
 import mindspore.nn as nn
@@ -32,7 +28,9 @@ from mindspore import Tensor
 from mindspore.nn import TrainOneStepCell, WithLossCell
 from mindspore.nn.optim import Momentum
 
-context.set_context(mode=context.GRAPH_MODE, device_target="Ascend")
+from .models.alexnet import AlexNet
+from .models.lenet import LeNet
+from .models.resnetv1_5 import resnet50
 
 
 def train(net, data, label):
@@ -40,7 +38,7 @@ def train(net, data, label):
     momentum = 0.9
 
     optimizer = Momentum(filter(lambda x: x.requires_grad, net.get_parameters()), learning_rate, momentum)
-    criterion = nn.SoftmaxCrossEntropyWithLogits(is_grad=False, sparse=True)
+    criterion = nn.SoftmaxCrossEntropyWithLogits(sparse=True)
     net_with_criterion = WithLossCell(net, criterion)
     train_network = TrainOneStepCell(net_with_criterion, optimizer)  # optimizer
     train_network.set_train()
@@ -57,9 +55,9 @@ def test_resnet50():
 
 
 def test_lenet():
-    data = Tensor(np.ones([32, 1, 32, 32]).astype(np.float32) * 0.01)
-    label = Tensor(np.ones([32]).astype(np.int32))
     net = LeNet()
+    data = Tensor(np.ones([net.batch_size, 3, 32, 32]).astype(np.float32) * 0.01)
+    label = Tensor(np.ones([net.batch_size]).astype(np.int32))
     train(net, data, label)
 
 

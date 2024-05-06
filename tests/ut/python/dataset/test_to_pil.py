@@ -1,4 +1,4 @@
-# Copyright 2020 Huawei Technologies Co., Ltd
+# Copyright 2020-2022 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,11 +15,14 @@
 """
 Testing ToPIL op in DE
 """
+import numpy as np
+import pytest
+
 import mindspore.dataset as ds
-import mindspore.dataset.transforms.vision.c_transforms as c_vision
-import mindspore.dataset.transforms.vision.py_transforms as py_vision
+import mindspore.dataset.transforms
+import mindspore.dataset.vision as vision
 from mindspore import log as logger
-from util import save_and_check_md5
+from util import save_and_check_md5_pil
 
 GENERATE_GOLDEN = False
 
@@ -29,51 +32,103 @@ SCHEMA_DIR = "../data/dataset/test_tf_file_3_images/datasetSchema.json"
 
 def test_to_pil_01():
     """
-    Test ToPIL Op with md5 comparison: input is already PIL image
-    Expected to pass
+    Feature: ToPIL op
+    Description: Test ToPIL op with md5 comparison where input is already PIL image
+    Expectation: Passes the md5 check test
     """
     logger.info("test_to_pil_01")
 
     # Generate dataset
     data1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
     transforms = [
-        py_vision.Decode(),
+        vision.Decode(True),
         # If input is already PIL image.
-        py_vision.ToPIL(),
-        py_vision.CenterCrop(375),
-        py_vision.ToTensor()
+        vision.ToPIL(),
+        vision.CenterCrop(375),
+        vision.ToTensor()
     ]
-    transform = py_vision.ComposeOp(transforms)
-    data1 = data1.map(input_columns=["image"], operations=transform())
+    transform = mindspore.dataset.transforms.Compose(transforms)
+    data1 = data1.map(operations=transform, input_columns=["image"])
 
     # Compare with expected md5 from images
     filename = "to_pil_01_result.npz"
-    save_and_check_md5(data1, filename, generate_golden=GENERATE_GOLDEN)
+    save_and_check_md5_pil(data1, filename, generate_golden=GENERATE_GOLDEN)
+
 
 def test_to_pil_02():
     """
-    Test ToPIL Op with md5 comparison: input is not PIL image
-    Expected to pass
+    Feature: ToPIL op
+    Description: Test ToPIL op with md5 comparison where input is not a PIL image
+    Expectation: Passes the md5 check test
     """
     logger.info("test_to_pil_02")
 
     # Generate dataset
     data1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
-    decode_op = c_vision.Decode()
+    decode_op = vision.Decode()
     transforms = [
         # If input type is not PIL.
-        py_vision.ToPIL(),
-        py_vision.CenterCrop(375),
-        py_vision.ToTensor()
+        vision.ToPIL(),
+        vision.CenterCrop(375),
+        vision.ToTensor()
     ]
-    transform = py_vision.ComposeOp(transforms)
-    data1 = data1.map(input_columns=["image"], operations=decode_op)
-    data1 = data1.map(input_columns=["image"], operations=transform())
+    transform = mindspore.dataset.transforms.Compose(transforms)
+    data1 = data1.map(operations=decode_op, input_columns=["image"])
+    data1 = data1.map(operations=transform, input_columns=["image"])
 
     # Compare with expected md5 from images
     filename = "to_pil_02_result.npz"
-    save_and_check_md5(data1, filename, generate_golden=GENERATE_GOLDEN)
+    save_and_check_md5_pil(data1, filename, generate_golden=GENERATE_GOLDEN)
+
+
+def test_to_pil_invalid_type():
+    """
+    Feature: ToPIL
+    Description: Test ToPIL with invalid image type
+    Expectation: Error is raised as expected
+    """
+    image = list(np.random.randint(0, 255, (32, 32, 3)))
+    to_pil = vision.ToPIL()
+    with pytest.raises(TypeError) as error_info:
+        to_pil(image)
+    assert "should be of type numpy.ndarray or PIL.Image.Image" in str(error_info.value)
+
+
+def test_to_pil_invalid_shape():
+    """
+    Feature: ToPIL
+    Description: Test ToPIL with invalid image shape
+    Expectation: Error is raised as expected
+    """
+    image = np.random.randint(0, 255, (32, 32, 4, 3)).astype(np.uint8)
+    to_pil = vision.ToPIL()
+    with pytest.raises(ValueError) as error_info:
+        to_pil(image)
+    assert "dimension of input image should be 2 or 3" in str(error_info.value)
+
+    image = np.random.randint(0, 255, (32, 32, 5)).astype(np.uint8)
+    to_pil = vision.ToPIL()
+    with pytest.raises(ValueError) as error_info:
+        to_pil(image)
+    assert "channel of input image should not exceed 4" in str(error_info.value)
+
+
+def test_to_pil_invalid_dtype():
+    """
+    Feature: ToPIL
+    Description: Test ToPIL with invalid image dtype
+    Expectation: Error is raised as expected
+    """
+    image = np.random.randint(0, 255, (32, 32, 3)).astype(np.int16)
+    to_pil = vision.ToPIL()
+    with pytest.raises(TypeError) as error_info:
+        to_pil(image)
+    assert "image type int16 is not supported" in str(error_info.value)
+
 
 if __name__ == "__main__":
     test_to_pil_01()
     test_to_pil_02()
+    test_to_pil_invalid_type()
+    test_to_pil_invalid_shape()
+    test_to_pil_invalid_dtype()

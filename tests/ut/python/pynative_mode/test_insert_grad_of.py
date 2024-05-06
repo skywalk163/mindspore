@@ -1,4 +1,4 @@
-# Copyright 2020 Huawei Technologies Co., Ltd
+# Copyright 2020-2021 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,12 +19,15 @@ import mindspore
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import ms_function
+from mindspore.common.api import jit
 from mindspore.ops import composite as C
-from mindspore.ops import functional as F
 from mindspore.ops import operations as P
 from ....mindspore_test_framework.utils.bprop_util import bprop
 from ....mindspore_test_framework.utils.debug_util import PrintShapeTypeCell, PrintGradShapeTypeCell
+
+
+grad_by_list = C.GradOperation(get_by_list=True)
+grad_all = C.GradOperation(get_all=True)
 
 
 def setup_module(module):
@@ -47,8 +50,9 @@ def test_InsertGradientOf_1():
         c = x * y
         return c
 
+    @jit
     def f(x, y):
-        return C.grad_all(stop_test)(x, y)
+        return grad_all(stop_test)(x, y)
 
     print("stop_gradient:", f(1, 2))
 
@@ -77,42 +81,16 @@ def test_InsertGradientOf_2():
         c = x * y
         return c
 
-    @ms_function
+    @jit
     def f(x, y):
         return clip_test(x, y)
 
+    @jit
     def fd(x, y):
-        return C.grad_all(clip_test)(x, y)
+        return grad_all(clip_test)(x, y)
 
     print("forward: ", f(1.1, 0.1))
     print("clip_gradient:", fd(1.1, 0.1))
-
-
-summary = P.ScalarSummary()
-
-
-def debug_gradient(dx):
-    """ debug_gradient """
-    summary("dx: ", dx)
-    return dx
-
-
-debug = P.InsertGradientOf(debug_gradient)
-
-
-def test_InsertGradientOf_3():
-    """ test_InsertGradientOf_3 """
-
-    def debug_test(x, y):
-        x = debug(x)
-        y = debug(y)
-        c = x * y
-        return c
-
-    def f(x, y):
-        return C.grad_all(debug_test)(x, y)
-
-    print("debug_gradient:", f(Tensor(1.0), Tensor(2.0)))
 
 
 def test_print_shape_type():
@@ -133,7 +111,7 @@ def test_print_shape_type():
 
 
 def test_cell_assign():
-    context.set_context(mode=context.GRAPH_MODE, save_graphs=True)
+    context.set_context(mode=context.GRAPH_MODE)
 
     class GradNetWrap(nn.Cell):
         """ GradNetWrap definition """
@@ -144,7 +122,7 @@ def test_cell_assign():
             self.weights = mindspore.ParameterTuple(net.get_parameters())
 
         def construct(self, x, y):
-            return C.grad_by_list(self.net, self.weights)(x, y)
+            return grad_by_list(self.net, self.weights)(x, y)
 
     class Mul(nn.Cell):
         def __init__(self):

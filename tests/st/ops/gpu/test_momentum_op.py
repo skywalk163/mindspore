@@ -42,17 +42,17 @@ class NetMomentum(nn.Cell):
         return output
 
 
-@pytest.mark.level0
+@pytest.mark.level1
 @pytest.mark.platform_x86_gpu_training
 @pytest.mark.env_onecard
 def test_momentum():
     epoch = 3
     net = NetMomentum()
     learning_rate = initializer(Tensor(np.array([0.01]).astype(np.float32)), [1])
-    momentum = initializer(Tensor(np.array([0.9]).astype(np.float32)), [1])
+    momentum = 0.9
 
     optimizer = Momentum(filter(lambda x: x.requires_grad, net.get_parameters()), learning_rate, momentum)
-    criterion = nn.SoftmaxCrossEntropyWithLogits(is_grad=False, sparse=True)
+    criterion = nn.SoftmaxCrossEntropyWithLogits(sparse=True, reduction='mean')
     net_with_criterion = WithLossCell(net, criterion)
     train_network = TrainOneStepCell(net_with_criterion, optimizer)  # optimizer
     train_network.set_train()

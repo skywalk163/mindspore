@@ -27,6 +27,9 @@ from ....mindspore_test_framework.mindspore_test import mindspore_test
 from ....mindspore_test_framework.pipeline.forward.compile_forward \
     import pipeline_for_compile_forward_ge_graph_for_case_by_case_config
 
+context.set_context(mode=context.PYNATIVE_MODE)
+grad_by_list_with_sens = C.GradOperation(get_by_list=True, sens_param=True)
+
 
 class DisOrderTest1(nn.Cell):
     """ DisOrderTest1 definition """
@@ -39,7 +42,7 @@ class DisOrderTest1(nn.Cell):
         self.s3 = Parameter(weight, name="s3")
         self.s4 = Parameter(weight, name="s4")
         self.mul = P.Mul()
-        self.add = P.TensorAdd()
+        self.add = P.Add()
 
     def construct(self, x):
         return x * (self.s1 * self.s2 + self.s2 * self.s3 + self.s3 * self.s4 + self.s4 * self.s1)
@@ -56,7 +59,7 @@ class DisOrderTest2(nn.Cell):
         self.s3 = Parameter(weight, name="s3")
         self.s4 = Parameter(weight, name="s4")
         self.mul = P.Mul()
-        self.add = P.TensorAdd()
+        self.add = P.Add()
 
     def construct(self, x):
         return self.mul(x, (self.add(self.add(self.add(self.mul(self.s1, self.s2), self.mul(self.s2, self.s3)),
@@ -72,7 +75,7 @@ class GradNetWrap(nn.Cell):
         self.weights = ParameterTuple(net.get_parameters())
 
     def construct(self, x, sens):
-        return C.grad_by_list_with_sens(self.net, self.weights)(x, sens)
+        return grad_by_list_with_sens(self.net, self.weights)(x, sens)
 
 
 test_case_ops = [

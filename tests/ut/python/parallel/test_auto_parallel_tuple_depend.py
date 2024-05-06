@@ -18,11 +18,18 @@ import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
 from mindspore.ops.operations.comm_ops import _VirtualDataset
 from tests.ut.python.ops.test_math_ops import VirtualLoss
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
+grad_all = C.GradOperation(get_all=True)
 
 
 class NetWithLoss(nn.Cell):
@@ -42,23 +49,29 @@ class GradWrap(nn.Cell):
         self.network = network
 
     def construct(self, x, y, b):
-        return C.grad_all(self.network)(x, y, b)
+        return grad_all(self.network)(x, y, b)
 
 
 def bn_with_initialize(out_channels):
-    bn = nn.BatchNorm2d(out_channels, momentum=0.1, eps=1e-5)
+    bn = nn.BatchNorm1d(out_channels, momentum=0.1, eps=1e-5)
     return bn
 
 
 # model_parallel test
 def test_virtual_dataset_3_input():
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
+
     class Net(nn.Cell):
         def __init__(self):
             super().__init__()
             self.virtual_dataset = _VirtualDataset()
             self.matmul1 = P.MatMul()
             self.matmul2 = P.MatMul()
-            self.gelu = P.Gelu()
+            self.gelu = P.GeLU()
             self.bn1 = bn_with_initialize(2048)
 
         def construct(self, x, y, b):
@@ -68,11 +81,11 @@ def test_virtual_dataset_3_input():
             out = self.matmul2(out, b)
             return out
 
-    net = GradWrap(NetWithLoss(Net()))
-    context.set_auto_parallel_context(parallel_mode="auto_parallel")
+    context.set_auto_parallel_context(parallel_mode="auto_parallel", search_mode="dynamic_programming")
     context.set_auto_parallel_context(device_num=8, global_rank=0)
-    net.set_auto_parallel()
+    net = GradWrap(NetWithLoss(Net()))
     x = Tensor(np.ones([128, 32]), dtype=ms.float32)
     y = Tensor(np.ones([32, 64]), dtype=ms.float32)
     b = Tensor(np.ones([64, 2048]), dtype=ms.float32)
-    _executor.compile(net, x, y, b)
+    net.set_train()
+    _cell_graph_executor.compile(net, x, y, b)

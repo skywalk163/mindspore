@@ -28,7 +28,7 @@ from ....mindspore_test_framework.pipeline.forward.compile_forward \
 
 
 class AssignAddNet(nn.Cell):
-    def __init__(self, ):
+    def __init__(self,):
         super(AssignAddNet, self).__init__()
         self.op = P.AssignAdd()
         self.inputdata = Parameter(Tensor(np.zeros([1]).astype(np.bool_), mstype.bool_), name="assign_add1")
@@ -39,7 +39,7 @@ class AssignAddNet(nn.Cell):
 
 
 class AssignSubNet(nn.Cell):
-    def __init__(self, ):
+    def __init__(self,):
         super(AssignSubNet, self).__init__()
         self.op = P.AssignSub()
         self.inputdata = Parameter(Tensor(np.zeros([1]).astype(np.bool_), mstype.bool_), name="assign_sub1")
@@ -81,7 +81,7 @@ class CumSumNet(nn.Cell):
 raise_set = [
     # input two tensors, their shapes do not match
     ('TensorAdd2', {
-        'block': (P.TensorAdd(), {'exception': ValueError, 'error_keywords': ['TensorAdd']}),
+        'block': (P.Add(), {'exception': ValueError, 'error_keywords': ['Add']}),
         'desc_inputs': [Tensor(np.ones([3, 5]).astype(np.float32)), Tensor(np.ones([3, 4]).astype(np.float32))],
         'skip': ['backward']}),
 
@@ -291,13 +291,6 @@ raise_set = [
         'block': (P.Reciprocal(),
                   {'exception': TypeError, 'error_keywords': ['Reciprocal']}),
         'desc_inputs': [5.0],
-        'skip': ['backward']}),
-
-    # input x is Tensor(bool)
-    ('Pow1', {
-        'block': (P.Pow(),
-                  {'exception': TypeError, 'error_keywords': ['Pow']}),
-        'desc_inputs': [Tensor(np.ones([2, 3]).astype(np.bool_)), 2.0],
         'skip': ['backward']}),
 
     # input is not Tensor
@@ -580,7 +573,7 @@ raise_set = [
 test_case_math_ops = [
     # input two tensors, but element types are not same
     ('TensorAdd1', {
-        'block': P.TensorAdd(),
+        'block': P.Add(),
         'desc_inputs': [Tensor(np.ones([3, 4]).astype(np.int32)), Tensor(np.ones([3, 4]).astype(np.float32))],
         'skip': ['backward']}),
     # input two tensors, but element types are not same

@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,9 @@
  */
 
 #include "common/common_test.h"
-#include "parallel/device_manager.h"
-#include "parallel/auto_parallel/graph_costmodel.h"
-#include "parallel/ops_info/matmul_info.h"
+#include "frontend/parallel/device_manager.h"
+#include "frontend/parallel/auto_parallel/graph_costmodel.h"
+#include "frontend/parallel/ops_info/matmul_info.h"
 
 namespace mindspore {
 namespace parallel {
@@ -52,14 +52,13 @@ class TestCostGraph : public UT::Common {
 };
 
 void TestCostGraph::SetUp() {
-  cost_graph.SetDeviceMemoryAndCostParameter();
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 10; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(8);
   stage_map.push_back(2);
 
@@ -72,7 +71,7 @@ void TestCostGraph::SetUp() {
   // matmul0
   ValuePtr transpose_a_0 = MakeValue(false);
   ValuePtr transpose_b_0 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_0 = {{"transpose_a", transpose_a_0}, {"transpose_b", transpose_b_0}};
+  mindspore::HashMap<std::string, ValuePtr> attr_0 = {{"transpose_a", transpose_a_0}, {"transpose_b", transpose_b_0}};
   Shapes inputs_shape_0 = {{32, 16}, {16, 16}};
   Shapes outputs_shape_0 = {{32, 16}};
   matmul0 = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_0, outputs_shape_0, attr_0);
@@ -81,7 +80,7 @@ void TestCostGraph::SetUp() {
   // matmul1
   ValuePtr transpose_a_1 = MakeValue(false);
   ValuePtr transpose_b_1 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_1 = {{"transpose_a", transpose_a_1}, {"transpose_b", transpose_b_1}};
+  mindspore::HashMap<std::string, ValuePtr> attr_1 = {{"transpose_a", transpose_a_1}, {"transpose_b", transpose_b_1}};
   Shapes inputs_shape_1 = {{8, 16}, {16, 32}};
   Shapes outputs_shape_1 = {{8, 32}};
   matmul1 = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_1, outputs_shape_1, attr_1);
@@ -90,7 +89,7 @@ void TestCostGraph::SetUp() {
   // matmul2
   ValuePtr transpose_a_2 = MakeValue(false);
   ValuePtr transpose_b_2 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_2 = {{"transpose_a", transpose_a_2}, {"transpose_b", transpose_b_2}};
+  mindspore::HashMap<std::string, ValuePtr> attr_2 = {{"transpose_a", transpose_a_2}, {"transpose_b", transpose_b_2}};
   Shapes inputs_shape_2 = {{8, 32}, {32, 16}};
   Shapes outputs_shape_2 = {{8, 16}};
   matmul2 = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_2, outputs_shape_2, attr_2);
@@ -99,7 +98,7 @@ void TestCostGraph::SetUp() {
   // matmul3
   ValuePtr transpose_a_3 = MakeValue(false);
   ValuePtr transpose_b_3 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_3 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_3}};
+  mindspore::HashMap<std::string, ValuePtr> attr_3 = {{"transpose_a", transpose_a_3}, {"transpose_b", transpose_b_3}};
   Shapes inputs_shape_3 = {{16, 8}, {8, 32}};
   Shapes outputs_shape_3 = {{16, 32}};
   matmul3 = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_3, outputs_shape_3, attr_3);
@@ -108,7 +107,7 @@ void TestCostGraph::SetUp() {
   // matmul4
   ValuePtr transpose_a_4 = MakeValue(false);
   ValuePtr transpose_b_4 = MakeValue(false);
-  std::unordered_map<std::string, ValuePtr> attr_4 = {{"transpose_a", transpose_a_4}, {"transpose_b", transpose_b_4}};
+  mindspore::HashMap<std::string, ValuePtr> attr_4 = {{"transpose_a", transpose_a_4}, {"transpose_b", transpose_b_4}};
   Shapes inputs_shape_4 = {{8, 16}, {16, 32}};
   Shapes outputs_shape_4 = {{8, 32}};
   matmul4 = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_4, outputs_shape_4, attr_4);
@@ -117,7 +116,7 @@ void TestCostGraph::SetUp() {
   // matmul5
   ValuePtr transpose_a_5 = MakeValue(false);
   ValuePtr transpose_b_5 = MakeValue(true);
-  std::unordered_map<std::string, ValuePtr> attr_5 = {{"transpose_a", transpose_a_5}, {"transpose_b", transpose_b_5}};
+  mindspore::HashMap<std::string, ValuePtr> attr_5 = {{"transpose_a", transpose_a_5}, {"transpose_b", transpose_b_5}};
   Shapes inputs_shape_5 = {{8, 32}, {8, 32}};
   Shapes outputs_shape_5 = {{8, 8}};
   matmul5 = std::make_shared<MatMulInfo>("matmul_info", inputs_shape_5, outputs_shape_5, attr_5);
@@ -305,7 +304,6 @@ TEST_F(TestCostGraph, test_ConstructConnectedComponents) {
 
 TEST_F(TestCostGraph, test_SelectCostListWithMinTrainingTimeMultiple) {
   CostGraph entire_cost_graph;
-  entire_cost_graph.SetDeviceMemoryAndCostParameter();
   double memory = 1024.0;
   CostPtrList clist_1, clist_2;
   std::vector<CostPtrList> all_list;
@@ -371,7 +369,8 @@ TEST_F(TestCostGraph, test_CreateFinalCostList_AND_Select) {
   ASSERT_EQ(edge_m1_m2->InitEdgeCost(), SUCCESS);
   cost_graph.AddEdge(matmul1, matmul2, edge_m1_m2);
   auto cost_list = cost_graph.CreateFinalCostList(matmul1, edge_m1_m2, matmul2);
-  cost_graph.SelectCostWithMinInferenceTime(cost_list, cost_graph.GetDeviceMemory());
+  const auto device_mem_capacity = CostModelContext::GetInstance()->device_memory_capacity();
+  cost_graph.SelectCostWithMinInferenceTime(cost_list, device_mem_capacity);
 }
 
 TEST_F(TestCostGraph, test_EliminationOp) {

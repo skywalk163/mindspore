@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@
 #include <list>
 #include <vector>
 #include "common/common_test.h"
-#include "parallel/strategy.h"
-#include "parallel/ops_info/arithmetic_info.h"
-#include "parallel/device_manager.h"
-#include "parallel/step_parallel.h"
+#include "frontend/parallel/strategy.h"
+#include "frontend/parallel/ops_info/arithmetic_info.h"
+#include "frontend/parallel/device_manager.h"
+#include "frontend/parallel/step_parallel.h"
 
 namespace mindspore {
 namespace parallel {
@@ -38,13 +38,13 @@ class TestPowInfo : public UT::Common {
 };
 
 void TestPowInfo::SetUp() {
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 66; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(64);
   stage_map.push_back(2);
 
@@ -54,7 +54,7 @@ void TestPowInfo::SetUp() {
   g_device_manager = std::make_shared<DeviceManager>();
   g_device_manager->Init(dev_list, local_dev, stage_map, "hccl");
 
-  std::unordered_map<std::string, ValuePtr> attr;
+  mindspore::HashMap<std::string, ValuePtr> attr;
 
   Shapes inputs_shape = {{32, 64, 128}, {32, 64, 128}};
   Shapes outputs_shape = {{32, 64, 128}};
@@ -63,21 +63,21 @@ void TestPowInfo::SetUp() {
 }
 
 TEST_F(TestPowInfo, InferDevMatrixShape1) {
-  std::vector<Dimensions> inputs = {{2, 4, 8}, {2, 4, 8}};
+  Strategies inputs = {{2, 4, 8}, {2, 4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  pow->Init(strategy);
-  std::vector<int32_t> dev_matrix_shape = pow->dev_matrix_shape();
+  pow->Init(strategy, nullptr);
+  Shape dev_matrix_shape = pow->dev_matrix_shape();
 
-  std::vector<int32_t> expect = {2, 4, 8};
+  Shape expect = {2, 4, 8};
   ASSERT_EQ(dev_matrix_shape, expect);
 }
 
 TEST_F(TestPowInfo, InferSliceShape1) {
-  std::vector<Dimensions> str = {{2, 4, 8}, {2, 4, 8}};
+  Strategies str = {{2, 4, 8}, {2, 4, 8}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  pow->Init(strategy);
+  pow->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = pow->inputs_tensor_info();
   std::vector<TensorInfo> outputs = pow->outputs_tensor_info();
 
@@ -95,10 +95,10 @@ TEST_F(TestPowInfo, InferSliceShape1) {
 }
 
 TEST_F(TestPowInfo, GetTensorLayout1) {
-  std::vector<Dimensions> str = {{2, 4, 8}, {2, 4, 8}};
+  Strategies str = {{2, 4, 8}, {2, 4, 8}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  pow->Init(strategy);
+  pow->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = pow->inputs_tensor_info();
   std::vector<TensorInfo> outputs = pow->outputs_tensor_info();
 
@@ -116,10 +116,10 @@ TEST_F(TestPowInfo, GetTensorLayout1) {
 }
 
 TEST_F(TestPowInfo, GetForwardOp1) {
-  std::vector<Dimensions> inputs = {{2, 4, 8}, {2, 4, 8}};
+  Strategies inputs = {{2, 4, 8}, {2, 4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  pow->Init(strategy);
+  pow->Init(strategy, nullptr);
   OperatorVector forward_op = pow->forward_op();
   size_t size = forward_op.size();
 
@@ -127,10 +127,10 @@ TEST_F(TestPowInfo, GetForwardOp1) {
 }
 
 TEST_F(TestPowInfo, GetMirrorOPs1) {
-  std::vector<Dimensions> inputs = {{2, 4, 8}, {2, 4, 8}};
+  Strategies inputs = {{2, 4, 8}, {2, 4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  pow->Init(strategy);
+  pow->Init(strategy, nullptr);
   MirrorOps mirror_ops = pow->mirror_ops();
 
   size_t size = mirror_ops.size();
@@ -139,26 +139,26 @@ TEST_F(TestPowInfo, GetMirrorOPs1) {
 }
 
 TEST_F(TestPowInfo, CheckStrategy1) {
-  std::vector<Dimensions> inputs = {{2, 2, 8}, {2, 4, 8}};
+  Strategies inputs = {{2, 2, 8}, {2, 4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = pow->Init(strategy);
+  Status ret = pow->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 
 TEST_F(TestPowInfo, CheckStrategy2) {
-  std::vector<Dimensions> inputs = {{2, 4, 8, 16}, {2, 4, 8, 16}};
+  Strategies inputs = {{2, 4, 8, 16}, {2, 4, 8, 16}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = pow->Init(strategy);
+  Status ret = pow->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 
 TEST_F(TestPowInfo, CheckStrategy3) {
-  std::vector<Dimensions> inputs = {{2, 4, 8}, {2, 4, 8}};
+  Strategies inputs = {{2, 4, 8}, {2, 4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = pow->Init(strategy);
+  Status ret = pow->Init(strategy, nullptr);
   ASSERT_EQ(ret, SUCCESS);
 }
 

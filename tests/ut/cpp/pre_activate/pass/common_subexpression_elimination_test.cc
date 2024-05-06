@@ -14,19 +14,19 @@
  * limitations under the License.
  */
 #include "common/backend_common_test.h"
-#include "operator/ops.h"
+#include "frontend/operator/ops.h"
 #include "ir/tensor.h"
 #include "ir/manager.h"
-#include "debug/anf_ir_dump.h"
+#include "include/common/debug/anf_ir_dump.h"
 #include "common/py_func_graph_fetcher.h"
-#include "session/anf_runtime_algorithm.h"
-#include "pre_activate/common/optimizer.h"
-#include "pre_activate/common/pass_manager.h"
-#include "device/kernel_info.h"
-#include "pre_activate/pass/common_subexpression_elimination.h"
+#include "include/backend/anf_runtime_algorithm.h"
+#include "include/backend/optimizer/optimizer.h"
+#include "include/backend/optimizer/pass_manager.h"
+#include "include/backend/kernel_info.h"
+#include "backend/common/pass/common_subexpression_elimination.h"
 #include "kernel/kernel_build_info.h"
-#include "utils/utils.h"
-#include "utils/context/ms_context.h"
+#include "include/common/utils/utils.h"
+#include "utils/ms_context.h"
 
 namespace mindspore {
 namespace opt {
@@ -55,7 +55,7 @@ kernel::KernelBuildInfoPtr CreateKernelBuildInfo(const std::vector<std::string> 
 
 TEST_F(TestHWCSE, test_func_graph_cse) {
   FuncGraphPtr g = getPyFun_.CallAndParseRet("test_func_graph_cse", "g1");
-  std::vector<int> shp_x{32, 3, 224, 224};
+  std::vector<int64_t> shp_x{32, 3, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp_x);
   AbstractBasePtrList args_spec_list{x_abstract, x_abstract};
   auto func_graph = GetFuncGraph(g, args_spec_list);
@@ -83,7 +83,7 @@ TEST_F(TestHWCSE, test_func_graph_cse) {
 
 TEST_F(TestHWCSE, test_func_graph_cse_with_null_kernel_info) {
   FuncGraphPtr g = getPyFun_.CallAndParseRet("test_func_graph_cse", "g1");
-  std::vector<int> shp_x{32, 3, 224, 224};
+  std::vector<int64_t> shp_x{32, 3, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp_x);
   AbstractBasePtrList args_spec_list{x_abstract, x_abstract};
   auto func_graph = GetFuncGraph(g, args_spec_list);
@@ -126,7 +126,7 @@ TEST_F(TestHWCSE, test_func_graph_cse_with_null_kernel_info) {
 
 TEST_F(TestHWCSE, test_func_graph_cse_with_diff_kernel_info) {
   FuncGraphPtr g = getPyFun_.CallAndParseRet("test_func_graph_cse", "g1");
-  std::vector<int> shp_x{32, 3, 224, 224};
+  std::vector<int64_t> shp_x{32, 3, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp_x);
   AbstractBasePtrList args_spec_list{x_abstract, x_abstract};
   auto func_graph = GetFuncGraph(g, args_spec_list);

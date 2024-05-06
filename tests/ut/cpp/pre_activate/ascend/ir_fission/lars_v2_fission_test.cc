@@ -16,7 +16,7 @@
 
 #include "common/backend_common_test.h"
 #include "common/py_func_graph_fetcher.h"
-#include "pre_activate/ascend/ir_fission/lars_v2_fission.h"
+#include "plugin/device/ascend/optimizer/ir_fission/lars_v2_fission.h"
 
 namespace mindspore {
 namespace opt {
@@ -33,7 +33,7 @@ TEST_F(TestHWLarsV2Fission, test_fission) {
   EXPECT_NE(g, nullptr);
 
   // set abstract for all nodes in g
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   g->get_return()->input(1)->set_abstract(x_abstract);
   for (auto &p: g->parameters()){

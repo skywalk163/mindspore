@@ -12,20 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
+import pytest
 import numpy as np
 
 import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.common.parameter import Parameter
 from mindspore.nn.loss import SoftmaxCrossEntropyWithLogits
 from mindspore.nn.optim.momentum import Momentum
 from mindspore.ops import operations as P
+from mindspore.ops.operations.comm_ops import AlltoAll
 from mindspore.parallel._utils import _reset_op_id
-from mindspore.train import Model, ParallelMode
+from mindspore.train import Model
+from mindspore.context import ParallelMode
+from mindspore.communication.management import GlobalComm, init
 from tests.dataset_mock import MindData
+
+context.set_context(device_target="Ascend")
+GlobalComm.CHECK_ENVS = False
+init("hccl")
+GlobalComm.CHECK_ENVS = True
+
+_x1 = Tensor(np.ones([64, 3, 224, 224]), dtype=ms.float32)
 
 
 class Dataset(MindData):
@@ -52,9 +64,9 @@ class Dataset(MindData):
 class AllToAllNet(nn.Cell):
     def __init__(self, strategy1):
         super(AllToAllNet, self).__init__()
-        self.matmul = P.MatMul().set_strategy(((1, 1), (1, 8)))
+        self.matmul = P.MatMul().shard(((1, 1), (1, 8)))
         self.matmul_weight = Parameter(Tensor(np.ones([128, 256]), dtype=ms.float32), name="weight")
-        self.transpose1 = P.Transpose().set_strategy(strategy1)
+        self.transpose1 = P.Transpose().shard(strategy1)
 
     def construct(self, x):
         x = self.matmul(x, self.matmul_weight)
@@ -78,33 +90,229 @@ def all_to_all_common(strategy1):
     dataset = Dataset(predict, label, 2)
     net = all_to_all_net(strategy1)
 
-    loss = SoftmaxCrossEntropyWithLogits(is_grad=False, sparse=True)
-    loss.softmax_cross_entropy.set_strategy(((8, 1), (8, 1)))
-    loss.one_hot.set_strategy(((8, 1), (), ()))
+    loss = SoftmaxCrossEntropyWithLogits(sparse=True)
+    loss.softmax_cross_entropy.shard(((8, 1), (8, 1)))
+    loss.one_hot.shard(((8, 1), (), ()))
     opt = Momentum(net.trainable_params(), learning_rate, momentum)
     model = Model(net, loss, opt)
 
     model.train(epoch_size, dataset, dataset_sink_mode=False)
-    strategys = _executor._get_strategy(model._train_network)
+    strategys = _cell_graph_executor._get_shard_strategy(model._train_network)
     return strategys
 
 
 def test_all_to_all():
     strategy1 = ((8, 1),)
-    context.set_context(mode=context.GRAPH_MODE, save_graphs=False)
+    context.set_context(mode=context.GRAPH_MODE)
     _reset_op_id()
     strategys = all_to_all_common(strategy1)
     print(strategys)
-    expect_dict = {'Default/network-_VirtualDatasetCell/_backbone-WithLossCell/_loss_fn-SoftmaxCrossEntropyWithLogits'
-                   '/SoftmaxCrossEntropyWithLogits-op3': [[8, 1], [8, 1]],
-                   'Default/network-_VirtualDatasetCell/_backbone-WithLossCell/_loss_fn-SoftmaxCrossEntropyWithLogits/'
-                   'OneHot-op4': [[8, 1], [], []],
-                   'Default/network-_VirtualDatasetCell/_backbone-WithLossCell/_backbone-AllToAllNet/Transpose-op1': [
-                       [8, 1]],
-                   'Default/network-_VirtualDatasetCell/_backbone-WithLossCell/_backbone-AllToAllNet/MatMul-op0': [
-                       [1, 1], [1, 8]]}
-    assert strategys == expect_dict
-    context.set_context(save_graphs=False)
+    for (k, v) in strategys.items():
+        if re.search('SoftmaxCrossEntropyWithLogits-op', k) is not None:
+            assert v == [[8, 1], [8, 1]]
+        elif re.search('OneHot-op', k) is not None:
+            assert v == [[8, 1], [], []]
+        elif re.search('Transpose-op', k) is not None:
+            assert v == [[8, 1]]
+        elif re.search('MatMul-op', k) is not None:
+            assert v == [[1, 1], [1, 8]]
+
+
+def test_all_to_all_success():
+    """
+    Feature: AlltoAll
+    Description: on 8p, a 4d tensor split at dim 2 and concat at dim 3
+    Expectation: success
+    """
+    context.set_auto_parallel_context(device_num=8, global_rank=0)
+
+    class Net(nn.Cell):
+        def __init__(self):
+            super(Net, self).__init__()
+            self.alltoallv = AlltoAll(split_count=8, split_dim=2, concat_dim=3)
+
+        def construct(self, x1):
+            out = self.alltoallv(x1)
+            return out
+
+    net = Net()
+    _cell_graph_executor.compile(net, _x1)
+
+
+def test_all_to_all_invalid_split_count_value_failed():
+    """
+    Feature: AlltoAll
+    Description: split_count should be equal to rank size, but not
+    Expectation: throw ValueError
+    """
+    context.set_auto_parallel_context(device_num=8, global_rank=0)
+
+    class Net(nn.Cell):
+        def __init__(self):
+            super(Net, self).__init__()
+            self.alltoallv = AlltoAll(split_count=7, split_dim=2, concat_dim=3)
+
+        def construct(self, x1):
+            out = self.alltoallv(x1)
+            return out
+
+    with pytest.raises(ValueError):
+        net = Net()
+        _cell_graph_executor.compile(net, _x1)
+
+
+def test_all_to_all_invalid_split_count_type_failed():
+    """
+    Feature: AlltoAll
+    Description: split_count should be int, but a list is given
+    Expectation: throw TypeError
+    """
+    context.set_auto_parallel_context(device_num=8, global_rank=0)
+
+    class Net(nn.Cell):
+        def __init__(self):
+            super(Net, self).__init__()
+            self.alltoallv = AlltoAll(split_count=[8], split_dim=2, concat_dim=3)
+
+        def construct(self, x1):
+            out = self.alltoallv(x1)
+            return out
+
+    with pytest.raises(TypeError):
+        net = Net()
+        _cell_graph_executor.compile(net, _x1)
+
+
+def test_all_to_all_invalid_split_dim_value_failed():
+    """
+    Feature: AlltoAll
+    Description: split_dim over input shape
+    Expectation: throw IndexError
+    """
+    context.set_auto_parallel_context(device_num=8, global_rank=0)
+
+    class Net(nn.Cell):
+        def __init__(self):
+            super(Net, self).__init__()
+            self.alltoallv = AlltoAll(split_count=8, split_dim=4, concat_dim=3)
+
+        def construct(self, x1):
+            out = self.alltoallv(x1)
+            return out
+
+    with pytest.raises(IndexError):
+        net = Net()
+        _cell_graph_executor.compile(net, _x1)
+
+
+def test_all_to_all_invalid_split_dim_type_failed():
+    """
+    Feature: AlltoAll
+    Description: split_dim should be int, but a tuple is given
+    Expectation: throw TypeError
+    """
+    context.set_auto_parallel_context(device_num=8, global_rank=0)
+
+    class Net(nn.Cell):
+        def __init__(self):
+            super(Net, self).__init__()
+            self.alltoallv = AlltoAll(split_count=8, split_dim=(3,), concat_dim=3)
+
+        def construct(self, x1):
+            out = self.alltoallv(x1)
+            return out
+
+    with pytest.raises(TypeError):
+        net = Net()
+        _cell_graph_executor.compile(net, _x1)
+
+
+def test_all_to_all_invalid_concat_dim_value_failed():
+    """
+    Feature: AlltoAll
+    Description: concat_dim over input shape
+    Expectation: throw IndexError
+    """
+    context.set_auto_parallel_context(device_num=8, global_rank=0)
+
+    class Net(nn.Cell):
+        def __init__(self):
+            super(Net, self).__init__()
+            self.alltoallv = AlltoAll(split_count=8, split_dim=3, concat_dim=4)
+
+        def construct(self, x1):
+            out = self.alltoallv(x1)
+            return out
+
+    with pytest.raises(IndexError):
+        net = Net()
+        _cell_graph_executor.compile(net, _x1)
+
+
+def test_all_to_all_invalid_concat_dim_type_failed():
+    """
+    Feature: AlltoAll
+    Description: concat_dim should be int, but a tuple is given
+    Expectation: throw TypeError
+    """
+    context.set_auto_parallel_context(device_num=8, global_rank=0)
+
+    class Net(nn.Cell):
+        def __init__(self):
+            super(Net, self).__init__()
+            self.alltoallv = AlltoAll(split_count=8, split_dim=3, concat_dim=([3],))
+
+        def construct(self, x1):
+            out = self.alltoallv(x1)
+            return out
+
+    with pytest.raises(TypeError):
+        net = Net()
+        _cell_graph_executor.compile(net, _x1)
+
+
+def test_all_to_all_invalid_split_count_cannot_be_divisible_failed():
+    """
+    Feature: AlltoAll
+    Description: shape at split_dim should be divisible by split_count, but not
+    Expectation: throw ValueError
+    """
+    context.set_auto_parallel_context(device_num=3, global_rank=0)
+
+    class Net(nn.Cell):
+        def __init__(self):
+            super(Net, self).__init__()
+            self.alltoallv = AlltoAll(split_count=3, split_dim=3, concat_dim=3)
+
+        def construct(self, x1):
+            out = self.alltoallv(x1)
+            return out
+
+    with pytest.raises(ValueError):
+        net = Net()
+        _cell_graph_executor.compile(net, _x1)
+
+
+def test_all_to_all_invalid_group_type_failed():
+    """
+    Feature: AlltoAll
+    Description: group should be str, but a tuple is given
+    Expectation: throw TypeError
+    """
+    context.set_auto_parallel_context(device_num=8, global_rank=0)
+
+    class Net(nn.Cell):
+        def __init__(self):
+            super(Net, self).__init__()
+            self.alltoallv = AlltoAll(split_count=8, split_dim=3, concat_dim=3, group=3)
+
+        def construct(self, x1):
+            out = self.alltoallv(x1)
+            return out
+
+    with pytest.raises(TypeError):
+        net = Net()
+        _cell_graph_executor.compile(net, _x1)
 
 
 if __name__ == '__main__':

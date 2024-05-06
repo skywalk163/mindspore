@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@
 #include <list>
 #include <vector>
 #include "common/common_test.h"
-#include "parallel/strategy.h"
-#include "parallel/ops_info/onehot_info.h"
-#include "parallel/device_manager.h"
-#include "parallel/tensor_layout/tensor_redistribution.h"
+#include "frontend/parallel/strategy.h"
+#include "frontend/parallel/ops_info/onehot_info.h"
+#include "frontend/parallel/device_manager.h"
+#include "frontend/parallel/tensor_layout/tensor_redistribution.h"
 
 namespace mindspore {
 namespace parallel {
@@ -38,13 +38,13 @@ class TestOneHotInfo : public UT::Common {
 };
 
 void TestOneHotInfo::SetUp() {
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 10; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(8);
   stage_map.push_back(2);
 
@@ -54,56 +54,56 @@ void TestOneHotInfo::SetUp() {
   g_device_manager = std::make_shared<DeviceManager>();
   g_device_manager->Init(dev_list, local_dev, stage_map, "hccl");
 
-  ValuePtr axis = MakeValue(std::int32_t(-1));
-  std::unordered_map<std::string, ValuePtr> attr = {{"axis", axis}};
+  ValuePtr axis = MakeValue(std::int64_t(-1));
+  mindspore::HashMap<std::string, ValuePtr> attr = {{"axis", axis}};
 
   Shapes inputs_shape = {{64}, {}, {}};
   Shapes outputs_shape = {{64, 10}};
 
-  onehot_info = std::make_shared<OneHotInfo>("onehot_info", inputs_shape, outputs_shape, attr);
+  onehot_info = std::make_shared<OneHotInfo>("OneHotInfo", inputs_shape, outputs_shape, attr);
 }
 
 TEST_F(TestOneHotInfo, InferDevMatrixShape1) {
-  std::vector<Dimensions> inputs = {{8, 1}, {}, {}};
+  Strategies inputs = {{8, 1}, {}, {}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status status = onehot_info->Init(strategy);
+  Status status = onehot_info->Init(strategy, nullptr);
   ASSERT_EQ(status, SUCCESS);
-  std::vector<int32_t> dev_matrix_shape = onehot_info->dev_matrix_shape();
+  Shape dev_matrix_shape = onehot_info->dev_matrix_shape();
 
-  std::vector<int32_t> expect = {8, 1};
+  Shape expect = {8, 1};
   ASSERT_EQ(dev_matrix_shape, expect);
 }
 
 TEST_F(TestOneHotInfo, InferDevMatrixShape2) {
-  std::vector<Dimensions> inputs = {{4, 1}, {}, {}};
+  Strategies inputs = {{4, 1}, {}, {}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status status = onehot_info->Init(strategy);
+  Status status = onehot_info->Init(strategy, nullptr);
   ASSERT_EQ(status, SUCCESS);
-  std::vector<int32_t> dev_matrix_shape = onehot_info->dev_matrix_shape();
+  Shape dev_matrix_shape = onehot_info->dev_matrix_shape();
 
-  std::vector<int32_t> expect = {2, 4, 1};
+  Shape expect = {4, 1, 2};
   ASSERT_EQ(dev_matrix_shape, expect);
 }
 
 TEST_F(TestOneHotInfo, InferDevMatrixShape3) {
-  std::vector<Dimensions> inputs = {{4, 2}, {}, {}};
+  Strategies inputs = {{4, 2}, {}, {}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status status = onehot_info->Init(strategy);
-  ASSERT_EQ(status, FAILED);
-  std::vector<int32_t> dev_matrix_shape = onehot_info->dev_matrix_shape();
+  Status status = onehot_info->Init(strategy, nullptr);
+  ASSERT_EQ(status, SUCCESS);
+  Shape dev_matrix_shape = onehot_info->dev_matrix_shape();
 
-  std::vector<int32_t> expect = {4, 2};
+  Shape expect = {4, 2};
   ASSERT_EQ(dev_matrix_shape, expect);
 }
 
 TEST_F(TestOneHotInfo, InferTensorMap2) {
-  std::vector<Dimensions> str = {{8, 1}, {}, {}};
+  Strategies str = {{8, 1}, {}, {}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  Status status = onehot_info->Init(strategy);
+  Status status = onehot_info->Init(strategy, nullptr);
   ASSERT_EQ(status, SUCCESS);
   std::vector<TensorInfo> inputs = onehot_info->inputs_tensor_info();
   std::vector<TensorInfo> outputs = onehot_info->outputs_tensor_info();
@@ -122,10 +122,10 @@ TEST_F(TestOneHotInfo, InferTensorMap2) {
 }
 
 TEST_F(TestOneHotInfo, InferSliceShape1) {
-  std::vector<Dimensions> str = {{8, 1}, {}, {}};
+  Strategies str = {{8, 1}, {}, {}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  Status status = onehot_info->Init(strategy);
+  Status status = onehot_info->Init(strategy, nullptr);
   ASSERT_EQ(status, SUCCESS);
   std::vector<TensorInfo> inputs = onehot_info->inputs_tensor_info();
   std::vector<TensorInfo> outputs = onehot_info->outputs_tensor_info();
@@ -144,11 +144,11 @@ TEST_F(TestOneHotInfo, InferSliceShape1) {
 }
 
 TEST_F(TestOneHotInfo, InferSliceShape2) {
-  std::vector<Dimensions> str = {{4, 2}, {}, {}};
+  Strategies str = {{4, 2}, {}, {}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  Status status = onehot_info->Init(strategy);
-  ASSERT_EQ(status, FAILED);
+  Status status = onehot_info->Init(strategy, nullptr);
+  ASSERT_EQ(status, SUCCESS);
   std::vector<TensorInfo> inputs = onehot_info->inputs_tensor_info();
   std::vector<TensorInfo> outputs = onehot_info->outputs_tensor_info();
 
@@ -166,11 +166,11 @@ TEST_F(TestOneHotInfo, InferSliceShape2) {
 }
 
 TEST_F(TestOneHotInfo, InferSliceShape3) {
-  std::vector<Dimensions> str = {{2, 2}, {}, {}};
+  Strategies str = {{2, 2}, {}, {}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  Status status = onehot_info->Init(strategy);
-  ASSERT_EQ(status, FAILED);
+  Status status = onehot_info->Init(strategy, nullptr);
+  ASSERT_EQ(status, SUCCESS);
   std::vector<TensorInfo> inputs = onehot_info->inputs_tensor_info();
   std::vector<TensorInfo> outputs = onehot_info->outputs_tensor_info();
 
@@ -188,10 +188,10 @@ TEST_F(TestOneHotInfo, InferSliceShape3) {
 }
 
 TEST_F(TestOneHotInfo, GetMirrorOPs1) {
-  std::vector<Dimensions> inputs = {{8, 1}, {}, {}};
+  Strategies inputs = {{8, 1}, {}, {}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status status = onehot_info->Init(strategy);
+  Status status = onehot_info->Init(strategy, nullptr);
   ASSERT_EQ(status, SUCCESS);
   MirrorOps mirror_ops = onehot_info->mirror_ops();
 
@@ -199,10 +199,10 @@ TEST_F(TestOneHotInfo, GetMirrorOPs1) {
 }
 
 TEST_F(TestOneHotInfo, CheckStrategy1) {
-  std::vector<Dimensions> inputs = {{16}, {}, {}};
+  Strategies inputs = {{16}, {}, {}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = onehot_info->Init(strategy);
+  Status ret = onehot_info->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 }  // namespace parallel

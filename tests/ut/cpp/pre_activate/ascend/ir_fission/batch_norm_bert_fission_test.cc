@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "pre_activate/ascend/ir_fission/batch_norm_bert_fission.h"
+#include "plugin/device/ascend/optimizer/ir_fission/batch_norm_bert_fission.h"
 #include "common/backend_common_test.h"
 #include "common/py_func_graph_fetcher.h"
 
@@ -31,9 +31,9 @@ class TestHWBatchNormBertFission : public BackendCommon {
 TEST_F(TestHWBatchNormBertFission, test_fused_batch_norm_fission) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_batch_norm_bert_fission", "before");
   EXPECT_NE(g, nullptr);
-  std::vector<int> shp_x{32, 64, 112, 112};
+  std::vector<int64_t> shp_x{32, 64, 112, 112};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp_x);
-  std::vector<int> shp_y{64};
+  std::vector<int64_t> shp_y{64};
   auto y_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp_y);
   AbstractBasePtrList args_spec_list{x_abstract};
   for (size_t i = 0; i < 4; ++i) {
@@ -44,9 +44,7 @@ TEST_F(TestHWBatchNormBertFission, test_fused_batch_norm_fission) {
   EXPECT_NE(ret, nullptr);
   auto make_tuple0 = ret->input(1);
   EXPECT_NE(make_tuple0, nullptr);
-  auto tuple_getitem0 = make_tuple0->cast<CNodePtr>()->input(1);
-  EXPECT_NE(tuple_getitem0, nullptr);
-  auto make_tuple1 = tuple_getitem0->cast<CNodePtr>()->input(1);
+  auto make_tuple1 = make_tuple0->cast<CNodePtr>()->input(1);
   EXPECT_NE(make_tuple1, nullptr);
   auto tuple_getitem1 = make_tuple1->cast<CNodePtr>()->input(1);
   EXPECT_NE(tuple_getitem1, nullptr);
@@ -71,15 +69,16 @@ TEST_F(TestHWBatchNormBertFission, test_fused_batch_norm_fission) {
 TEST_F(TestHWBatchNormBertFission, test_fused_batch_norm_no_fission) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_batch_norm_bert_fission", "before");
   EXPECT_NE(g, nullptr);
-  std::vector<int> shp_x{32, 64, 112, 112};
+  std::vector<int64_t> shp_x{32, 64, 112, 112};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp_x);
-  std::vector<int> shp_y{64};
+  std::vector<int64_t> shp_y{64};
   auto y_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp_y);
   AbstractBasePtrList args_spec_list{x_abstract};
   for (size_t i = 0; i < 4; ++i) {
     args_spec_list.push_back(y_abstract);
   }
   auto kg = GetKernelGraph(g, args_spec_list);
+  auto origin_graph = std::make_shared<session::KernelGraph>(*kg);
 
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
   auto pm = std::make_shared<opt::PassManager>();
@@ -87,7 +86,7 @@ TEST_F(TestHWBatchNormBertFission, test_fused_batch_norm_no_fission) {
   optimizer->AddPassManager(pm);
   FuncGraphPtr new_graph = optimizer->Optimize(kg);
 
-  EXPECT_TRUE(CheckEqualGraph(kg, new_graph));
+  EXPECT_TRUE(CheckEqualGraph(origin_graph, new_graph));
 }
 }  // namespace opt
 }  // namespace mindspore

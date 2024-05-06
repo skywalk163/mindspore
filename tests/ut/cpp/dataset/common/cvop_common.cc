@@ -18,9 +18,9 @@
 #include <string>
 #include <vector>
 #include "cvop_common.h"
-#include "dataset/core/constants.h"
-#include "common/utils.h"
-#include "dataset/core/cv_tensor.h"
+#include "minddata/dataset/include/dataset/constants.h"
+#include "utils/ms_utils.h"
+#include "minddata/dataset/core/cv_tensor.h"
 #include "utils/log_adapter.h"
 #include <fstream>
 #include <opencv2/opencv.hpp>
@@ -28,9 +28,6 @@
 namespace common = mindspore::common;
 
 using namespace mindspore::dataset;
-using mindspore::MsLogLevel::INFO;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::LogStream;
 using UT::CVOP::CVOpCommon;
 
 CVOpCommon::CVOpCommon() {}
@@ -52,22 +49,17 @@ std::string CVOpCommon::GetFilename() {
 
 void CVOpCommon::GetInputImage(std::string filename) {
   try {
-    std::ifstream tmp(filename, std::ios::binary | std::ios::ate);
-    dsize_t file_size = tmp.tellg();
-    tmp.close();
-
-    std::ifstream file(filename, std::ios::binary);
-    TensorShape in_shape({file_size});
-    raw_input_tensor_ = std::make_shared<Tensor>(in_shape, DataType(DataType::DE_UINT8));
-
-    file.read(reinterpret_cast<char *>(raw_input_tensor_->GetMutableBuffer()), raw_input_tensor_->SizeInBytes());
+    Tensor::CreateFromFile(filename, &raw_input_tensor_);
     raw_cv_image_ = cv::imread(filename, cv::ImreadModes::IMREAD_COLOR);
-    input_tensor_ = std::dynamic_pointer_cast<Tensor>(std::make_shared<CVTensor>(raw_cv_image_));
-    SwapRedAndBlue(input_tensor_, &input_tensor_);
     if (raw_cv_image_.data) {
       MS_LOG(INFO) << "Reading was successful. Height:" << raw_cv_image_.rows << " Width: " << raw_cv_image_.cols
                    << " Channels:" << raw_cv_image_.channels() << ".";
     }
+
+    // fix: data race by SwapRedAndBlue
+    std::shared_ptr<Tensor> file_bytes;
+    Tensor::CreateFromFile(filename, &file_bytes);
+    Decode(file_bytes, &input_tensor_);
   } catch (...) {
     MS_LOG(INFO) << "Error in GetInputImage.";
   }
@@ -135,6 +127,42 @@ void CVOpCommon::CheckImageShapeAndData(const std::shared_ptr<Tensor> &output_te
     case kChangeMode:
       expect_image_path = dir_path + "imagefolder/apple_expect_changemode.jpg";
       actual_image_path = dir_path + "imagefolder/apple_actual_changemode.jpg";
+      break;
+    case kRandomAffine:
+      expect_image_path = dir_path + "imagefolder/apple_expect_randomaffine.jpg";
+      actual_image_path = dir_path + "imagefolder/apple_actual_randomaffine.jpg";
+      break;
+    case kAdjustGamma:
+      expect_image_path = dir_path + "imagefolder/apple_expect_adjustgamma.png";
+      actual_image_path = dir_path + "imagefolder/apple_actual_adjustgamma.png";
+      break;
+    case kAutoContrast:
+      expect_image_path = dir_path + "imagefolder/apple_expect_autocontrast.jpg";
+      actual_image_path = dir_path + "imagefolder/apple_actual_autocontrast.jpg";
+      break;
+    case kEqualize:
+      expect_image_path = dir_path + "imagefolder/apple_expect_equalize.jpg";
+      actual_image_path = dir_path + "imagefolder/apple_actual_equalize.jpg";
+      break;
+    case kRandomSolarize:
+      expect_image_path = dir_path + "imagefolder/apple_expect_random_solarize.jpg";
+      actual_image_path = dir_path + "imagefolder/apple_actual_random_solarize.jpg";
+      break;
+    case kInvert:
+      expect_image_path = dir_path + "imagefolder/apple_expect_invert.jpg";
+      actual_image_path = dir_path + "imagefolder/apple_actual_invert.jpg";
+      break;
+    case kRandomSharpness:
+      expect_image_path = dir_path + "imagefolder/apple_expect_random_sharpness.jpg";
+      actual_image_path = dir_path + "imagefolder/apple_actual_random_sharpness.jpg";
+      break;
+    case kRandomLighting:
+      expect_image_path = dir_path + "imagefolder/apple_expect_random_lighting.jpg";
+      actual_image_path = dir_path + "imagefolder/apple_actual_random_lighting.jpg";
+      break;
+    case kRandomPosterize:
+      expect_image_path = dir_path + "imagefolder/apple_expect_random_posterize.jpg";
+      actual_image_path = dir_path + "imagefolder/apple_actual_random_posterize.jpg";
       break;
     default:
       MS_LOG(INFO) << "Not pass verification! Operation type does not exists.";

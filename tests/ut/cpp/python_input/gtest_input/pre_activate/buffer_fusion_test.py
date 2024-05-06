@@ -26,14 +26,14 @@ Biasaddgrad = G.BiasAddGrad()
 Cast = P.Cast()
 MatMul = P.MatMul()
 
-Fusion_relu_relu = Primitive('FusionOp_ReLU_ReLU')
-Fusion_biasadd = Primitive('FusionOp_ReLU_ReLU_ReLU_BiasAdd_ReLU_ReLU_ReLU')
-Fusion_biasaddgrad = Primitive('FusionOp_ReLU_ReLU_ReLU_BiasAddGrad_ReLU_ReLU_ReLU')
-Fusion_matmul_relu = Primitive('FusionOp_MatMul_ReLU')
+Fusion_relu_relu = Primitive('FusionOp_Relu_Relu')
+Fusion_biasadd = Primitive('FusionOp_Relu_Relu_Relu_BiasAdd_Relu_Relu_Relu')
+Fusion_biasaddgrad = Primitive('FusionOp_Relu_Relu_Relu_BiasAddGrad_Relu_Relu_Relu')
+Fusion_matmul_relu = Primitive('FusionOp_MatMul_Relu')
 
-Add = P.TensorAdd()
+Add = P.Add()
 Sub = P.Sub()
-make_tuple = Primitive('make_tuple')
+make_tuple = Primitive('MakeTuple')
 
 
 class FnDict:

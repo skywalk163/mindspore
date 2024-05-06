@@ -18,15 +18,22 @@ import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor, Parameter, ParameterTuple
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
+grad_by_list = C.GradOperation(get_by_list=True)
 
 
 class NetWithLoss(nn.Cell):
     def __init__(self, network, strategy3):
         super(NetWithLoss, self).__init__()
-        self.loss = P.SoftmaxCrossEntropyWithLogits().set_strategy(strategy3)
+        self.loss = P.SoftmaxCrossEntropyWithLogits().shard(strategy3)
         self.network = network
 
     def construct(self, x, b):
@@ -42,7 +49,7 @@ class OneStepCell(nn.Cell):
 
     def construct(self, data, label):
         weights = self.weights
-        grads = C.grad_by_list(self.network, weights)(data, label)
+        grads = grad_by_list(self.network, weights)(data, label)
         return grads
 
 
@@ -51,7 +58,7 @@ def test_one_weight_parameter():
         def __init__(self, strategy1, weight):
             super().__init__()
             self.weight = Parameter(weight, "w1", requires_grad=True)
-            self.matmul = P.MatMul().set_strategy(strategy1)
+            self.matmul = P.MatMul().shard(strategy1)
 
         def construct(self, x):
             out = self.matmul(x, self.weight)
@@ -71,6 +78,6 @@ def test_one_weight_parameter():
 
     train_net = OneStepCell(net_with_loss)
     context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
-    train_net.set_auto_parallel()
 
-    _executor.compile(train_net, x, b)
+    train_net.set_train()
+    _cell_graph_executor.compile(train_net, x, b)

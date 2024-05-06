@@ -60,25 +60,16 @@ class Net5(nn.Cell):
         return self.conv_input(self.out, self.w, self.get_shape(self.x))
 
 
-@pytest.mark.level0
+@pytest.mark.level1
 @pytest.mark.platform_x86_cpu
 @pytest.mark.env_onecard
 def test_conv2d_backprop_input():
     conv2d_input = Net5()
     output = conv2d_input()
-    print("================================")
-#   expect output:
-#   [[[[ -5,  -4,   5,  12,   0,  -8]
-#      [-15,  -6,  17,  17,  -2, -11]
-#      [-15,  -8,  13,  12,   2,  -4]
-#      [-13,  -6,   8, -14,   5,  20]
-#      [ -3,  -4,  -4, -19,   7,  23]
-#      [ -3,  -2,   0, -14,   3,  16]]]]
     expect = np.array([[[[-5, -4, 5, 12, 0, -8],
                          [-15, -6, 17, 17, -2, -11],
                          [-15, -8, 13, 12, 2, -4],
                          [-13, -6, 8, -14, 5, 20],
                          [-3, -4, -4, -19, 7, 23],
                          [-3, -2, 0, -14, 3, 16]]]]).astype(np.float32)
-    print(output)
     assert (output.asnumpy() == expect).all()

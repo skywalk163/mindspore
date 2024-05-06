@@ -1,4 +1,4 @@
-# Copyright 2020 Huawei Technologies Co., Ltd
+# Copyright 2020-2023 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ class MinimumNet(Cell):
 class Grad(Cell):
     def __init__(self, network):
         super(Grad, self).__init__()
-        self.grad = C.GradOperation(name="get_all", get_all=True, sens_param=True)
+        self.grad = C.GradOperation(get_all=True, sens_param=True)
         self.network = network
 
     def construct(self, x1, x2, sens):
@@ -44,11 +44,11 @@ class Grad(Cell):
         return gout
 
 
-@pytest.mark.level0
+@pytest.mark.level1
 @pytest.mark.platform_x86_gpu_training
 @pytest.mark.env_onecard
 def test_nobroadcast():
-    context.set_context(mode=context.GRAPH_MODE, save_graphs=True, device_target='GPU')
+    context.set_context(mode=context.GRAPH_MODE, device_target='GPU')
 
     x1_np = np.random.rand(3, 4).astype(np.float32)
     x2_np = np.random.rand(3, 4).astype(np.float32)
@@ -62,11 +62,11 @@ def test_nobroadcast():
     assert np.allclose(output_ms[1].asnumpy(), output1_np)
 
 
-@pytest.mark.level0
+@pytest.mark.level1
 @pytest.mark.platform_x86_gpu_training
 @pytest.mark.env_onecard
 def test_broadcast():
-    context.set_context(mode=context.GRAPH_MODE, save_graphs=True, device_target='GPU')
+    context.set_context(mode=context.GRAPH_MODE, device_target='GPU')
 
     x1_np = np.array([[[[0.659578],
                         [0.49113268],
@@ -187,11 +187,11 @@ def test_broadcast():
     assert np.allclose(output_ms[1].asnumpy(), expect_dx2)
 
 
-@pytest.mark.level0
+@pytest.mark.level1
 @pytest.mark.platform_x86_gpu_training
 @pytest.mark.env_onecard
 def test_broadcast_diff_dims():
-    context.set_context(mode=context.GRAPH_MODE, save_graphs=True, device_target='GPU')
+    context.set_context(mode=context.GRAPH_MODE, device_target='GPU')
 
     x1_np = np.array([[[0.275478, 0.48933202, 0.71846116],
                        [0.9803821, 0.57205725, 0.28511533]],
@@ -218,3 +218,43 @@ def test_broadcast_diff_dims():
     output_ms = net(Tensor(x1_np), Tensor(x2_np), Tensor(dy_np))
     assert np.allclose(output_ms[0].asnumpy(), expect_dx1)
     assert np.allclose(output_ms[1].asnumpy(), expect_dx2)
+
+
+@pytest.mark.level1
+@pytest.mark.platform_x86_gpu_training
+@pytest.mark.env_onecard
+def test_broadcast_int32():
+    context.set_context(mode=context.GRAPH_MODE, device_target='GPU')
+
+    x1_np = np.random.rand(3, 4).astype(np.int32)
+    x2_np = np.random.rand(3, 4).astype(np.int32)
+    dy_np = np.random.rand(3, 4).astype(np.int32)
+
+    net = Grad(MinimumNet())
+    output_ms = net(Tensor(x1_np), Tensor(x2_np), Tensor(dy_np))
+    output0_np = np.where(x1_np < x2_np, dy_np, 0)
+    output1_np = np.where(x1_np < x2_np, 0, dy_np)
+    assert np.allclose(output_ms[0].asnumpy(), output0_np)
+    assert np.allclose(output_ms[1].asnumpy(), output1_np)
+
+
+@pytest.mark.level1
+@pytest.mark.platform_x86_gpu_training
+@pytest.mark.env_onecard
+def test_minimum_grad_with_same_input():
+    """
+    Feature: test minimumgrad on GPU
+    Description: test the minimumgrad with same input.
+    Expectation: result match to expected result.
+    """
+    x_np = np.array([1.7, 2.3, 5.8]).astype(np.float32)
+    y_np = np.array([1.7, 2.3, 5.8]).astype(np.float32)
+    dout = np.array([1.0, -1.0, 0]).astype(np.float32)
+    net = Grad(MinimumNet())
+    output = net(Tensor(x_np), Tensor(y_np), Tensor(dout))
+    print(output[0].asnumpy())
+    print(output[1].asnumpy())
+    expect0 = np.array([0.5, -0.5, 0.])
+    expect1 = np.array([0.5, -0.5, 0.])
+    assert np.allclose(output[0].asnumpy(), expect0, rtol=1e-6, atol=1e-4)
+    assert np.allclose(output[1].asnumpy(), expect1, rtol=1e-6, atol=1e-4)

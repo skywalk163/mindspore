@@ -24,8 +24,8 @@ from mindspore.nn.wrap.cell_wrapper import WithLossCell
 from mindspore.nn.wrap.loss_scale import TrainOneStepWithLossScaleCell
 from mindspore.ops import functional as F
 from mindspore.ops import operations as P
-from mindspore.ops._grad.grad_base import bprop_getters
-from mindspore.ops._grad.grad_math_ops import binop_grad_common
+from mindspore.ops._grad_experimental.grad_base import bprop_getters
+from mindspore.ops._grad_experimental.grad_math_ops import binop_grad_common
 from mindspore.ops._utils import get_broadcast_shape
 from mindspore.ops.primitive import PrimitiveWithInfer, prim_attr_register
 from mindspore.train.loss_scale_manager import DynamicLossScaleManager
@@ -77,7 +77,7 @@ class Net(nn.Cell):
         self.weight = Parameter(Tensor(np.ones([out_features, in_features]).astype(np.float32)), name="weight")
         self.bias = Parameter(Tensor(np.ones([out_features]).astype(np.float32)), name="bias")
         self.matmul = P.MatMul()
-        self.add = P.TensorAdd()
+        self.add = P.Add()
 
     def construct(self, input_):
         output = self.add(self.matmul(input_, self.weight), self.bias)
@@ -90,7 +90,7 @@ class NetFP16(nn.Cell):
         self.weight = Parameter(Tensor(np.ones([out_features, in_features]).astype(np.float32)), name="weight")
         self.bias = Parameter(Tensor(np.ones([out_features]).astype(np.float32)), name="bias")
         self.matmul = P.MatMul()
-        self.add = P.TensorAdd()
+        self.add = P.Add()
         self.cast = P.Cast()
 
     def construct(self, input_):
@@ -144,7 +144,7 @@ def test_op_forward_infererror():
     input_np = np.random.randn(2, 3, 4, 5).astype(np.float32)
     input_me = Tensor(input_np)
     net = Net3()
-    with pytest.raises(TypeError) as e:
+    with pytest.raises(TypeError):
         net(input_me)
 
 
@@ -162,7 +162,7 @@ def test_sequential_resolve_error():
     input_np = np.random.randn(2, 3, 4, 5).astype(np.float32)
     input_me = Tensor(input_np)
     net = SequenceNet()
-    with pytest.raises(RuntimeError) as e:
+    with pytest.raises(NameError):
         net(input_me)
 
 
@@ -177,7 +177,7 @@ def test_compile_grad_error():
     net_with_loss = WithLossCell(net, loss)
     scale_manager = DynamicLossScaleManager()
     update_cell = scale_manager.get_update_cell()
-    train_network = TrainOneStepWithLossScaleCell(net_with_loss, optimizer, scale_update_cell=update_cell)
+    train_network = TrainOneStepWithLossScaleCell(net_with_loss, optimizer, scale_sense=update_cell)
     train_network.set_train()
     with pytest.raises(TypeError) as e:
         train_network(inputs, label)

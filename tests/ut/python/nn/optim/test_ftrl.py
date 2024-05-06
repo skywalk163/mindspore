@@ -13,15 +13,17 @@
 # limitations under the License.
 # ============================================================================
 """ test FTRL """
-
 import numpy as np
 
 import mindspore.nn as nn
-from mindspore import Tensor, Parameter
-from mindspore.common.api import _executor
+from mindspore import Tensor, Parameter, context
+from mindspore.common.api import _cell_graph_executor
 from mindspore.nn import TrainOneStepCell, WithLossCell
 from mindspore.nn.optim import FTRL
 from mindspore.ops import operations as P
+
+
+context.set_context(mode=context.GRAPH_MODE)
 
 
 class Net(nn.Cell):
@@ -37,6 +39,19 @@ class Net(nn.Cell):
         return x
 
 
+class NetWithSparseGatherV2(nn.Cell):
+    """ NetWithSparseGatherV2 definition """
+    def __init__(self):
+        super(NetWithSparseGatherV2, self).__init__()
+        self.weight1 = Parameter(Tensor(np.ones([3, 1, 2]).astype(np.float32)), name="weight1")
+        self.weight2 = Parameter(Tensor(np.ones([2, 1, 2]).astype((np.float32))), name="weight2")
+        self.axis = 0
+        self.gather = P.SparseGatherV2()
+
+    def construct(self, indices, label):
+        return self.gather(self.weight1, indices, self.axis) + self.weight2
+
+
 def test_ftrl():
     """ test_ftrl """
     inputs = Tensor(np.ones([1, 64]).astype(np.float32))
@@ -44,7 +59,33 @@ def test_ftrl():
     net = Net()
     net.set_train()
     loss = nn.SoftmaxCrossEntropyWithLogits()
-    optimizer = FTRL(net.trainable_params())
+    optimizer = FTRL(net.trainable_params(), weight_decay=0.9, loss_scale=2.0)
     net_with_loss = WithLossCell(net, loss)
     train_network = TrainOneStepCell(net_with_loss, optimizer)
-    _executor.compile(train_network, inputs, label)
+    _cell_graph_executor.compile(train_network, inputs, label)
+
+
+def test_spares_ftrl_compile():
+    """ test sparse ftrl compile """
+    indices = Tensor(np.array([0, 1]).astype(np.int32))
+    label = Tensor(np.zeros([2, 1, 2]).astype(np.float32))
+    net = NetWithSparseGatherV2()
+    net.set_train()
+
+    optimizer = FTRL(net.trainable_params(), weight_decay=0.9, loss_scale=2.0)
+    optimizer.target = 'CPU'
+    train_network = TrainOneStepCell(net, optimizer)
+    _cell_graph_executor.compile(train_network, indices, label)
+
+
+def test_spares_ftrl():
+    """ test sparse ftrl"""
+    indices = Tensor(np.array([0, 1]).astype(np.int32))
+    label = Tensor(np.zeros([2, 1, 2]).astype(np.float32))
+    net = NetWithSparseGatherV2()
+    net.set_train()
+
+    optimizer = FTRL(net.trainable_params(), weight_decay=0.9, loss_scale=2.0)
+    optimizer.target = 'Ascend'
+    train_network = TrainOneStepCell(net, optimizer)
+    _cell_graph_executor.compile(train_network, indices, label)

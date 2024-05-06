@@ -1,14 +1,24 @@
+# Copyright 2020 Huawei Technologies Co., Ltd
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ============================================================================
+"""test layer switch"""
 import numpy as np
 
 import mindspore
 from mindspore import nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.ops import operations as P
-
-
-context.set_context(mode=context.GRAPH_MODE)
-
 
 class Layer1(nn.Cell):
     def __init__(self):
@@ -50,7 +60,6 @@ class SwitchNet(nn.Cell):
         self.layer2 = Layer2()
         self.layer3 = Layer3()
         self.layers = (self.layer1, self.layer2, self.layer3)
-        self.fill = P.Fill()
 
     def construct(self, x, index):
         y = self.layers[index](x)
@@ -64,7 +73,6 @@ class MySwitchNet(nn.Cell):
         self.layer2 = Layer2()
         self.layer3 = Layer3()
         self.layers = (self.layer1, self.layer2, self.layer3)
-        self.fill = P.Fill()
 
     def construct(self, x, index):
         y = self.layers[0](x)
@@ -75,7 +83,28 @@ class MySwitchNet(nn.Cell):
 
 
 def test_layer_switch():
+    context.set_context(mode=context.GRAPH_MODE)
     net = MySwitchNet()
     x = Tensor(np.ones((3, 3, 24, 24)), mindspore.float32)
     index = Tensor(0, dtype=mindspore.int32)
-    y = net(x, index)
+    net(x, index)
+
+class MySwitchNetPynative(nn.Cell):
+    def __init__(self):
+        super(MySwitchNetPynative, self).__init__()
+        self.layer1 = Layer1()
+        self.layer2 = Layer2()
+        self.layer3 = Layer3()
+        self.layers = (self.layer1, self.layer2, self.layer3)
+
+    def construct(self, x, index):
+        return self.layers[index](x)
+
+
+def test_layer_switch_pynative():
+    context.set_context(mode=context.PYNATIVE_MODE)
+    net = MySwitchNetPynative()
+    x = Tensor(np.ones((3, 3, 24, 24)), mindspore.float32)
+    index = Tensor(2, dtype=mindspore.int32)
+    net(x, index)
+    context.set_context(mode=context.GRAPH_MODE)

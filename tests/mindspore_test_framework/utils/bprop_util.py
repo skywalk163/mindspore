@@ -17,14 +17,14 @@
 
 from mindspore import context
 from mindspore.common import ParameterTuple
-from mindspore.common.api import ms_function
+from mindspore.common.api import jit
 from mindspore.nn import Cell
 from mindspore.ops.composite.base import GradOperation
 
 
 class Bprop(Cell):
     """
-    The gradient wraper.
+    The gradient wrapper.
     """
 
     def __init__(self, func, wrt_params, params, grad_op, sens):
@@ -37,7 +37,7 @@ class Bprop(Cell):
         self.grad = grad_op
         self.sens = sens
         self.with_sens = False
-        if sens:
+        if sens is not None:
             self.with_sens = True
 
     def construct(self, *inputs):
@@ -71,10 +71,10 @@ def bprop(func, *inputs, grads_wrt_outputs=None, wrt: list = None, params: list 
     func.set_train()
 
     with_sens_param = False
-    if grads_wrt_outputs:
+    if grads_wrt_outputs is not None:
         with_sens_param = True
 
-    if not wrt:
+    if wrt is None:
         wrt = []
     wrt_inputs = False
     if 'inputs' in wrt:
@@ -85,12 +85,12 @@ def bprop(func, *inputs, grads_wrt_outputs=None, wrt: list = None, params: list 
         if not params:
             params = func.trainable_params()
 
-    grad_op = GradOperation(name='grad', get_all=wrt_inputs, get_by_list=wrt_params, sens_param=with_sens_param)
+    grad_op = GradOperation(get_all=wrt_inputs, get_by_list=wrt_params, sens_param=with_sens_param)
     grad = Bprop(func, wrt_params, params, grad_op, grads_wrt_outputs)
 
     if context.get_context("mode") == context.PYNATIVE_MODE:
         def func_pynative(*inputs):
-            @ms_function
+            @jit
             def _func_pynative(*inputs):
                 return grad(*inputs)
 

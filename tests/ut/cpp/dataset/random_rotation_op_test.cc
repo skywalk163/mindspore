@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,34 +13,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <opencv2/imgcodecs.hpp>
 #include "common/common.h"
 #include "common/cvop_common.h"
-#include "dataset/kernels/image/random_rotation_op.h"
-#include "dataset/core/cv_tensor.h"
+#include "minddata/dataset/kernels/image/random_rotation_op.h"
+#include "minddata/dataset/core/cv_tensor.h"
 #include "utils/log_adapter.h"
 
 using namespace mindspore::dataset;
-using mindspore::MsLogLevel::INFO;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::LogStream;
 
 class MindDataTestRandomRotationOp : public UT::CVOP::CVOpCommon {
  public:
   MindDataTestRandomRotationOp() : CVOpCommon() {}
 };
 
+/// Feature: RandomRotation op
+/// Description: Test RandomRotationOp with basic usage using empty vector for center and check OneToOne
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestRandomRotationOp, TestOp) {
   MS_LOG(INFO) << "Doing MindDataTestRandomRotationOp::TestOp.";
   std::shared_ptr<Tensor> output_tensor;
   float sDegree = -180;
   float eDegree = 180;
   // use compute center to use for rotation
-  float xCenter = -1;
-  float yCenter = -1;
+  std::vector<float> center = {};
   bool expand = false;
-  std::unique_ptr<RandomRotationOp> op(new RandomRotationOp(
-    sDegree, eDegree, xCenter, yCenter, InterpolationMode::kLinear, expand));
+  auto op = std::make_unique<RandomRotationOp>(sDegree, eDegree, InterpolationMode::kLinear, expand, center, 0, 0, 0);
   EXPECT_TRUE(op->OneToOne());
   Status s = op->Compute(input_tensor_, &output_tensor);
   EXPECT_TRUE(s.IsOk());

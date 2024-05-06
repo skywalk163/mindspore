@@ -15,9 +15,7 @@
 """VM implementations based on numpy."""
 
 import numpy as np
-
-from mindspore._checkparam import Rel
-from mindspore._checkparam import Validator as validator
+from mindspore import _checkparam as validator
 
 
 def avg_pooling(x, pool_h, pool_w, stride):
@@ -33,7 +31,7 @@ def avg_pooling(x, pool_h, pool_w, stride):
     Returns:
         numpy.ndarray, an output array after applying average pooling on input array.
     """
-    validator.check_integer("stride", stride, 0, Rel.GT, None)
+    validator.check_positive_int(stride, "stride")
     num, channel, height, width = x.shape
     out_h = (height - pool_h) // stride + 1
     out_w = (width - pool_w) // stride + 1
@@ -59,7 +57,7 @@ def avg_pool_grad(dout, origin_shape, pool_h, pool_w, stride):
         stride (int): The stride of the sliding window.
 
     Returns:
-        numpy.ndarray, grad of avgerage pooling.
+        numpy.ndarray, grad of average pooling.
     """
     # pylint: disable=unused-argument
     _, _, height, width = dout.shape
@@ -72,7 +70,7 @@ def avg_pool_grad(dout, origin_shape, pool_h, pool_w, stride):
 
 def _batch_norm(x, scale, shift, running_mean=None, running_var=None,
                 eps=1e-05, momentum=0.1, is_training=True):
-    """Batch normalization over an array."""
+    """Batch Normalization over an array."""
     _, c_h_w = x.shape
     # Handle running_mean and running_var are not None
     # if running_mean is None:
@@ -108,7 +106,7 @@ def _batch_norm(x, scale, shift, running_mean=None, running_var=None,
 
 def batch_norm(x, scale=1, shift=0, mean=None, variance=None,
                eps=1e-05, momentum=0.1, is_training=True):
-    """Batch normalization over an array."""
+    """Batch Normalization over an array."""
     input_shape = x.shape
     if x.ndim != 2:
         batch_num = x.shape[0]
@@ -122,7 +120,7 @@ def batch_norm(x, scale=1, shift=0, mean=None, variance=None,
 
 def _batch_norm_grad(dout, x, scale, save_mean, save_inv_variance, \
                      eps=1e-05, momentum=0.1, is_training=True):
-    """Batch normalization over an array."""
+    """Batch Normalization over an array."""
     if x.ndim != 2:
         batch_num = x.shape[0]
         x = x.reshape(batch_num, -1)
@@ -143,7 +141,7 @@ def _batch_norm_grad(dout, x, scale, save_mean, save_inv_variance, \
 
 
 def batch_norm_grad(dy, x, scale, save_mean, save_inv_variance):
-    """Batch normalization over an array."""
+    """Batch Normalization over an array."""
     if dy.ndim != 2:
         batch_size = dy.shape[0]
         dy = dy.reshape(batch_size, -1)
@@ -169,16 +167,32 @@ def col2im(col, input_shape, filter_h, filter_w, stride=1, pad=0):
         raise ValueError(f"The \'stride\' should be an int number or "
                          f"a tuple of two or four int numbers, but got {stride}")
 
+    if isinstance(pad, int):
+        pad_top = pad
+        pad_bottom = pad
+        pad_left = pad
+        pad_right = pad
+    elif isinstance(pad, tuple) and len(pad) == 2:
+        pad_top = pad[0]
+        pad_bottom = pad[0]
+        pad_left = pad[1]
+        pad_right = pad[1]
+    elif isinstance(pad, tuple) and len(pad) == 4:
+        pad_top, pad_bottom, pad_left, pad_right = pad
+    else:
+        raise ValueError(f"The \'pad\' should be an int number or "
+                         f"a tuple of two or four int numbers, but got {pad}")
+
     batch_num, channel, height, width = input_shape
-    out_h = (height + 2 * pad - filter_h) // stride_h + 1
-    out_w = (width + 2 * pad - filter_w) // stride_w + 1
+    out_h = (height + pad_top + pad_bottom - filter_h) // stride_h + 1
+    out_w = (width + pad_left + pad_right - filter_w) // stride_w + 1
     col = col.reshape(batch_num, out_h, out_w, channel, filter_h, filter_w) \
         .transpose(0, 3, 4, 5, 1, 2)
 
     img = np.zeros((batch_num,
                     channel,
-                    height + 2 * pad + stride_h - 1,
-                    width + 2 * pad + stride_w - 1)) \
+                    height + pad_top + pad_bottom + stride_h - 1,
+                    width + pad_left + pad_right + stride_w - 1)) \
         .astype(col.dtype)
     for y in range(filter_h):
         y_max = y + stride_h * out_h
@@ -186,7 +200,7 @@ def col2im(col, input_shape, filter_h, filter_w, stride=1, pad=0):
             x_max = x + stride_h * out_w
             img[:, :, y:y_max:stride_h, x:x_max:stride_h] += col[:, :, y, x, :, :]
 
-    return img[:, :, pad:height + pad, pad:width + pad]
+    return img[:, :, pad_top:height + pad_bottom, pad_left:width + pad_right]
 
 
 def convolve(x, w, b=None, pad_mode="valid"):
@@ -218,7 +232,7 @@ def conv2d(x, weight, bias=None, stride=1, pad=0,
            dilation=1, groups=1, padding_mode='zeros'):
     """Convolution 2D."""
     # pylint: disable=unused-argument
-    validator.check_value_type('stride', stride, (int, tuple), None)
+    validator.check_value_type('stride', stride, (int, tuple))
     if isinstance(stride, int):
         stride = (stride, stride)
     elif len(stride) == 4:
@@ -230,7 +244,7 @@ def conv2d(x, weight, bias=None, stride=1, pad=0,
                          f"a tuple of two positive int numbers, but got {stride}")
     stride_h = stride[0]
     stride_w = stride[1]
-    validator.check_value_type('dilation', dilation, (int, tuple), None)
+    validator.check_value_type('dilation', dilation, (int, tuple))
     if isinstance(dilation, int):
         dilation = (dilation, dilation)
     elif len(dilation) == 4:
@@ -243,14 +257,25 @@ def conv2d(x, weight, bias=None, stride=1, pad=0,
     dilation_h = dilation[0]
     dilation_w = dilation[1]
 
+    if isinstance(pad, int):
+        pad_top = pad
+        pad_bottom = pad
+        pad_left = pad
+        pad_right = pad
+    elif isinstance(pad, tuple) and len(pad) == 4:
+        pad_top, pad_bottom, pad_left, pad_right = pad
+    else:
+        raise ValueError(f"The \'pad\' should be an int number or "
+                         f"a tuple of two or four int numbers, but got {pad}")
+
     batch_num, _, x_h, x_w = x.shape
     filter_num, _, filter_h, filter_w = weight.shape
-    out_h = 1 + int((x_h + 2 * pad - filter_h - (filter_h - 1) * (dilation_h - 1)) / stride_h)
-    out_w = 1 + int((x_w + 2 * pad - filter_w - (filter_w - 1) * (dilation_w - 1)) / stride_w)
+    out_h = 1 + int((x_h + pad_top + pad_bottom - filter_h - (filter_h - 1) * (dilation_h - 1)) / stride_h)
+    out_w = 1 + int((x_w + pad_left + pad_right - filter_w - (filter_w - 1) * (dilation_w - 1)) / stride_w)
     col = im2col(x, filter_h, filter_w, stride, pad, dilation)
     col_w = np.reshape(weight, (filter_num, -1)).T
     out = np.dot(col, col_w)
-    out = out.reshape(batch_num, out_h, out_w, -1).transpose(0, 3, 1, 2)
+    out = out.reshape((batch_num, out_h, out_w, -1)).transpose(0, 3, 1, 2)
     if bias is not None:
         out += bias
     return out
@@ -262,7 +287,7 @@ def conv2d_backprop_filter(dout, x, w_size, stride=1, pad=0):
     dout = dout.transpose(0, 2, 3, 1).reshape(-1, filter_num)
     col = im2col(x, filter_height, filter_width, stride, pad)
     dw = np.dot(col.T, dout)
-    dw = dw.transpose(1, 0).reshape(filter_num, channel, filter_height, filter_width)
+    dw = dw.transpose(1, 0).reshape((filter_num, channel, filter_height, filter_width))
     return dw
 
 
@@ -348,11 +373,22 @@ def im2col(img, filter_h, filter_w, stride=1, pad=0, dilation=1):
         raise ValueError(f"The \'dilation\' should be an int number or "
                          f"a tuple of two or four int numbers, but got {dilation}")
 
-    batch_num, channel, height, width = img.shape
-    out_h = (height + 2 * pad - filter_h - (filter_h - 1) * (dilation_h - 1)) // stride_h + 1
-    out_w = (width + 2 * pad - filter_w - (filter_w - 1) * (dilation_w - 1)) // stride_w + 1
+    if isinstance(pad, int):
+        pad_top = pad
+        pad_bottom = pad
+        pad_left = pad
+        pad_right = pad
+    elif isinstance(pad, tuple) and len(pad) == 4:
+        pad_top, pad_bottom, pad_left, pad_right = pad
+    else:
+        raise ValueError(f"The \'pad\' should be an int number or "
+                         f"a tuple of two or four int numbers, but got {pad}")
 
-    img = np.pad(img, [(0, 0), (0, 0), (pad, pad), (pad, pad)], 'constant')
+    batch_num, channel, height, width = img.shape
+    out_h = (height + pad_top + pad_bottom - filter_h - (filter_h - 1) * (dilation_h - 1)) // stride_h + 1
+    out_w = (width + pad_left + pad_right - filter_w - (filter_w - 1) * (dilation_w - 1)) // stride_w + 1
+
+    img = np.pad(img, [(0, 0), (0, 0), (pad_top, pad_bottom), (pad_left, pad_right)], 'constant')
     col = np.zeros((batch_num, channel, filter_h, filter_w, out_h, out_w)).astype(img.dtype)
 
     for y in range(filter_h):
@@ -385,7 +421,7 @@ def matmul(x, w, b=None):
 
 def max_pooling(x, pool_h, pool_w, stride):
     """Max pooling."""
-    validator.check_integer("stride", stride, 0, Rel.GT, None)
+    validator.check_positive_int(stride, "stride")
     num, channel, height, width = x.shape
     out_h = (height - pool_h) // stride + 1
     out_w = (width - pool_w) // stride + 1
@@ -403,7 +439,7 @@ def max_pool_grad(x, dout, pool_h, pool_w, stride):
     """Grad of max pooling."""
     dout = dout.transpose(0, 2, 3, 1)
     pool_size = pool_h * pool_w
-    dmax = np.zeros((dout.size, pool_size))
+    dmax = np.zeros((dout.size, pool_size), dout.dtype)
     col = im2col(x, pool_h, pool_w, stride)
     col = col.reshape(-1, pool_h * pool_w)
     arg_max = np.argmax(col, axis=1)
@@ -418,7 +454,7 @@ def max_pool_grad_with_argmax(x, dout, arg_max, pool_h, pool_w, stride):
     """Grad of max pooling with argmax."""
     dout = dout.transpose(0, 2, 3, 1)
     pool_size = pool_h * pool_w
-    dmax = np.zeros((dout.size, pool_size))
+    dmax = np.zeros((dout.size, pool_size), dout.dtype)
     dmax[np.arange(arg_max.size), arg_max.flatten()] = dout.flatten()
     dmax = dmax.reshape(dout.shape + (pool_size,))
     dcol = dmax.reshape(dmax.shape[0] * dmax.shape[1] * dmax.shape[2], -1)
@@ -428,7 +464,7 @@ def max_pool_grad_with_argmax(x, dout, arg_max, pool_h, pool_w, stride):
 
 def max_pool_with_argmax(x, pool_h, pool_w, stride):
     """Max pooling with argmax."""
-    validator.check_integer("stride", stride, 0, Rel.GT, None)
+    validator.check_positive_int(stride, "stride")
     num, channel, height, width = x.shape
     out_h = (height - pool_h) // stride + 1
     out_w = (width - pool_w) // stride + 1
@@ -516,9 +552,7 @@ def softmax_cross_entropy_with_logits(logits, labels):
     sample_num = labels.shape[0]
     prob = softmax(logits)
     log_likelihood = -np.log(prob[range(sample_num)]) * labels
-    # loss = np.sum(log_likelihood)
-    loss = log_likelihood
-
+    loss = np.sum(log_likelihood)
     dx = prob.copy()
     dx[range(sample_num)] -= labels
     return loss, dx
@@ -804,3 +838,51 @@ def minimum(x, y):
         numpy.ndarray, has the same type as x.
     """
     return np.minimum(x, y)
+
+
+def all_(x, axis=(), keep_dims=False):
+    """
+    Check all array elements along a given axis evaluate to True.
+
+    Args:
+        x (numpy.ndarray): An array to be reduced.
+        axis (Union[None, int, tuple(int)): Dimensions of reduction.
+        keep_dims (bool): Whether to keep the reduced dimensions.
+
+    Returns:
+        numpy.ndarray, has the same type as x.
+    """
+    axis = None if axis == () else axis
+    return np.all(x, axis, keepdims=keep_dims)
+
+
+def any_(x, axis=(), keep_dims=False):
+    """
+    Check any array element along a given axis evaluate to True.
+
+    Args:
+        x (numpy.ndarray): An array to be reduced.
+        axis (Union[None, int, tuple(int)): Dimensions of reduction.
+        keep_dims (bool): Whether to keep the reduced dimensions.
+
+    Returns:
+        numpy.ndarray, has the same type as x.
+    """
+    axis = None if axis == () else axis
+    return np.any(x, axis, keepdims=keep_dims)
+
+
+def mean_(x, axis=(), keep_dims=False):
+    """
+    Check mean array element along a given axis evaluate to True.
+
+    Args:
+        x (numpy.ndarray): An array to be reduced.
+        axis (Union[None, int, tuple(int)): Dimensions of reduction.
+        keep_dims (bool): Whether to keep the reduced dimensions.
+
+    Returns:
+        numpy.ndarray, has the same type as x.
+    """
+    axis = None if axis == () else axis
+    return np.mean(x, axis, keepdims=keep_dims)

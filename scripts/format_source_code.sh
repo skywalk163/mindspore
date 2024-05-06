@@ -86,16 +86,16 @@ cd "${SCRIPTS_PATH}/.." || exit 1
 FMT_FILE_LIST='__format_files_list__'
 
 if [[ "X${mode}" == "Xall" ]]; then
-  find mindspore/ccsrc -type f -name "*" | grep "\.h$\|\.cc$" > "${FMT_FILE_LIST}" || true
+  find mindspore/{ccsrc,core,lite} -type f -name "*" | grep -E "(\.h$|\.cc$|\.c$)" > "${FMT_FILE_LIST}" || true
 elif [[ "X${mode}" == "Xchanged" ]]; then
-  git diff --name-only | grep "mindspore/ccsrc" | grep "\.h$\|\.cc$" > "${FMT_FILE_LIST}" || true
+  git diff --name-only | grep "mindspore/ccsrc\|mindspore/core\|mindspore/lite\|include" | grep -E "(\.h$|\.cc$|\.c$)" > "${FMT_FILE_LIST}" || true
 else  # "X${mode}" == "Xlastcommit"
-  git diff --name-only HEAD~ HEAD | grep "mindspore/ccsrc" | grep "\.h$\|\.cc$" > "${FMT_FILE_LIST}" || true
+  git diff --name-only HEAD~ HEAD | grep "mindspore/ccsrc\|mindspore/core\|mindspore/lite\|include" | grep -E "(\.h$|\.cc$|\.c$)" > "${FMT_FILE_LIST}" || true
 fi
 
 while read line; do
   if [ -f "${line}" ]; then
-    ${CLANG_FORMAT} -i "${line}"
+    "${CLANG_FORMAT}" -i "${line}"
   fi
 done < "${FMT_FILE_LIST}"
 

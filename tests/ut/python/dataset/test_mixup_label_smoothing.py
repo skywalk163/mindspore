@@ -1,4 +1,4 @@
-# Copyright 2019 Huawei Technologies Co., Ltd
+# Copyright 2019-2022 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,47 +15,18 @@
 import numpy as np
 
 import mindspore.dataset as ds
-import mindspore.dataset.transforms.c_transforms as c
-import mindspore.dataset.transforms.py_transforms as f
-import mindspore.dataset.transforms.vision.c_transforms as c_vision
-import mindspore.dataset.transforms.vision.py_transforms as py_vision
+import mindspore.dataset.transforms as data_trans
+import mindspore.dataset.vision as vision
 from mindspore import log as logger
 
-DATA_DIR = "../data/dataset/testImageNetData/train"
 DATA_DIR_2 = "../data/dataset/testImageNetData2/train"
-
-
-def test_one_hot_op():
-    """
-    Test one hot encoding op
-    """
-    logger.info("Test one hot encoding op")
-
-    # define map operations
-    # ds = de.ImageFolderDataset(DATA_DIR, schema=SCHEMA_DIR)
-    dataset = ds.ImageFolderDatasetV2(DATA_DIR)
-    num_classes = 2
-    epsilon_para = 0.1
-
-    transforms = [f.OneHotOp(num_classes=num_classes, smoothing_rate=epsilon_para),
-                  ]
-    transform_label = py_vision.ComposeOp(transforms)
-    dataset = dataset.map(input_columns=["label"], operations=transform_label())
-
-    golden_label = np.ones(num_classes) * epsilon_para / num_classes
-    golden_label[1] = 1 - epsilon_para / num_classes
-
-    for data in dataset.create_dict_iterator():
-        label = data["label"]
-        logger.info("label is {}".format(label))
-        logger.info("golden_label is {}".format(golden_label))
-        assert label.all() == golden_label.all()
-        logger.info("====test one hot op ok====")
 
 
 def test_mix_up_single():
     """
-    Test single batch mix up op
+    Feature: MixUp Op
+    Description: Test Python op, single batch mix up scenario
+    Expectation: Dataset pipeline runs successfully and results are verified
     """
     logger.info("Test single batch mix up op")
 
@@ -63,16 +34,16 @@ def test_mix_up_single():
     resize_width = 224
 
     # Create dataset and define map operations
-    ds1 = ds.ImageFolderDatasetV2(DATA_DIR_2)
+    ds1 = ds.ImageFolderDataset(DATA_DIR_2)
 
     num_classes = 10
-    decode_op = c_vision.Decode()
-    resize_op = c_vision.Resize((resize_height, resize_width), c_vision.Inter.LINEAR)
-    one_hot_encode = c.OneHot(num_classes)  # num_classes is input argument
+    decode_op = vision.Decode()
+    resize_op = vision.Resize((resize_height, resize_width), vision.Inter.LINEAR)
+    one_hot_encode = data_trans.OneHot(num_classes)  # num_classes is input argument
 
-    ds1 = ds1.map(input_columns=["image"], operations=decode_op)
-    ds1 = ds1.map(input_columns=["image"], operations=resize_op)
-    ds1 = ds1.map(input_columns=["label"], operations=one_hot_encode)
+    ds1 = ds1.map(operations=decode_op, input_columns=["image"])
+    ds1 = ds1.map(operations=resize_op, input_columns=["image"])
+    ds1 = ds1.map(operations=one_hot_encode, input_columns=["label"])
 
     # apply batch operations
     batch_size = 3
@@ -80,11 +51,12 @@ def test_mix_up_single():
 
     ds2 = ds1
     alpha = 0.2
-    transforms = [py_vision.MixUp(batch_size=batch_size, alpha=alpha, is_single=True)
+    transforms = [vision.MixUp(batch_size=batch_size, alpha=alpha, is_single=True)
                   ]
-    ds1 = ds1.map(input_columns=["image", "label"], operations=transforms)
+    ds1 = ds1.map(operations=transforms, input_columns=["image", "label"])
 
-    for data1, data2 in zip(ds1.create_dict_iterator(), ds2.create_dict_iterator()):
+    for data1, data2 in zip(ds1.create_dict_iterator(num_epochs=1, output_numpy=True),
+                            ds2.create_dict_iterator(num_epochs=1, output_numpy=True)):
         image1 = data1["image"]
         label = data1["label"]
         logger.info("label is {}".format(label))
@@ -104,7 +76,9 @@ def test_mix_up_single():
 
 def test_mix_up_multi():
     """
-    Test multi batch mix up op
+    Feature: MixUp Op
+    Description: Test Python op, multiple batch mix up scenario
+    Expectation: Dataset pipeline runs successfully and results are verified
     """
     logger.info("Test several batch mix up op")
 
@@ -112,16 +86,16 @@ def test_mix_up_multi():
     resize_width = 224
 
     # Create dataset and define map operations
-    ds1 = ds.ImageFolderDatasetV2(DATA_DIR_2)
+    ds1 = ds.ImageFolderDataset(DATA_DIR_2)
 
     num_classes = 3
-    decode_op = c_vision.Decode()
-    resize_op = c_vision.Resize((resize_height, resize_width), c_vision.Inter.LINEAR)
-    one_hot_encode = c.OneHot(num_classes)  # num_classes is input argument
+    decode_op = vision.Decode()
+    resize_op = vision.Resize((resize_height, resize_width), vision.Inter.LINEAR)
+    one_hot_encode = data_trans.OneHot(num_classes)  # num_classes is input argument
 
-    ds1 = ds1.map(input_columns=["image"], operations=decode_op)
-    ds1 = ds1.map(input_columns=["image"], operations=resize_op)
-    ds1 = ds1.map(input_columns=["label"], operations=one_hot_encode)
+    ds1 = ds1.map(operations=decode_op, input_columns=["image"])
+    ds1 = ds1.map(operations=resize_op, input_columns=["image"])
+    ds1 = ds1.map(operations=one_hot_encode, input_columns=["label"])
 
     # apply batch operations
     batch_size = 3
@@ -129,12 +103,13 @@ def test_mix_up_multi():
 
     ds2 = ds1
     alpha = 0.2
-    transforms = [py_vision.MixUp(batch_size=batch_size, alpha=alpha, is_single=False)
+    transforms = [vision.MixUp(batch_size=batch_size, alpha=alpha, is_single=False)
                   ]
-    ds1 = ds1.map(input_columns=["image", "label"], operations=transforms)
+    ds1 = ds1.map(operations=transforms, input_columns=["image", "label"])
     num_iter = 0
     batch1_image1 = 0
-    for data1, data2 in zip(ds1.create_dict_iterator(), ds2.create_dict_iterator()):
+    for data1, data2 in zip(ds1.create_dict_iterator(num_epochs=1, output_numpy=True),
+                            ds2.create_dict_iterator(num_epochs=1, output_numpy=True)):
         image1 = data1["image"]
         label1 = data1["label"]
         logger.info("label: {}".format(label1))
@@ -156,10 +131,9 @@ def test_mix_up_multi():
                     assert image1[index].all() == img_golden.all()
                     logger.info("====test several batch mixup ok====")
             break
-        num_iter = num_iter + 1
+        num_iter += 1
 
 
 if __name__ == "__main__":
-    test_one_hot_op()
     test_mix_up_single()
     test_mix_up_multi()

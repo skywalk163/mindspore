@@ -1,4 +1,4 @@
-# Copyright 2019 Huawei Technologies Co., Ltd
+# Copyright 2019-2021 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,31 +19,294 @@ import pytest
 import mindspore.context as context
 import mindspore.nn as nn
 from mindspore import Tensor
-from mindspore.common.api import ms_function
 from mindspore.ops import operations as P
-from mindspore.ops.operations import _grad_ops as G
+from mindspore.ops import composite as C
 
-context.set_context(mode=context.GRAPH_MODE, device_target='GPU')
+class StridedSliceNet(nn.Cell):
+    def __init__(self, begin, end, stride, begin_mask=0, end_mask=0, ellipsis_mask=0):
+        super(StridedSliceNet, self).__init__()
+        self.begin = begin
+        self.end = end
+        self.strides = stride
+        self.slice = P.StridedSlice(begin_mask, end_mask, ellipsis_mask)
+
+    def construct(self, x):
+        return self.slice(x, self.begin, self.end, self.strides)
+
+class GradData(nn.Cell):
+    def __init__(self, network):
+        super(GradData, self).__init__()
+        self.grad = C.GradOperation(get_all=True, sens_param=False)
+        self.network = network
+
+    def construct(self, x):
+        return self.grad(self.network)(x)
 
 
-class StridedSliceGrad(nn.Cell):
-    def __init__(self):
-        super(StridedSliceGrad, self).__init__()
-        self.ssg = G.StridedSliceGrad()
-        self.shape = P.Shape()
+def strided_slice_grad(nptype):
+    context.set_context(mode=context.GRAPH_MODE, device_target='GPU')
 
-    @ms_function
-    def construct(self, dy, x):
-        return self.ssg(dy, self.shape(x), (2, 0, 0), (3, 2, 3), (1, 1, 1))
+    x = Tensor(np.arange(0, 2*3*4*5).reshape(2, 3, 4, 5).astype(nptype))
+    net = StridedSliceNet((1, 0, 0, 2), (2, 2, 2, 4), (1, 1, 1, 1))
+    dx = GradData(net)(x)
+    expect = np.array([[[[0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]],
+
+                        [[0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]],
+
+                        [[0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]]],
 
 
-@pytest.mark.level0
+                       [[[0., 0., 1., 1., 0.],
+                         [0., 0., 1., 1., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]],
+
+                        [[0., 0., 1., 1., 0.],
+                         [0., 0., 1., 1., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]],
+
+                        [[0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]]]]).astype(nptype)
+    assert np.allclose(dx[0].asnumpy(), expect)
+
+    net = StridedSliceNet((1, 0, 0, 5), (2, 2, 2, 1), (1, 1, 1, -2))
+    dx = GradData(net)(x)
+    expect = np.array([[[[0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]],
+
+                        [[0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]],
+
+                        [[0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]]],
+
+
+                       [[[0., 0., 1., 0., 1.],
+                         [0., 0., 1., 0., 1.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]],
+
+                        [[0., 0., 1., 0., 1.],
+                         [0., 0., 1., 0., 1.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]],
+
+                        [[0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]]]]).astype(nptype)
+    assert np.allclose(dx[0].asnumpy(), expect)
+
+
+    net = StridedSliceNet((1, 0, 0, -1), (2, 2, 2, 1), (1, 1, 1, -1))
+    dx = GradData(net)(x)
+    expect = np.array([[[[0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]],
+
+                        [[0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]],
+
+                        [[0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]]],
+
+
+                       [[[0., 0., 1., 1., 1.],
+                         [0., 0., 1., 1., 1.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]],
+
+                        [[0., 0., 1., 1., 1.],
+                         [0., 0., 1., 1., 1.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]],
+
+                        [[0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]]]]).astype(nptype)
+    assert np.allclose(dx[0].asnumpy(), expect)
+
+
+    net = StridedSliceNet((1, 0, 0, 2), (2, 2, 2, 4), (1, 1, 1, 1),
+                          begin_mask=0b1000, end_mask=0b0010, ellipsis_mask=0b0100)
+    dx = GradData(net)(x)
+    expect = np.array([[[[0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]],
+
+                        [[0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]],
+
+                        [[0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.],
+                         [0., 0., 0., 0., 0.]]],
+
+
+                       [[[1., 1., 1., 1., 0.],
+                         [1., 1., 1., 1., 0.],
+                         [1., 1., 1., 1., 0.],
+                         [1., 1., 1., 1., 0.]],
+
+                        [[1., 1., 1., 1., 0.],
+                         [1., 1., 1., 1., 0.],
+                         [1., 1., 1., 1., 0.],
+                         [1., 1., 1., 1., 0.]],
+
+                        [[1., 1., 1., 1., 0.],
+                         [1., 1., 1., 1., 0.],
+                         [1., 1., 1., 1., 0.],
+                         [1., 1., 1., 1., 0.]]]]).astype(nptype)
+    assert np.allclose(dx[0].asnumpy(), expect)
+
+    x = Tensor(np.arange(0, 3*4*5).reshape(3, 4, 5).astype(np.float32))
+    net = StridedSliceNet((1, 0, 0), (2, -3, 3), (1, 1, 3))
+    dx = GradData(net)(x)
+    expect = np.array([[[0., 0., 0., 0., 0.],
+                        [0., 0., 0., 0., 0.],
+                        [0., 0., 0., 0., 0.],
+                        [0., 0., 0., 0., 0.]],
+
+                       [[1., 0., 0., 0., 0.],
+                        [0., 0., 0., 0., 0.],
+                        [0., 0., 0., 0., 0.],
+                        [0., 0., 0., 0., 0.]],
+
+                       [[0., 0., 0., 0., 0.],
+                        [0., 0., 0., 0., 0.],
+                        [0., 0., 0., 0., 0.],
+                        [0., 0., 0., 0., 0.]]]).astype(nptype)
+    assert np.allclose(dx[0].asnumpy(), expect)
+
+    x = Tensor(np.arange(0, 1 * 1 * 1 * 2 * 3 * 4 * 5).reshape(1, 1, 1, 2, 3, 4, 5).astype(nptype))
+    net = StridedSliceNet((0, 0, 0, 1, 1, 2, 2), (1, 1, 1, 2, 3, 3, 4), (1, 1, 1, 1, 1, 1, 1))
+    dx = GradData(net)(x)
+    expect = np.array([[[[[[[0., 0., 0., 0., 0.],
+                            [0., 0., 0., 0., 0.],
+                            [0., 0., 0., 0., 0.],
+                            [0., 0., 0., 0., 0.]],
+
+                           [[0., 0., 0., 0., 0.],
+                            [0., 0., 0., 0., 0.],
+                            [0., 0., 0., 0., 0.],
+                            [0., 0., 0., 0., 0.]],
+
+                           [[0., 0., 0., 0., 0.],
+                            [0., 0., 0., 0., 0.],
+                            [0., 0., 0., 0., 0.],
+                            [0., 0., 0., 0., 0.]]],
+
+                          [[[0., 0., 0., 0., 0.],
+                            [0., 0., 0., 0., 0.],
+                            [0., 0., 0., 0., 0.],
+                            [0., 0., 0., 0., 0.]],
+
+                           [[0., 0., 0., 0., 0.],
+                            [0., 0., 0., 0., 0.],
+                            [0., 0., 1., 1., 0.],
+                            [0., 0., 0., 0., 0.]],
+
+                           [[0., 0., 0., 0., 0.],
+                            [0., 0., 0., 0., 0.],
+                            [0., 0., 1., 1., 0.],
+                            [0., 0., 0., 0., 0.]]]]]]]).astype(nptype)
+    assert np.allclose(dx[0].asnumpy(), expect)
+
+@pytest.mark.level1
 @pytest.mark.platform_x86_gpu_training
 @pytest.mark.env_onecard
-def test_slice():
-    x = Tensor(np.array([[[1, 1, 1], [2, 2, 2]], [[3, 3, 3], [4, 4, 4]], [[5, 5, 5], [6, 7, 8]]]).astype(np.float32))
-    dy = Tensor(np.array([[[5., 1., 5.], [6., 1., 8.]]]).astype(np.float32))
-    ssg = StridedSliceGrad()
-    output = ssg(dy, x)
-    expect = [[[0, 0, 0], [0, 0, 0]], [[0, 0, 0], [0, 0, 0]], [[5, 1, 5], [6, 1, 8]]]
-    assert (output.asnumpy() == expect).all()
+def test_strided_slice_grad_float64():
+    strided_slice_grad(np.float64)
+
+@pytest.mark.level1
+@pytest.mark.platform_x86_gpu_training
+@pytest.mark.env_onecard
+def test_strided_slice_grad_float32():
+    strided_slice_grad(np.float32)
+
+@pytest.mark.level1
+@pytest.mark.platform_x86_gpu_training
+@pytest.mark.env_onecard
+def test_strided_slice_grad_float16():
+    strided_slice_grad(np.float16)
+
+@pytest.mark.level1
+@pytest.mark.platform_x86_gpu_training
+@pytest.mark.env_onecard
+def test_strided_slice_grad_int64():
+    strided_slice_grad(np.int64)
+
+@pytest.mark.level1
+@pytest.mark.platform_x86_gpu_training
+@pytest.mark.env_onecard
+def test_strided_slice_grad_int32():
+    strided_slice_grad(np.int32)
+
+@pytest.mark.level1
+@pytest.mark.platform_x86_gpu_training
+@pytest.mark.env_onecard
+def test_strided_slice_grad_int16():
+    strided_slice_grad(np.int16)
+
+@pytest.mark.level1
+@pytest.mark.platform_x86_gpu_training
+@pytest.mark.env_onecard
+def test_strided_slice_grad_int8():
+    strided_slice_grad(np.int8)
+
+@pytest.mark.level1
+@pytest.mark.platform_x86_gpu_training
+@pytest.mark.env_onecard
+def test_strided_slice_grad_uint64():
+    strided_slice_grad(np.uint64)
+
+@pytest.mark.level1
+@pytest.mark.platform_x86_gpu_training
+@pytest.mark.env_onecard
+def test_strided_slice_grad_uint32():
+    strided_slice_grad(np.uint32)
+
+@pytest.mark.level1
+@pytest.mark.platform_x86_gpu_training
+@pytest.mark.env_onecard
+def test_strided_slice_grad_uint16():
+    strided_slice_grad(np.uint16)
+
+@pytest.mark.level1
+@pytest.mark.platform_x86_gpu_training
+@pytest.mark.env_onecard
+def test_strided_slice_grad_uint8():
+    strided_slice_grad(np.uint8)
+
+@pytest.mark.level1
+@pytest.mark.platform_x86_gpu_training
+@pytest.mark.env_onecard
+def test_strided_slice_grad_bool():
+    strided_slice_grad(np.bool)

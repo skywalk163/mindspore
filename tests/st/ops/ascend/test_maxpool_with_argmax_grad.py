@@ -17,7 +17,7 @@ import numpy as np
 import mindspore.context as context
 import mindspore.nn as nn
 from mindspore import Tensor
-from mindspore.common.api import ms_function
+from mindspore.common.api import jit
 from mindspore.ops import operations as P
 from mindspore.ops.composite import GradOperation
 
@@ -27,10 +27,10 @@ context.set_context(device_target="Ascend")
 class Grad(nn.Cell):
     def __init__(self, network):
         super(Grad, self).__init__()
-        self.grad = GradOperation(name="get_all", get_all=True, sens_param=True)
+        self.grad = GradOperation(get_all=True, sens_param=True)
         self.network = network
 
-    @ms_function
+    @jit
     def construct(self, input_, output_grad):
         return self.grad(self.network)(input_, output_grad)
 
@@ -39,11 +39,11 @@ class Net(nn.Cell):
     def __init__(self):
         super(Net, self).__init__()
 
-        self.maxpool = P.MaxPoolWithArgmax(padding="same",
-                                           ksize=3,
+        self.maxpool = P.MaxPoolWithArgmax(pad_mode="same",
+                                           kernel_size=3,
                                            strides=2)
 
-    @ms_function
+    @jit
     def construct(self, x):
         output = self.maxpool(x)
         return output[0]

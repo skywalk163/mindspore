@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,81 +14,80 @@
  * limitations under the License.
  */
 
-#include "utils/comm_manager.h"
-#include "utils/convert_utils.h"
-#ifndef NO_DLIB
-#include "hccl/hcom.h"
-#endif
+#include "include/common/utils/comm_manager.h"
+#include "include/common/utils/convert_utils.h"
+#include "utils/ms_context.h"
+#include "include/common/utils/parallel_context.h"
 
 namespace mindspore {
+namespace {
+constexpr auto kDefaultCommManagerName = "default_comm_manager_name";
+constexpr unsigned int kNoCommDlibRankSize = 2048;
+
+std::map<std::string, std::shared_ptr<CommManager>> &GetInstanceMap() {
+  static std::map<std::string, std::shared_ptr<CommManager>> kCommInstanceMap = {};
+  return kCommInstanceMap;
+}
+
+class DefaultCommManager : public CommManager {
+ public:
+  DefaultCommManager() : CommManager("hccl") {}
+  ~DefaultCommManager() override = default;
+
+  bool CreateGroupSync(const string &, const std::vector<unsigned int> &) const override { return true; }
+  bool GetRankID(const string &, unsigned int *) const override { return true; }
+  bool GetRankSize(const string &, unsigned int *rank_size) const override {
+    *rank_size = kNoCommDlibRankSize;
+    return true;
+  }
+
+  bool DestroyGroup(const string &) const override { return true; }
+
+  uint32_t GetRank() override { return 0; }
+};
+COMM_MANAGER_REG(kDefaultCommManagerName, std::make_shared<DefaultCommManager>());
+}  // namespace
+
+bool CommManager::Register(const std::string &name, const std::shared_ptr<CommManager> &instance) {
+  if (GetInstanceMap().find(name) != GetInstanceMap().end()) {
+    return false;
+  }
+
+  (void)GetInstanceMap().emplace(name, instance);
+  return true;
+}
+
+void CommManager::Clear() { GetInstanceMap().clear(); }
+
 CommManager &CommManager::GetInstance() noexcept {
-  static CommManager instance("hccl");
-  return instance;
+  if (GetInstanceMap().empty()) {
+    MS_LOG(EXCEPTION) << "No CommManager instance found.";
+  }
+
+  auto default_iter = GetInstanceMap().find(kDefaultCommManagerName);
+  if (default_iter == GetInstanceMap().end()) {
+    MS_LOG(EXCEPTION) << "Default CommManager instance not found.";
+  }
+
+  auto context_ptr = MsContext::GetInstance();
+  MS_EXCEPTION_IF_NULL(context_ptr);
+  std::string device_name = context_ptr->get_param<std::string>(MS_CTX_DEVICE_TARGET);
+  if (auto iter = GetInstanceMap().find(device_name); iter != GetInstanceMap().end()) {
+    return *(iter->second);
+  }
+
+  if (static bool first_warning = true; first_warning) {
+    MS_LOG(WARNING) << "CommManager instance for " << device_name << " not found, return default instance.";
+    first_warning = false;
+  }
+  return *(default_iter->second);
 }
 
-#ifndef NO_DLIB
-#define HCCL_RUN_CHECK(op_name, group, op)                      \
-  do {                                                          \
-    auto hccl_result = (op);                                    \
-    if (hccl_result != tagHcclResult::HCCL_SUCCESS) {           \
-      MS_LOG(ERROR) << op_name << " failed: #" << group << "#"; \
-      return false;                                             \
-    }                                                           \
-  } while (0)
+uint32_t GetRank() { return CommManager::GetInstance().GetRank(); }
 
-#define HCCL_GROUP_CHECK_EMPTY(group)                              \
-  do {                                                             \
-    if (group.length() == 0) {                                     \
-      MS_LOG(ERROR) << "The length of group name should not be 0"; \
-      return false;                                                \
-    }                                                              \
-  } while (0)
-
-#define HCCL_GROUP_CHECK_IS_WORLD(group)                                \
-  do {                                                                  \
-    if (group == "hccl_world_group") {                                  \
-      MS_LOG(ERROR) << "The group name should not be hccl_world_group"; \
-      return false;                                                     \
-    }                                                                   \
-  } while (0)
-
-bool CommManager::CreateGroupSync(const string &group, const vector<unsigned int> &rank_id_list) const {
-  auto rank_size = rank_id_list.size();
-  HCCL_GROUP_CHECK_EMPTY(group);
-  HCCL_GROUP_CHECK_IS_WORLD(group);
-  HCCL_RUN_CHECK(string("create communicate group"), group,
-                 hcom_create_group(group.c_str(), UlongToUint(rank_size), vector<unsigned int>(rank_id_list).data()));
-  return true;
+bool IsStandAlone() {
+  auto parallel_context = parallel::ParallelContext::GetInstance();
+  MS_EXCEPTION_IF_NULL(parallel_context);
+  return parallel_context->parallel_mode() == parallel::kStandalone;
 }
-
-bool CommManager::GetRankID(const string &group, unsigned int *rank_id) const {
-  HCCL_GROUP_CHECK_EMPTY(group);
-  HCCL_RUN_CHECK(string("get rank_id"), group, hcom_get_rank_id(group.c_str(), rank_id));
-  return true;
-}
-
-bool CommManager::GetRankSize(const string &group, unsigned int *rank_size) const {
-  HCCL_GROUP_CHECK_EMPTY(group);
-  HCCL_RUN_CHECK(string("get rank size"), group, hcom_get_rank_size(group.c_str(), rank_size));
-  return true;
-}
-
-bool CommManager::DestroyGroup(const string &group) const {
-  HCCL_GROUP_CHECK_EMPTY(group);
-  HCCL_GROUP_CHECK_IS_WORLD(group);
-  HCCL_RUN_CHECK(string("destroy communicate group"), group, hcom_destroy_group(group.c_str()));
-  return true;
-}
-#else
-bool CommManager::CreateGroupSync(const string &, const vector<unsigned int> &) const { return true; }
-
-bool CommManager::GetRankID(const string &group, unsigned int *rank_id) const { return true; }
-
-bool CommManager::GetRankSize(const string &group, unsigned int *rank_size) const {
-  *rank_size = NO_COMM_DLIB_RANK_SIZE;
-  return true;
-}
-
-bool CommManager::DestroyGroup(const string &group) const { return true; }
-#endif
 }  // namespace mindspore

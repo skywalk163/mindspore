@@ -21,19 +21,14 @@
 #include <string>
 #include <vector>
 
-#include "common/utils.h"
+#include "utils/ms_utils.h"
 #include "gtest/gtest.h"
 #include "utils/log_adapter.h"
-#include "mindrecord/include/shard_reader.h"
-#include "mindrecord/include/shard_writer.h"
-#include "mindrecord/include/shard_index_generator.h"
+#include "minddata/mindrecord/include/shard_reader.h"
+#include "minddata/mindrecord/include/shard_writer.h"
+#include "minddata/mindrecord/include/shard_index_generator.h"
 #include "securec.h"
 #include "ut_common.h"
-
-using mindspore::LogStream;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::MsLogLevel::ERROR;
-using mindspore::MsLogLevel::INFO;
 
 namespace mindspore {
 namespace mindrecord {
@@ -60,8 +55,8 @@ TEST_F(TestShardWriter, TestShardWriterOneSample) {
   std::string filename = "./OneSample.shard01";
 
   ShardReader dataset;
-  MSRStatus ret = dataset.Open({filename}, true, 4);
-  ASSERT_EQ(ret, SUCCESS);
+  auto status = dataset.Open({filename}, true, 4);
+  EXPECT_TRUE(status.IsOk());
   dataset.Launch();
 
   while (true) {
@@ -74,7 +69,7 @@ TEST_F(TestShardWriter, TestShardWriterOneSample) {
       }
     }
   }
-  dataset.Finish();
+  dataset.Close();
   for (int i = 1; i <= 4; i++) {
     string filename = std::string("./OneSample.shard0") + std::to_string(i);
     string db_name = std::string("./OneSample.shard0") + std::to_string(i) + ".db";
@@ -104,7 +99,7 @@ TEST_F(TestShardWriter, TestShardWriterShiftRawPage) {
   LoadData(input_path1, json_buffer1, kMaxNum);
   MS_LOG(INFO) << "Load Meta Data Already.";
 
-  // get files' pathes stored in vector<string> image_filenames
+  // get files' paths stored in vector<string> image_filenames
   mindrecord::GetAbsoluteFiles(path_dir, image_filenames);  // get all files whose path within path_dir
   MS_LOG(INFO) << "Only process 10 file names:";
   image_filenames.resize(kMaxNum);
@@ -236,7 +231,7 @@ TEST_F(TestShardWriter, TestShardWriterTrial) {
   LoadData(input_path1, json_buffer1, kMaxNum);
   MS_LOG(INFO) << "Load Meta Data Already.";
 
-  // get files' pathes stored in vector<string> image_filenames
+  // get files' paths stored in vector<string> image_filenames
   mindrecord::GetAbsoluteFiles(path_dir, image_filenames);  // get all files whose path within path_dir
   MS_LOG(INFO) << "Only process 10 file names:";
   image_filenames.resize(kMaxNum);
@@ -375,7 +370,7 @@ TEST_F(TestShardWriter, TestShardWriterTrialNoFields) {
   LoadData(input_path1, json_buffer1, kMaxNum);
   MS_LOG(INFO) << "Load Meta Data Already.";
 
-  // get files' pathes stored in vector<string> image_filenames
+  // get files' paths stored in vector<string> image_filenames
   mindrecord::GetAbsoluteFiles(path_dir, image_filenames);  // get all files whose path within path_dir
   MS_LOG(INFO) << "Only process 10 file names:";
   image_filenames.resize(kMaxNum);
@@ -509,7 +504,7 @@ TEST_F(TestShardWriter, DataCheck) {
   LoadData(input_path1, json_buffer1, kMaxNum);
   MS_LOG(INFO) << "Load Meta Data Already.";
 
-  // get files' pathes stored in vector<string> image_filenames
+  // get files' paths stored in vector<string> image_filenames
   mindrecord::GetAbsoluteFiles(path_dir, image_filenames);  // get all files whose path within path_dir
   MS_LOG(INFO) << "Only process 10 file names:";
   image_filenames.resize(kMaxNum);
@@ -610,7 +605,7 @@ TEST_F(TestShardWriter, AllRawDataWrong) {
   LoadData(input_path1, json_buffer1, kMaxNum);
   MS_LOG(INFO) << "Load Meta Data Already.";
 
-  // get files' pathes stored in vector<string> image_filenames
+  // get files' paths stored in vector<string> image_filenames
   mindrecord::GetAbsoluteFiles(path_dir, image_filenames);  // get all files whose path within path_dir
   MS_LOG(INFO) << "Only process 10 file names:";
   image_filenames.resize(kMaxNum);
@@ -675,8 +670,8 @@ TEST_F(TestShardWriter, AllRawDataWrong) {
   fw.SetShardHeader(std::make_shared<mindrecord::ShardHeader>(header_data));
 
   // write rawdata
-  MSRStatus res = fw.WriteRawData(rawdatas, bin_data);
-  ASSERT_EQ(res, SUCCESS);
+  auto status = fw.WriteRawData(rawdatas, bin_data);
+  EXPECT_TRUE(status.IsOk());
   for (const auto &filename : file_names) {
     auto filename_db = filename + ".db";
     remove(common::SafeCStr(filename_db));
@@ -716,7 +711,8 @@ TEST_F(TestShardWriter, TestShardReaderStringAndNumberColumnInIndex) {
   fields.push_back(index_field2);
 
   // add index to shardHeader
-  ASSERT_EQ(header_data.AddIndexFields(fields), SUCCESS);
+  auto status = header_data.AddIndexFields(fields);
+  EXPECT_TRUE(status.IsOk());
   MS_LOG(INFO) << "Init Index Fields Already.";
 
   // load  meta data
@@ -736,28 +732,34 @@ TEST_F(TestShardWriter, TestShardReaderStringAndNumberColumnInIndex) {
   }
 
   mindrecord::ShardWriter fw_init;
-  ASSERT_TRUE(fw_init.Open(file_names) == SUCCESS);
+  status = fw_init.Open(file_names);
+  EXPECT_TRUE(status.IsOk());
 
   // set shardHeader
-  ASSERT_TRUE(fw_init.SetShardHeader(std::make_shared<mindrecord::ShardHeader>(header_data)) == SUCCESS);
+  status = fw_init.SetShardHeader(std::make_shared<mindrecord::ShardHeader>(header_data));
+  EXPECT_TRUE(status.IsOk());
+
 
   // write raw data
-  ASSERT_TRUE(fw_init.WriteRawData(rawdatas, bin_data) == SUCCESS);
-  ASSERT_TRUE(fw_init.Commit() == SUCCESS);
+  status = fw_init.WriteRawData(rawdatas, bin_data);
+  EXPECT_TRUE(status.IsOk());
+  status = fw_init.Commit();
+  EXPECT_TRUE(status.IsOk());
 
   // create the index file
   std::string filename = "./imagenet.shard01";
   mindrecord::ShardIndexGenerator sg{filename};
   sg.Build();
-  ASSERT_TRUE(sg.WriteToDatabase() == SUCCESS);
+  status = sg.WriteToDatabase();
+  EXPECT_TRUE(status.IsOk());
   MS_LOG(INFO) << "Done create index";
 
   // read the mindrecord file
   filename = "./imagenet.shard01";
   auto column_list = std::vector<std::string>{"label", "file_name", "data"};
   ShardReader dataset;
-  MSRStatus ret = dataset.Open({filename}, true, 4, column_list);
-  ASSERT_EQ(ret, SUCCESS);
+  status = dataset.Open({filename}, true, 4, column_list);
+  EXPECT_TRUE(status.IsOk());
   dataset.Launch();
 
   int count = 0;
@@ -775,7 +777,7 @@ TEST_F(TestShardWriter, TestShardReaderStringAndNumberColumnInIndex) {
     }
   }
   ASSERT_TRUE(count == 10);
-  dataset.Finish();
+  dataset.Close();
 
   for (const auto &filename : file_names) {
     auto filename_db = filename + ".db";
@@ -822,28 +824,34 @@ TEST_F(TestShardWriter, TestShardNoBlob) {
   }
 
   mindrecord::ShardWriter fw_init;
-  ASSERT_TRUE(fw_init.Open(file_names) == SUCCESS);
+  auto status = fw_init.Open(file_names);
+  EXPECT_TRUE(status.IsOk());
+
 
   // set shardHeader
-  ASSERT_TRUE(fw_init.SetShardHeader(std::make_shared<mindrecord::ShardHeader>(header_data)) == SUCCESS);
+  status = fw_init.SetShardHeader(std::make_shared<mindrecord::ShardHeader>(header_data));
+  EXPECT_TRUE(status.IsOk());
 
   // write raw data
-  ASSERT_TRUE(fw_init.WriteRawData(rawdatas, bin_data) == SUCCESS);
-  ASSERT_TRUE(fw_init.Commit() == SUCCESS);
+  status = fw_init.WriteRawData(rawdatas, bin_data);
+  EXPECT_TRUE(status.IsOk());
+  status = fw_init.Commit();
+  EXPECT_TRUE(status.IsOk());
 
   // create the index file
   std::string filename = "./imagenet.shard01";
   mindrecord::ShardIndexGenerator sg{filename};
   sg.Build();
-  ASSERT_TRUE(sg.WriteToDatabase() == SUCCESS);
+  status = sg.WriteToDatabase();
+  EXPECT_TRUE(status.IsOk());
   MS_LOG(INFO) << "Done create index";
 
   // read the mindrecord file
   filename = "./imagenet.shard01";
   auto column_list = std::vector<std::string>{"label", "file_name"};
   ShardReader dataset;
-  MSRStatus ret = dataset.Open({filename}, true, 4, column_list);
-  ASSERT_EQ(ret, SUCCESS);
+  status = dataset.Open({filename}, true, 4, column_list);
+  EXPECT_TRUE(status.IsOk());
   dataset.Launch();
 
   int count = 0;
@@ -858,7 +866,7 @@ TEST_F(TestShardWriter, TestShardNoBlob) {
     }
   }
   ASSERT_TRUE(count == 10);
-  dataset.Finish();
+  dataset.Close();
   for (const auto &filename : file_names) {
     auto filename_db = filename + ".db";
     remove(common::SafeCStr(filename_db));
@@ -896,7 +904,8 @@ TEST_F(TestShardWriter, TestShardReaderStringAndNumberNotColumnInIndex) {
   fields.push_back(index_field1);
 
   // add index to shardHeader
-  ASSERT_EQ(header_data.AddIndexFields(fields), SUCCESS);
+  auto status = header_data.AddIndexFields(fields);
+  EXPECT_TRUE(status.IsOk());
   MS_LOG(INFO) << "Init Index Fields Already.";
 
   // load  meta data
@@ -916,28 +925,34 @@ TEST_F(TestShardWriter, TestShardReaderStringAndNumberNotColumnInIndex) {
   }
 
   mindrecord::ShardWriter fw_init;
-  ASSERT_TRUE(fw_init.Open(file_names) == SUCCESS);
+  status = fw_init.Open(file_names);
+  EXPECT_TRUE(status.IsOk());
+
 
   // set shardHeader
-  ASSERT_TRUE(fw_init.SetShardHeader(std::make_shared<mindrecord::ShardHeader>(header_data)) == SUCCESS);
+  status = fw_init.SetShardHeader(std::make_shared<mindrecord::ShardHeader>(header_data));
+  EXPECT_TRUE(status.IsOk());
 
   // write raw data
-  ASSERT_TRUE(fw_init.WriteRawData(rawdatas, bin_data) == SUCCESS);
-  ASSERT_TRUE(fw_init.Commit() == SUCCESS);
+  status = fw_init.WriteRawData(rawdatas, bin_data);
+  EXPECT_TRUE(status.IsOk());
+  status = fw_init.Commit();
+  EXPECT_TRUE(status.IsOk());
 
   // create the index file
   std::string filename = "./imagenet.shard01";
   mindrecord::ShardIndexGenerator sg{filename};
   sg.Build();
-  ASSERT_TRUE(sg.WriteToDatabase() == SUCCESS);
+  status = sg.WriteToDatabase();
+  EXPECT_TRUE(status.IsOk());
   MS_LOG(INFO) << "Done create index";
 
   // read the mindrecord file
   filename = "./imagenet.shard01";
   auto column_list = std::vector<std::string>{"label", "data"};
   ShardReader dataset;
-  MSRStatus ret = dataset.Open({filename}, true, 4, column_list);
-  ASSERT_EQ(ret, SUCCESS);
+  status = dataset.Open({filename}, true, 4, column_list);
+  EXPECT_TRUE(status.IsOk());
   dataset.Launch();
 
   int count = 0;
@@ -952,7 +967,7 @@ TEST_F(TestShardWriter, TestShardReaderStringAndNumberNotColumnInIndex) {
     }
   }
   ASSERT_TRUE(count == 10);
-  dataset.Finish();
+  dataset.Close();
   for (const auto &filename : file_names) {
     auto filename_db = filename + ".db";
     remove(common::SafeCStr(filename_db));
@@ -1043,8 +1058,8 @@ TEST_F(TestShardWriter, TestShardWriter10Sample40Shard) {
 
   filename = "./TenSampleFortyShard.shard01";
   ShardReader dataset;
-  MSRStatus ret = dataset.Open({filename}, true, 4);
-  ASSERT_EQ(ret, SUCCESS);
+  auto status = dataset.Open({filename}, true, 4);
+  EXPECT_TRUE(status.IsOk());
   dataset.Launch();
 
   int count = 0;
@@ -1060,7 +1075,7 @@ TEST_F(TestShardWriter, TestShardWriter10Sample40Shard) {
     count++;
   }
   ASSERT_TRUE(count == 10);
-  dataset.Finish();
+  dataset.Close();
   for (const auto &filename : file_names) {
     auto filename_db = filename + ".db";
     remove(common::SafeCStr(filename_db));
@@ -1134,6 +1149,91 @@ TEST_F(TestShardWriter, TestOpenForAppend) {
     remove(common::SafeCStr(filename));
     remove(common::SafeCStr(db_name));
   }
+}
+
+/// Feature: OverWriting in FileWriter
+/// Description: old mindrecord files exist in output path
+/// Expectation: generated mindrecord files
+TEST_F(TestShardWriter, TestOverWrite) {
+
+ MS_LOG(INFO) << common::SafeCStr(FormatInfo("OverWrite imageNet"));
+
+  // load binary data
+  std::vector<std::vector<uint8_t>> bin_data;
+  std::vector<std::string> filenames;
+  if (-1 == mindrecord::GetAbsoluteFiles("./data/mindrecord/testImageNetData/images", filenames)) {
+    MS_LOG(INFO) << "-- ATTN -- Missed data directory. Skip this case. -----------------";
+    return;
+  }
+  mindrecord::Img2DataUint8(filenames, bin_data);
+
+  // init shardHeader
+  ShardHeader header_data;
+  MS_LOG(INFO) << "Init ShardHeader Already.";
+
+  // create schema
+  json anno_schema_json = R"({"file_name": {"type": "string"}, "label": {"type": "int32"}})"_json;
+  std::shared_ptr<mindrecord::Schema> anno_schema = mindrecord::Schema::Build("annotation", anno_schema_json);
+  if (anno_schema == nullptr) {
+    MS_LOG(ERROR) << "Build annotation schema failed";
+    return;
+  }
+
+  // add schema to shardHeader
+  int anno_schema_id = header_data.AddSchema(anno_schema);
+  MS_LOG(INFO) << "Init Schema Already.";
+
+  // create index
+  std::pair<uint64_t, std::string> index_field1(anno_schema_id, "file_name");
+  std::pair<uint64_t, std::string> index_field2(anno_schema_id, "label");
+  std::vector<std::pair<uint64_t, std::string>> fields;
+  fields.push_back(index_field1);
+  fields.push_back(index_field2);
+
+  // add index to shardHeader
+  header_data.AddIndexFields(fields);
+  MS_LOG(INFO) << "Init Index Fields Already.";
+  // load  meta data
+  std::vector<json> annotations;
+  LoadDataFromImageNet("./data/mindrecord/testImageNetData/annotation.txt", annotations, 10);
+
+  // add data
+  std::map<std::uint64_t, std::vector<json>> rawdatas;
+  rawdatas.insert(pair<uint64_t, vector<json>>(anno_schema_id, annotations));
+  MS_LOG(INFO) << "Init Images Already.";
+
+  // init file_writer
+  std::vector<std::string> file_names;
+  int file_count = 4;
+  for (int i = 1; i <= file_count; i++) {
+    file_names.emplace_back(std::string("./imagenet.shard0") + std::to_string(i));
+    MS_LOG(INFO) << "shard name is: " << common::SafeCStr(file_names[i - 1]);
+  }
+
+  std::ofstream outfile(file_names[0]);
+  outfile << "dummy data!" << std::endl;
+  outfile.close();
+  MS_LOG(INFO) << "Init Output Files Already.";
+  {
+    ShardWriter fw_init;
+    fw_init.Open(file_names, false, true);
+    // set shardHeader
+    fw_init.SetShardHeader(std::make_shared<mindrecord::ShardHeader>(header_data));
+    // close file_writer
+    fw_init.Commit();
+  }
+
+  {
+    mindrecord::ShardWriter fw;
+    fw.OpenForAppend(file_names[0]);
+    fw.WriteRawData(rawdatas, bin_data);
+    fw.Commit();
+  }
+
+  for (const auto &oneFile : file_names) {
+    remove(common::SafeCStr(oneFile));
+  }
+
 }
 
 }  // namespace mindrecord

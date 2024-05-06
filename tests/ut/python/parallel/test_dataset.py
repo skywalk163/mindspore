@@ -16,7 +16,7 @@ import numpy as np
 
 import mindspore.nn as nn
 from mindspore import Tensor
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.ops import operations as P
 from mindspore.ops.operations.comm_ops import _VirtualDataset
 
@@ -27,7 +27,7 @@ class VirtualDatasetNet(nn.Cell):
         self.virtual_dataset = _VirtualDataset()
         self.matmul1 = P.MatMul()
         self.matmul2 = P.MatMul()
-        self.gelu = P.Gelu()
+        self.gelu = P.GeLU()
 
     def construct(self, x, y, z):
         x, y, z = self.virtual_dataset(x, y, z)
@@ -41,4 +41,4 @@ def test_virtual_dataset():
     y = Tensor(np.ones([32, 64], dtype=np.float32))
     z = Tensor(np.ones([64, 64], dtype=np.float32))
     network = VirtualDatasetNet()
-    _executor.compile(network, x, y, z)
+    _cell_graph_executor.compile(network, x, y, z)

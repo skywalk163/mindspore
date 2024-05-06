@@ -18,22 +18,25 @@ import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.common.parameter import Parameter
 from mindspore.common.parameter import ParameterTuple
 from mindspore.nn.loss import SoftmaxCrossEntropyWithLogits
 from mindspore.nn.optim.momentum import Momentum
 from mindspore.ops import composite as C
-from mindspore.ops import functional as F
 from mindspore.ops import operations as P
-from mindspore.ops.operations.comm_ops import _VirtualDataset
+from mindspore.ops import functional as F
+from mindspore.nn.wrap.cell_wrapper import _VirtualDatasetCell
 from mindspore.parallel import set_algo_parameters
-from mindspore.train import Model, ParallelMode
+from mindspore.train import Model
+from mindspore.context import ParallelMode
 from tests.dataset_mock import MindData
 from tests.ut.python.ops.test_math_ops import VirtualLoss
 
 context.set_context(mode=context.GRAPH_MODE)
 context.reset_auto_parallel_context()
+
+grad_all = C.GradOperation(get_all=True)
 
 
 class Dataset(MindData):
@@ -63,9 +66,9 @@ class Dataset(MindData):
 class ReshapeNet(nn.Cell):
     def __init__(self, strategy0, strategy1, strategy2):
         super(ReshapeNet, self).__init__()
-        self.relu = P.ReLU().set_strategy(strategy0)
-        self.reshape = P.Reshape().set_strategy(strategy1)
-        self.matmul = P.MatMul().set_strategy(strategy2)
+        self.relu = P.ReLU().shard(strategy0)
+        self.reshape = P.Reshape().shard(strategy1)
+        self.matmul = P.MatMul().shard(strategy2)
         self.matmul_weight = Parameter(Tensor(np.ones([25088, 256]), dtype=ms.float32), name="weight")
 
     def construct(self, x):
@@ -79,21 +82,21 @@ def reshape_net(strategy0, strategy1, strategy2):
     return ReshapeNet(strategy0=strategy0, strategy1=strategy1, strategy2=strategy2)
 
 
-def reshape_common(parallel_mode, strategy0, strategy1, strategy2, strategy_loss):
+def reshape_common(parallel_mode, strategy0, strategy1, strategy2, strategy_loss, search_mode="dynamic_programming"):
     learning_rate = 0.1
     momentum = 0.9
     epoch_size = 2
 
     context.reset_auto_parallel_context()
-    context.set_auto_parallel_context(parallel_mode=parallel_mode, device_num=8)
+    context.set_auto_parallel_context(parallel_mode=parallel_mode, device_num=8, search_mode=search_mode)
     predict = Tensor(np.ones([32, 512, 7, 7]), dtype=ms.float32)
     label = Tensor(np.ones([32]), dtype=ms.int32)
     dataset = Dataset(predict, label, 2)
     net = reshape_net(strategy0, strategy1, strategy2)
 
-    loss = SoftmaxCrossEntropyWithLogits(is_grad=False, sparse=True)
-    loss.softmax_cross_entropy.set_strategy(strategy_loss)
-    loss.one_hot.set_strategy(((8, 1), (), ()))
+    loss = SoftmaxCrossEntropyWithLogits(sparse=True, reduction='mean')
+    loss.softmax_cross_entropy.shard(strategy_loss)
+    loss.one_hot.shard(((8, 1), (), ()))
     opt = Momentum(net.trainable_params(), learning_rate, momentum)
     model = Model(net, loss, opt)
     model.train(epoch_size, dataset, dataset_sink_mode=False)
@@ -194,20 +197,18 @@ class GradWrap(nn.Cell):
         self.network = network
 
     def construct(self, x):
-        return C.grad_all(self.network)(x)
+        return grad_all(self.network)(x)
 
 
 class ReshapeNet1(nn.Cell):
     def __init__(self, strategy0):
         super(ReshapeNet1, self).__init__()
-        self.virtual_dataset = _VirtualDataset()
         self.reshape = P.Reshape()
-        self.matmul = P.MatMul().set_strategy(strategy0)
+        self.matmul = P.MatMul().shard(strategy0)
         self.matmul_weight = Parameter(Tensor(np.ones([25088, 256]), dtype=ms.float32), name="weight")
         self.reshape2 = P.Reshape()
 
     def construct(self, x):
-        x = self.virtual_dataset(x)
         x = self.reshape(x, (256, 25088))
         x = self.matmul(x, self.matmul_weight)
         x = self.reshape2(x, (256 * 256,))
@@ -217,16 +218,14 @@ class ReshapeNet1(nn.Cell):
 class ReshapeNet2(nn.Cell):
     def __init__(self, strategy0):
         super(ReshapeNet2, self).__init__()
-        self.virtual_dataset = _VirtualDataset()
         self.reshape = P.Reshape()
-        self.matmul = P.MatMul().set_strategy(strategy0)
+        self.matmul = P.MatMul().shard(strategy0)
         self.matmul_weight = Parameter(Tensor(np.ones([25088, 256]), dtype=ms.float32), name="weight")
         self.reshape2 = P.Reshape()
         self.reduce_sum = P.ReduceSum(keep_dims=True)
         self.reshape3 = P.Reshape()
 
     def construct(self, x):
-        x = self.virtual_dataset(x)
         x = self.reshape(x, (256, 25088))
         x = self.matmul(x, self.matmul_weight)
         x = self.reshape2(x, (256 * 256,))
@@ -238,16 +237,14 @@ class ReshapeNet2(nn.Cell):
 class ReshapeNet3(nn.Cell):
     def __init__(self, strategy0):
         super(ReshapeNet3, self).__init__()
-        self.virtual_dataset = _VirtualDataset()
         self.reshape = P.Reshape()
-        self.matmul = P.MatMul().set_strategy(strategy0)
+        self.matmul = P.MatMul().shard(strategy0)
         self.matmul_weight = Parameter(Tensor(np.ones([25088, 256]), dtype=ms.float32), name="weight")
         self.reshape2 = P.Reshape()
         self.reduce_sum = P.ReduceSum(keep_dims=False)
         self.reshape3 = P.Reshape()
 
     def construct(self, x):
-        x = self.virtual_dataset(x)
         x = self.reshape(x, (256, 25088))
         x = self.matmul(x, self.matmul_weight)
         x = self.reshape2(x, (256 * 256,))
@@ -259,14 +256,12 @@ class ReshapeNet3(nn.Cell):
 class ReshapeNet4(nn.Cell):
     def __init__(self, strategy0):
         super(ReshapeNet4, self).__init__()
-        self.virtual_dataset = _VirtualDataset()
         self.reshape = P.Reshape()
         self.reshape2 = P.Reshape()
-        self.matmul = P.MatMul().set_strategy(strategy0)
+        self.matmul = P.MatMul().shard(strategy0)
         self.matmul_weight = Parameter(Tensor(np.ones([25088, 256]), dtype=ms.float32), name="weight")
 
     def construct(self, x):
-        x = self.virtual_dataset(x)
         x = self.reshape(x, (256, 25088))
         w = self.reshape2(self.matmul_weight, (25088, 256))
         x = self.matmul(x, w)
@@ -276,14 +271,12 @@ class ReshapeNet4(nn.Cell):
 class ReshapeNet5(nn.Cell):
     def __init__(self, strategy0):
         super(ReshapeNet5, self).__init__()
-        self.virtual_dataset = _VirtualDataset()
         self.reshape = P.Reshape()
-        self.matmul1 = P.MatMul().set_strategy(strategy0)
+        self.matmul1 = P.MatMul().shard(strategy0)
         self.matmul1_weight = Parameter(Tensor(np.ones([25088, 256]), dtype=ms.float32), name="weight")
-        self.matmul2 = P.MatMul().set_strategy(strategy0)
+        self.matmul2 = P.MatMul().shard(strategy0)
 
     def construct(self, x):
-        x = self.virtual_dataset(x)
         x = self.reshape(x, (256, 25088))
         matmul1_o = self.matmul1(x, self.matmul1_weight)
         matmul2_o = self.matmul2(matmul1_o, x)
@@ -293,16 +286,14 @@ class ReshapeNet5(nn.Cell):
 class ReshapeNet6(nn.Cell):
     def __init__(self, strategy0):
         super(ReshapeNet6, self).__init__()
-        self.virtual_dataset = _VirtualDataset()
         self.reshape = P.Reshape()
-        self.matmul1_1 = P.MatMul().set_strategy(strategy0)
-        self.matmul1_2 = P.MatMul().set_strategy(strategy0)
+        self.matmul1_1 = P.MatMul().shard(strategy0)
+        self.matmul1_2 = P.MatMul().shard(strategy0)
         self.matmul1_weight = Parameter(Tensor(np.ones([25088, 256]), dtype=ms.float32), name="weight")
-        self.matmul2 = P.MatMul().set_strategy(strategy0)
-        self.add = P.TensorAdd()
+        self.matmul2 = P.MatMul().shard(strategy0)
+        self.add = P.Add()
 
     def construct(self, x):
-        x = self.virtual_dataset(x)
         x = self.reshape(x, (256, 25088))
         matmul1_1_o = self.matmul1_1(x, self.matmul1_weight)
         matmul1_2_o = self.matmul1_2(x, self.matmul1_weight)
@@ -312,49 +303,49 @@ class ReshapeNet6(nn.Cell):
 
 
 def compile_net(net, input_):
-    net.set_auto_parallel()
-    _executor.compile(net, input_)
+    net.set_train()
+    _cell_graph_executor.compile(net, input_)
 
 
 def reshape_net2(backbone):
     batch_size = 16
     device_num = 16
     context.set_auto_parallel_context(device_num=device_num, global_rank=0)
+    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel", dataset_strategy="full_batch")
     input_ = Tensor(np.ones([batch_size * device_num, 512, 7, 7]).astype(np.float32) * 0.01)
 
     net = GradWrap(NetWithLoss(backbone))
-    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
 
     compile_net(net, input_)
 
 
 def test_reshape_net1_1():
-    reshape_net2(ReshapeNet1(((1, 8), (8, 1))))
+    reshape_net2(_VirtualDatasetCell(ReshapeNet1(((1, 8), (8, 1)))))
 
 
 def test_reshape_net1_2():
-    reshape_net2(ReshapeNet1(((1, 8), (8, 2))))
+    reshape_net2(_VirtualDatasetCell(ReshapeNet1(((1, 8), (8, 2)))))
 
 
 def test_reshape_net2_1():
-    reshape_net2(ReshapeNet2(((1, 8), (8, 1))))
+    reshape_net2(_VirtualDatasetCell(ReshapeNet2(((1, 8), (8, 1)))))
 
 
 def test_reshape_net2_2():
-    reshape_net2(ReshapeNet2(((1, 8), (8, 2))))
+    reshape_net2(_VirtualDatasetCell(ReshapeNet2(((1, 8), (8, 2)))))
 
 
 def test_reshape_net3_1():
-    reshape_net2(ReshapeNet3(((1, 8), (8, 1))))
+    reshape_net2(_VirtualDatasetCell(ReshapeNet3(((1, 8), (8, 1)))))
 
 
 def test_reshape_net3_2():
-    reshape_net2(ReshapeNet3(((1, 8), (8, 2))))
+    reshape_net2(_VirtualDatasetCell(ReshapeNet3(((1, 8), (8, 2)))))
 
 
 def test_reshape_net4_1():
     try:
-        reshape_net2(ReshapeNet4(((1, 8), (8, 1))))
+        reshape_net2(_VirtualDatasetCell(ReshapeNet4(((1, 8), (8, 1)))))
     except ValueError:
         pass
     except TypeError:
@@ -365,7 +356,7 @@ def test_reshape_net4_1():
 
 def test_reshape_net4_2():
     try:
-        reshape_net2(ReshapeNet4(((1, 8), (8, 2))))
+        reshape_net2(_VirtualDatasetCell(ReshapeNet4(((1, 8), (8, 2)))))
     except ValueError:
         pass
     except TypeError:
@@ -375,19 +366,19 @@ def test_reshape_net4_2():
 
 
 def test_reshape_net5_1():
-    reshape_net2(ReshapeNet5(((1, 8), (8, 1))))
+    reshape_net2(_VirtualDatasetCell(ReshapeNet5(((1, 8), (8, 1)))))
 
 
 def test_reshape_net5_2():
-    reshape_net2(ReshapeNet5(((1, 8), (8, 2))))
+    reshape_net2(_VirtualDatasetCell(ReshapeNet5(((1, 8), (8, 2)))))
 
 
 def test_reshape_net6_1():
-    reshape_net2(ReshapeNet6(((1, 8), (8, 1))))
+    reshape_net2(_VirtualDatasetCell(ReshapeNet6(((1, 8), (8, 1)))))
 
 
 def test_reshape_net6_2():
-    reshape_net2(ReshapeNet6(((1, 8), (8, 2))))
+    reshape_net2(_VirtualDatasetCell(ReshapeNet6(((1, 8), (8, 2)))))
 
 
 class TrainOneStepCell(nn.Cell):
@@ -416,18 +407,18 @@ class TrainOneStepCell(nn.Cell):
         self.network.add_flags(defer_inline=True)
         self.weights = ParameterTuple(network.trainable_params())
         self.optimizer = optimizer
-        self.grad = C.GradOperation('grad',
-                                    get_by_list=True,
+        self.grad = C.GradOperation(get_by_list=True,
                                     sens_param=True)
         self.sens = sens
 
     def construct(self, data):
         weights = self.weights
         loss = self.network(data)
-        sens = P.Fill()(P.DType()(loss), P.Shape()(loss), self.sens)
+        sens = F.fill(P.DType()(loss), P.Shape()(loss), self.sens)
         grads = self.grad(self.network, weights)(data, sens)
 
-        return F.depend(loss, self.optimizer(grads))
+        self.optimizer(grads)
+        return loss
 
 
 def reshape_common2(parallel_mode, net):
@@ -449,39 +440,37 @@ def reshape_common2(parallel_mode, net):
 
 
 def test_reshape_common2_0():
-    reshape_common2(ParallelMode.SEMI_AUTO_PARALLEL, ReshapeNet1(((1, 8), (8, 1))))
+    reshape_common2(ParallelMode.SEMI_AUTO_PARALLEL, _VirtualDatasetCell(ReshapeNet1(((1, 8), (8, 1)))))
 
 
 def test_reshape_common2_1():
-    reshape_common2(ParallelMode.SEMI_AUTO_PARALLEL, ReshapeNet1(((1, 8), (8, 2))))
+    reshape_common2(ParallelMode.SEMI_AUTO_PARALLEL, _VirtualDatasetCell(ReshapeNet1(((1, 8), (8, 2)))))
 
 
 def test_reshape_common2_2():
-    reshape_common2(ParallelMode.SEMI_AUTO_PARALLEL, ReshapeNet2(((1, 8), (8, 1))))
+    reshape_common2(ParallelMode.SEMI_AUTO_PARALLEL, _VirtualDatasetCell(ReshapeNet2(((1, 8), (8, 1)))))
 
 
 def test_reshape_common2_3():
-    reshape_common2(ParallelMode.SEMI_AUTO_PARALLEL, ReshapeNet2(((1, 8), (8, 2))))
+    reshape_common2(ParallelMode.SEMI_AUTO_PARALLEL, _VirtualDatasetCell(ReshapeNet2(((1, 8), (8, 2)))))
 
 
 def test_reshape_common2_4():
-    reshape_common2(ParallelMode.SEMI_AUTO_PARALLEL, ReshapeNet3(((1, 8), (8, 1))))
+    reshape_common2(ParallelMode.SEMI_AUTO_PARALLEL, _VirtualDatasetCell(ReshapeNet3(((1, 8), (8, 1)))))
 
 
 def test_reshape_common2_5():
-    reshape_common2(ParallelMode.SEMI_AUTO_PARALLEL, ReshapeNet3(((1, 8), (8, 2))))
+    reshape_common2(ParallelMode.SEMI_AUTO_PARALLEL, _VirtualDatasetCell(ReshapeNet3(((1, 8), (8, 2)))))
 
 
 class BatchNormReshapeNet(nn.Cell):
     def __init__(self):
         super(BatchNormReshapeNet, self).__init__()
-        self.vd = P._VirtualDataset()
         self.batch_norm = nn.BatchNorm1d(512, affine=False)
         self.reshape = P.Reshape()
         self.prelu = nn.PReLU(channel=256)
 
     def construct(self, x):
-        x = self.vd(x)
         x = self.batch_norm(x)
         x = self.reshape(x, (512, 256))
         x = self.prelu(x)
@@ -492,10 +481,10 @@ def test_batchnorm_reshape_train():
     batch_size = 16
     device_num = 16
     context.set_auto_parallel_context(device_num=device_num, global_rank=0)
-    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
+    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel", dataset_strategy="full_batch")
     input_ = Tensor(np.ones([batch_size * device_num, 512]).astype(np.float32) * 0.01)
 
-    net = GradWrap(NetWithLoss(BatchNormReshapeNet()))
+    net = GradWrap(NetWithLoss(_VirtualDatasetCell(BatchNormReshapeNet())))
 
     compile_net(net, input_)
 
@@ -530,10 +519,10 @@ def test_bn_reshape_dense_bn_train():
     batch_size = 16
     device_num = 16
     context.set_auto_parallel_context(device_num=device_num, global_rank=0)
+    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel", dataset_strategy="full_batch")
     input_ = Tensor(np.ones([batch_size, 2, 32, 32]).astype(np.float32) * 0.01)
 
     net = GradWrap(NetWithLoss(BNReshapeDenseBNNet()))
-    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
 
     compile_net(net, input_)
 
@@ -545,11 +534,12 @@ class ParallelReduceMeanNet(nn.Cell):
         self.conv = nn.Conv2d(in_channels=conv_in_channel, out_channels=conv_out_channel,
                               kernel_size=1, stride=1, pad_mode='valid', has_bias=True,
                               weight_init='ones', bias_init='ones')
+        self.conv.conv2d.shard(((8, 1, 1, 1), (1, 1, 1, 1)))
         self.reduce_mean = P.ReduceMean(keep_dims=reducemean_keep_dims)
         self.flat = nn.Flatten()
         self.reducemean_axis = reducemean_axis
         if strategy is not None:
-            self.reduce_mean.set_strategy(strategy)
+            self.reduce_mean.shard(strategy)
 
     def construct(self, inputs):
         x = self.conv(inputs)
@@ -573,7 +563,12 @@ class CrossEntropyLoss(nn.Cell):
         return loss
 
 
-def test_flatten_reshape(parallel_mode="auto_parallel"):
+def test_flatten_reshape(parallel_mode="auto_parallel", search_mode="dynamic_programming"):
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
     batch_size = 16
     learning_rate = 0.1
     momentum = 0.9
@@ -592,7 +587,12 @@ def test_flatten_reshape(parallel_mode="auto_parallel"):
     model.train(epoch_size, dataset, dataset_sink_mode=False)
 
 
-def test_flatten_reshape2(parallel_mode="auto_parallel"):
+def test_flatten_reshape2(parallel_mode="auto_parallel", search_mode="dynamic_programming"):
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
     batch_size = 16
     learning_rate = 0.1
     momentum = 0.9
@@ -623,7 +623,7 @@ class ParallelReshapeNet(nn.Cell):
                               has_bias=True)
         self.reshape = P.Reshape()
         self.shape = shape
-        self.reshape.set_strategy(strategy)
+        self.reshape.shard(strategy)
 
     def construct(self, inputs):
         x = self.flat(inputs)
@@ -634,7 +634,12 @@ class ParallelReshapeNet(nn.Cell):
 
 # the shape of input and output of reshape is the same
 # reshape is optimized before step_parallel
-def test_flatten_reshape3(parallel_mode="auto_parallel"):
+def test_flatten_reshape3(parallel_mode="auto_parallel", search_mode="dynamic_programming"):
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
     batch_size = 16
     learning_rate = 0.1
     momentum = 0.9

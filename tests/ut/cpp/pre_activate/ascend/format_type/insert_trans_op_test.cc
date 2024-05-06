@@ -14,17 +14,18 @@
  * limitations under the License.
  */
 #include "common/backend_common_test.h"
-#include "operator/ops.h"
-#include "debug/anf_ir_dump.h"
+#include "frontend/operator/ops.h"
+#include "include/common/debug/anf_ir_dump.h"
 #include "common/py_func_graph_fetcher.h"
-#include "pre_activate/common/optimizer.h"
-#include "pre_activate/common/pass_manager.h"
-#include "session/anf_runtime_algorithm.h"
-#include "device/kernel_info.h"
+#include "include/backend/optimizer/optimizer.h"
+#include "include/backend/optimizer/pass_manager.h"
+#include "include/backend/anf_runtime_algorithm.h"
+#include "include/backend/kernel_info.h"
+#include "utils/ms_context.h"
 
 #define private public
 #define protected public
-#include "pre_activate/ascend/format_type/insert_trans_op.h"
+#include "plugin/device/ascend/optimizer/format_type/insert_trans_op.h"
 #undef private
 #undef protected
 
@@ -38,7 +39,7 @@ class TestHWInsertTransOp : public BackendCommon {
   ~TestHWInsertTransOp() override = default;
   FuncGraphPtr GetSingleOutputGraph(std::string func_name, std::string sub_func_name, std::string format) {
     FuncGraphPtr g = getPyFun_.CallAndParseRet(func_name, sub_func_name);
-    std::vector<int> shp{2, 32, 224, 224};
+    std::vector<int64_t> shp{2, 32, 224, 224};
     auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
     AbstractBasePtrList args_spec_list{x_abstract, x_abstract};
     auto fg = GetKernelGraph(g, args_spec_list);
@@ -49,15 +50,19 @@ class TestHWInsertTransOp : public BackendCommon {
     KernelBuildInfoBuilder builder;
     builder.SetInputsFormat({format, format});
     builder.SetInputsDeviceType({kFloat16->type_id(), kFloat16->type_id()});
+    builder.SetInputsReshapeType({"", ""});
+    builder.SetOutputsReshapeType({""});
     builder.SetOutputsFormat({format});
     builder.SetOutputsDeviceType({kFloat16->type_id()});
+    builder.SetInputsKernelObjectType({kernel::KernelObjectType::TENSOR, kernel::KernelObjectType::TENSOR});
+    builder.SetOutputsKernelObjectType({kernel::KernelObjectType::TENSOR});
     add->set_kernel_info(std::make_shared<device::KernelInfo>());
     AnfAlgo::SetSelectKernelBuildInfo(builder.Build(), add.get());
     return fg;
   }
   FuncGraphPtr GetMutilpleOutputGraph(std::string func_name, std::string sub_func_name, std::string format) {
     FuncGraphPtr g = getPyFun_.CallAndParseRet(func_name, sub_func_name);
-    std::vector<int> shp{2, 32, 224, 224};
+    std::vector<int64_t> shp{2, 32, 224, 224};
     auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
     AbstractBasePtrList args_spec_list{x_abstract};
     auto fg = GetKernelGraph(g, args_spec_list);
@@ -69,10 +74,14 @@ class TestHWInsertTransOp : public BackendCommon {
     EXPECT_NE(ret->input(1)->cast<CNodePtr>()->input(1)->cast<CNodePtr>()->input(1), nullptr);
     auto max_pool = ret->input(1)->cast<CNodePtr>()->input(1)->cast<CNodePtr>()->input(1);
     KernelBuildInfoBuilder builder;
+    builder.SetInputsReshapeType({""});
+    builder.SetOutputsReshapeType({"", ""});
     builder.SetInputsFormat({kOpFormat_DEFAULT});
     builder.SetInputsDeviceType({kFloat16->type_id()});
     builder.SetOutputsFormat({format, format});
     builder.SetOutputsDeviceType({kFloat16->type_id(), kFloat16->type_id()});
+    builder.SetInputsKernelObjectType({kernel::KernelObjectType::TENSOR});
+    builder.SetOutputsKernelObjectType({kernel::KernelObjectType::TENSOR, kernel::KernelObjectType::TENSOR});
     max_pool->set_kernel_info(std::make_shared<device::KernelInfo>());
     AnfAlgo::SetSelectKernelBuildInfo(builder.Build(), max_pool.get());
     return fg;
@@ -87,6 +96,8 @@ class MockInsertTransOpKernelSelectTrans4Dto5D : public KernelSelect {
   ~MockInsertTransOpKernelSelectTrans4Dto5D() override = default;
   void SelectKernel(const CNodePtr &cnode) override {
     KernelBuildInfoBuilder builder;
+    builder.SetInputsReshapeType({""});
+    builder.SetOutputsReshapeType({""});
     builder.SetInputsFormat({"NCHW"});
     builder.SetInputsDeviceType({kFloat16->type_id()});
     builder.SetOutputsFormat({"NC1HWC0"});
@@ -103,6 +114,9 @@ TEST_F(TestHWInsertTransOp, test_insert_trans_op_for_single_output) {
    *     return output
    *
    */
+  auto ms_context = MsContext::GetInstance();
+  MS_EXCEPTION_IF_NULL(ms_context);
+  ms_context->set_param<int>(MS_CTX_EXECUTION_MODE, kGraphMode);
   auto fg = GetSingleOutputGraph("test_insert_trans_op_for_single_output", "before", "NC1HWC0");
   // Do insert_trans_op_ pass of hardware opt
   auto graph_optimizer = std::make_shared<opt::GraphOptimizer>();

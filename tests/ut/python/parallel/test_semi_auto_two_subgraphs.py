@@ -17,11 +17,15 @@ import numpy as np
 import mindspore as ms
 from mindspore import Tensor, Parameter, ParameterTuple, context
 from mindspore import nn
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.nn.optim import Adam, FTRL
 from mindspore.ops import composite as C
-from mindspore.ops import functional as F
 from mindspore.ops import operations as P
+from mindspore.ops import functional as F
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
 
 
 class Net(nn.Cell):
@@ -42,8 +46,8 @@ class Net(nn.Cell):
 class NetWithLoss(nn.Cell):
     def __init__(self, network):
         super(NetWithLoss, self).__init__()
-        self.sum = P.ReduceSum(keep_dims=False).set_strategy(strategy=((4, 1, 1, 1),))
-        self.mean = P.ReduceMean(keep_dims=False).set_strategy(strategy=((8, 1, 1, 1),))
+        self.sum = P.ReduceSum(keep_dims=False).shard(((4, 1, 1, 1),))
+        self.mean = P.ReduceMean(keep_dims=False).shard(((8, 1, 1, 1),))
         self.net = network
 
     def construct(self, x):
@@ -83,9 +87,9 @@ class TrainStepWrap(nn.Cell):
         self.optimizer_d = Adam(self.weights_d, learning_rate=3.5e-4, eps=1e-8,
                                 loss_scale=sens)
         self.hyper_map = C.HyperMap()
-        self.grad_w = C.GradOperation('grad_w', get_by_list=True,
+        self.grad_w = C.GradOperation(get_by_list=True,
                                       sens_param=True)
-        self.grad_d = C.GradOperation('grad_d', get_by_list=True,
+        self.grad_d = C.GradOperation(get_by_list=True,
                                       sens_param=True)
         self.sens = sens
         self.loss_net_w = IthOutputCell(network, output_index=0)
@@ -95,16 +99,18 @@ class TrainStepWrap(nn.Cell):
         weights_w = self.weights_w
         weights_d = self.weights_d
         loss_w, loss_d = self.network(x)
-        sens_w = P.Fill()(P.DType()(loss_w), P.Shape()(loss_w), self.sens)
-        sens_d = P.Fill()(P.DType()(loss_d), P.Shape()(loss_d), self.sens)
+        sens_w = F.fill(P.DType()(loss_w), P.Shape()(loss_w), self.sens)
+        sens_d = F.fill(P.DType()(loss_d), P.Shape()(loss_d), self.sens)
         grads_w = self.grad_w(self.loss_net_w, weights_w)(x, sens_w)
+        self.optimizer_w(grads_w)
         grads_d = self.grad_d(self.loss_net_d, weights_d)(x, sens_d)
-        return F.depend(loss_w, self.optimizer_w(grads_w)), F.depend(loss_d, self.optimizer_d(grads_d))
+        self.optimizer_d(grads_d)
+        return loss_w, loss_d
 
 
 def test_two_subgraphs():
     context.set_auto_parallel_context(device_num=8, global_rank=0, parallel_mode="semi_auto_parallel")
     net = TrainStepWrap(NetWithLoss(Net()))
     input_x = Tensor(np.ones([8, 8, 8, 8]), dtype=ms.float32)
-    net.set_auto_parallel()
-    _executor.compile(net, input_x)
+    net.set_train()
+    _cell_graph_executor.compile(net, input_x)

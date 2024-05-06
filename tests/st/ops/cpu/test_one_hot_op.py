@@ -19,9 +19,9 @@ import pytest
 import mindspore.context as context
 import mindspore.nn as nn
 from mindspore import Tensor
-from mindspore.common.api import ms_function
+from mindspore.common.api import jit
 
-context.set_context(device_target='CPU')
+context.set_context(mode=context.PYNATIVE_MODE, device_target='CPU')
 
 
 class NetOneHot(nn.Cell):
@@ -38,14 +38,14 @@ class NetOneHot(nn.Cell):
         self.one_hot_3 = nn.OneHot(0, self.depth_2, self.on_value, self.off_value)
         self.one_hot_4 = nn.OneHot(1, self.depth_1, self.on_value, self.off_value)
 
-    @ms_function
+    @jit
     def construct(self, indices1, indices2, indices3, indices4):
         return (self.one_hot_1(indices1), self.one_hot_2(indices2),
                 self.one_hot_3(indices3), self.one_hot_4(indices4))
 
 
-@pytest.mark.level0
-@pytest.mark.platform_x86_gpu_training
+@pytest.mark.level1
+@pytest.mark.platform_x86_cpu
 @pytest.mark.env_onecard
 def test_one_hot():
     one_hot = NetOneHot()

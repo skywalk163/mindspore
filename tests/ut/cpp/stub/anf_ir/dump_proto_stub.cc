@@ -1,5 +1,5 @@
 /**
- * Copyright 2020 Huawei Technologies Co., Ltd
+ * Copyright 2020-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,12 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "debug/anf_ir_utils.h"
+#include "include/common/debug/dump_proto.h"
+#include "proto/mind_ir.pb.h"
 
 namespace mindspore {
 
-std::string GetFuncGraphProtoString(const FuncGraphPtr& func_graph) { return ""; }
+void DumpIRProto(const FuncGraphPtr &func_graph, const std::string &suffix) { return; }
 
-std::string GetOnnxProtoString(const FuncGraphPtr& func_graph) { return ""; }
+std::string GetFuncGraphProtoString(const FuncGraphPtr &func_graph) { return ""; }
 
+std::string GetOnnxProtoString(const FuncGraphPtr &func_graph) { return ""; }
 }  // namespace mindspore

@@ -16,7 +16,6 @@
 import copy
 import numpy as np
 
-from mindspore.common.dtype import dtype_to_nptype
 from mindspore.common.tensor import Tensor
 from mindspore.ops import operations as P
 from mindspore.ops.vm_impl_registry import vm_impl_registry as vm_impl_getters
@@ -26,7 +25,45 @@ from .vm_interface import vm
 # pylint: disable=unused-argument
 
 
-@vm_impl_getters.register(P.TensorAdd)
+@vm_impl_getters.register(P.ZerosLike)
+def vm_impl_zeroslike(self):
+    def vm_impl(x):
+        x = x.asnumpy()
+        out = np.zeros_like(x)
+        return Tensor(out)
+
+    return vm_impl
+
+
+@vm_impl_getters.register(P.Zeros)
+def vm_impl_zeros(self):
+    def vm_impl(x, y):
+        out = np.zeros(x)
+        return Tensor(out)
+
+    return vm_impl
+
+
+@vm_impl_getters.register(P.Ones)
+def vm_impl_ones(self):
+    def vm_impl(x, y):
+        out = np.ones(x)
+        return Tensor(out)
+
+    return vm_impl
+
+
+@vm_impl_getters.register(P.Log)
+def vm_impl_log(self):
+    def vm_impl(x):
+        x = x.asnumpy()
+        out = np.log(x)
+        return Tensor(out)
+
+    return vm_impl
+
+
+@vm_impl_getters.register(P.Add)
 def vm_impl_tensor_add(self):
     """Generate vm_impl function for TensorAdd."""
 
@@ -41,10 +78,12 @@ def vm_impl_tensor_add(self):
 # pylint: disable=used-before-assignment
 @vm_impl_getters.register(P.LogicalNot)
 def vm_impl_logical_not(self):
-    x = x.asnumpy()
-    out = vm.logical_not(x)
-    return Tensor(out)
+    def vm_impl(x):
+        x = x.asnumpy()
+        out = vm.logical_not(x)
+        return Tensor(out)
 
+    return vm_impl
 
 @vm_impl_getters.register(P.MatMul)
 def vm_impl_mat_mul(self):
@@ -107,6 +146,18 @@ def vm_impl_mul(self):
         x = x.asnumpy()
         y = y.asnumpy()
         return Tensor(x * y)
+
+    return vm_impl
+
+
+@vm_impl_getters.register(P.Conj)
+def vm_impl_conj(self):
+    """Generate vm_impl function for Conj."""
+
+    def vm_impl(x):
+        x = x.asnumpy()
+        t = np.conj(x)
+        return Tensor(t)
 
     return vm_impl
 
@@ -189,13 +240,25 @@ def vm_impl_div(self):
 def vm_impl_reduce_mean(self):
     """Generate vm_impl function for ReduceMean."""
 
-    def vm_impl(x, axis):
+    def vm_impl(x, axis, keep_dims):
         x = x.asnumpy()
         out = vm.mean(x, axis)
         return Tensor(out)
 
     return vm_impl
 
+@vm_impl_getters.register(P.ReduceMax)
+def vm_impl_reduce_max(self):
+    """Generate vm_impl function for ReduceMean."""
+
+    def vm_impl(x, axis):
+        x = x.asnumpy()
+        if axis == ():
+            axis = None
+        out = np.amax(x, axis)
+        return Tensor(out)
+
+    return vm_impl
 
 @vm_impl_getters.register(P.Equal)
 def vm_impl_equal(self):
@@ -223,7 +286,7 @@ def vm_impl_not_equal(self):
     return vm_impl
 
 
-@vm_impl_getters.register(P.Greater)
+@vm_impl_getters.register("Greater")
 def vm_impl_greater(self):
     """Generate vm_impl function for Greater."""
 
@@ -271,18 +334,5 @@ def vm_impl_less(self):
         y = y.asnumpy()
         out = vm.less(x, y)
         return Tensor(np.array(out))
-
-    return vm_impl
-
-
-@vm_impl_getters.register(P.ScalarCast)
-def vm_impl_scalar_cast(self):
-    """Generate vm_impl function for ScalarCast"""
-
-    def vm_impl(x, t):
-        np_type = dtype_to_nptype(t)
-        value = np_type(x)
-        cast_value = value.item()
-        return cast_value
 
     return vm_impl

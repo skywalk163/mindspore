@@ -1,5 +1,5 @@
 /**
- * Copyright 2019-2020 Huawei Technologies Co., Ltd
+ * Copyright 2019-2023 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,210 +14,43 @@
  * limitations under the License.
  */
 
-#include "utils/convert_utils.h"
-
-#include <vector>
-#include <string>
-#include <memory>
+#include "include/common/utils/convert_utils.h"
 #include <algorithm>
-#include <list>
-#include <utility>
 #include <cfloat>
+#include <cmath>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
-#include "pybind11/pybind11.h"
-#include "pipeline/static_analysis/abstract_value.h"
-#include "pipeline/parse/parse.h"
-#include "pipeline/parse/parse_base.h"
-#include "ir/value.h"
+#include "include/common/utils/utils.h"
 #include "ir/tensor.h"
-#include "utils/base_ref_extends.h"
+#include "ir/value.h"
+#include "mindspore/core/ops/sparse_ops.h"
+#include "utils/anf_utils.h"
+#include "utils/ms_context.h"
+#include "utils/hashing.h"
 
 namespace mindspore {
-py::object BuiltinsToPyData(const Any &value);
-py::object BuiltinsToPyData(const BaseRef &value);
-py::object VectorToPyData(const Any &value);
-py::object VectorRefToPyData(const VectorRef &value);
-
-py::object ValuePtrToPyData(const ValuePtr &value) {
-  if (value == nullptr) {
-    MS_LOG(EXCEPTION) << "value is null";
-  }
-  py::object ret;
-  if (value->isa<Int32Imm>()) {
-    MS_LOG(DEBUG) << "int";
-    py::int_ v = value->cast<Int32ImmPtr>()->value();
-    ret = v;
-  } else if (value->isa<UInt64Imm>()) {
-    MS_LOG(DEBUG) << "uint64";
-    py::int_ v = value->cast<UInt64ImmPtr>()->value();
-    ret = v;
-  } else if (value->isa<BoolImm>()) {
-    MS_LOG(DEBUG) << "bool";
-    py::bool_ v = value->cast<BoolImmPtr>()->value();
-    ret = v;
-  } else if (value->isa<FP64Imm>()) {
-    MS_LOG(DEBUG) << "double";
-    py::float_ v = value->cast<FP64ImmPtr>()->value();
-    ret = v;
-  } else if (value->isa<FP32Imm>()) {
-    MS_LOG(DEBUG) << "float";
-    py::float_ v = value->cast<FP32ImmPtr>()->value();
-    ret = v;
-  } else if (value->isa<StringImm>()) {
-    MS_LOG(DEBUG) << "String";
-    py::str v = value->cast<StringImmPtr>()->value();
-    ret = v;
-  } else if (value->isa<tensor::Tensor>()) {
-    MS_LOG(DEBUG) << "tensor";
-    py::tuple v(1);
-    v[0] = value->cast<tensor::TensorPtr>();
-    ret = v[0];
-  } else if (value->isa<tensor::MetaTensor>()) {
-    MS_LOG(DEBUG) << "MetaTensor";
-    py::tuple v(1);
-    v[0] = value->cast<tensor::MetaTensorPtr>();
-    ret = v[0];
-  } else if (value->isa<RefKey>()) {
-    MS_LOG(DEBUG) << "RefKey";
-    py::tuple v(1);
-    v[0] = value->cast<RefKeyPtr>();
-    ret = v[0];
-  } else if (value->isa<ValueTuple>()) {
-    MS_LOG(DEBUG) << "tuple";
-    auto value_tuple = value->cast<ValueTuplePtr>()->value();
-    py::tuple rets(value_tuple.size());
-
-    size_t i = 0;
-    for (auto &v : value_tuple) {
-      rets[i] = ValuePtrToPyData(v);
-      i++;
-    }
-    ret = rets;
-  } else if (value->isa<ValueList>()) {
-    MS_LOG(DEBUG) << "list";
-    auto value_list = value->cast<ValueListPtr>()->value();
-    py::list rets(value_list.size());
-
-    size_t i = 0;
-    for (auto &v : value_list) {
-      rets[i] = ValuePtrToPyData(v);
-      i++;
-    }
-    ret = rets;
-  } else if (value->isa<EllipsisObj>()) {
-    ret = parse::python_adapter::CallPyFn(parse::PYTHON_MOD_PARSE_MODULE, parse::PYTHON_PARSE_CLASS_ELLIPSIS);
-  } else if (value->isa<ValueSlice>()) {
-    auto slice = value->cast<ValueSlicePtr>();
-    auto start = ValuePtrToPyData(slice->start());
-    auto end = ValuePtrToPyData(slice->stop());
-    auto step = ValuePtrToPyData(slice->step());
-    ret = parse::python_adapter::CallPyFn(parse::PYTHON_MOD_PARSE_MODULE, parse::PYTHON_PARSE_CLASS_SLICE, start, end,
-                                          step);
-  } else if (value->isa<Type>()) {
-    py::tuple v(1);
-    v[0] = value->cast<TypePtr>();
-    ret = v[0];
-  } else if (value->isa<AnyValue>()) {
-    ret = py::none();
-  } else if (value->isa<None>()) {
-    ret = py::none();
-  } else {
-    MS_LOG(EXCEPTION) << "Unsupported convert value: " << value->ToString() << " to a PyData.";
-  }
-  return ret;
-}
-
-py::object AnyToPyData(const Any &value) {
-  py::object ret;
-  MS_LOG(DEBUG) << "AnyToPyData " << value.GetString();
-  if (value.is<int>() || value.is<float>() || value.is<double>() || value.is<bool>()) {
-    ret = BuiltinsToPyData(value);
-  } else if (value.is<ValuePtr>()) {
-    MS_LOG(DEBUG) << "ValuePtr";
-    ValuePtr v = value.cast<ValuePtr>();
-    ret = ValuePtrToPyData(v);
-  } else if (value.is<tensor::TensorPtr>()) {
-    MS_LOG(DEBUG) << "tensor";
-    py::tuple v(1);
-    v[0] = value.cast<tensor::TensorPtr>();
-    ret = v[0];
-  } else if (value.is<py::object>()) {
-    MS_LOG(DEBUG) << "py obj";
-    ret = value.cast<py::object>();
-  } else if (value.is<std::vector<tensor::TensorPtr>>() || value.is<std::vector<Any>>()) {
-    ret = VectorToPyData(value);
-  } else if (value.is<std::list<Any>>()) {
-    MS_LOG(DEBUG) << "list_any";
-    auto value_list = value.cast<std::list<Any>>();
-    py::list rets = py::list();
-    for (auto &v : value_list) {
-      rets.append(AnyToPyData(v));
-    }
-    ret = rets;
-  } else if (value.is<std::vector<Any>>()) {
-    auto value_list = value.cast<std::vector<Any>>();
-    py::tuple rets(value_list.size());
-    for (size_t i = 0; i < value_list.size(); i++) {
-      rets[i] = AnyToPyData(value_list[i]);
-    }
-    ret = rets;
-  } else if (value.is<TypePtr>()) {
-    py::tuple v(1);
-    v[0] = value.cast<TypePtr>();
-    ret = v[0];
-  } else {
-    MS_LOG(EXCEPTION) << "value is not support type";
-  }
-  return ret;
-}
-
-py::object BaseRefToPyData(const BaseRef &value) {
-  py::object ret;
-  MS_LOG(DEBUG) << "BaseRefToPyData " << value.ToString();
-  if (utils::isa<int>(value) || utils::isa<float>(value) || utils::isa<double>(value) || utils::isa<bool>(value)) {
-    ret = BuiltinsToPyData(value);
-  } else if (utils::isa<ValuePtr>(value)) {
-    MS_LOG(DEBUG) << "ValuePtr";
-    ValuePtr v = utils::cast<ValuePtr>(value);
-    ret = ValuePtrToPyData(v);
-  } else if (utils::isa<tensor::TensorPtr>(value)) {
-    MS_LOG(DEBUG) << "tensor";
-    py::tuple v(1);
-    v[0] = utils::cast<tensor::TensorPtr>(value);
-    ret = v[0];
-  } else if (utils::isa<PyObjectRef>(value)) {
-    MS_LOG(DEBUG) << "py obj";
-    PyObjectRef py_ref = utils::cast<PyObjectRef>(value);
-    ret = py_ref.object_;
-  } else if (utils::isa<VectorRef>(value)) {
-    auto vec_ref = utils::cast<VectorRef>(value);
-    ret = VectorRefToPyData(vec_ref);
-  } else if (utils::isa<TypePtr>(value)) {
-    py::tuple v(1);
-    v[0] = utils::cast<TypePtr>(value);
-    ret = v[0];
-  } else {
-    MS_LOG(EXCEPTION) << "value is not support type";
-  }
-  return ret;
-}
-
 bool ValueToBool(const ValuePtr &v, bool *value) {
   MS_EXCEPTION_IF_NULL(v);
   if (v->isa<BoolImm>()) {
     *value = v->cast<BoolImmPtr>()->value();
   } else if (v->isa<Int32Imm>()) {
-    *value = v->cast<Int32ImmPtr>()->value() == 0 ? false : true;
+    *value = v->cast<Int32ImmPtr>()->value() != 0;
   } else if (v->isa<UInt32Imm>()) {
-    *value = v->cast<UInt32ImmPtr>()->value() == 0 ? false : true;
+    *value = v->cast<UInt32ImmPtr>()->value() != 0;
   } else if (v->isa<FP32Imm>()) {
-    *value = v->cast<FP32ImmPtr>()->value() == 0 ? false : true;
+    *value = fabs(v->cast<FP32ImmPtr>()->value()) > FLT_EPSILON;
   } else if (v->isa<FP64Imm>()) {
-    *value = v->cast<FP64ImmPtr>()->value() == 0 ? false : true;
+    *value = fabs(v->cast<FP64ImmPtr>()->value()) > DBL_EPSILON;
+  } else if (v->isa<StringImm>()) {
+    std::string str = v->cast<StringImmPtr>()->value();
+    *value = str.length() != 0;
   } else if (v->isa<tensor::Tensor>()) {
     auto tensor = v->cast<tensor::TensorPtr>();
     MS_EXCEPTION_IF_NULL(tensor);
-    (void)tensor->data_sync();
+    tensor->data_sync();
     bool *tensor_data = static_cast<bool *>(tensor->data_c());
     // maybe need to support if tensor is a bool array
     auto vb = tensor_data[0];
@@ -229,44 +62,46 @@ bool ValueToBool(const ValuePtr &v, bool *value) {
   return true;
 }
 
+bool BaseRefToInt(const ValuePtr &v, int64_t *value) {
+  MS_EXCEPTION_IF_NULL(v);
+  if (v->isa<tensor::Tensor>()) {
+    auto tensor = v->cast<tensor::TensorPtr>();
+    tensor->data_sync();
+    if (tensor->Dtype()->ToString() == "Int32") {
+      auto *tensor_data = static_cast<int32_t *>(tensor->data_c());
+      auto vb = tensor_data[0];
+      *value = static_cast<int64_t>(vb);
+    } else if (tensor->Dtype()->ToString() == "Int64") {
+      auto *tensor_data = static_cast<int64_t *>(tensor->data_c());
+      auto vb = tensor_data[0];
+      *value = vb;
+    } else {
+      MS_LOG(ERROR) << "Index must be Int type.";
+    }
+    return true;
+  }
+  MS_LOG(ERROR) << "Index must be tensor type.";
+  return false;
+}
+
 bool BaseRefToBool(const BaseRef &v, bool *value) {
   if (utils::isa<ValuePtr>(v)) {
     return ValueToBool(utils::cast<ValuePtr>(v), value);
   } else if (utils::isa<bool>(v)) {
     auto vb = utils::cast<bool>(v);
-    if (vb == true) {
-      *value = true;
-    } else {
-      *value = false;
-    }
+    *value = vb;
   } else if (utils::isa<int>(v)) {
     auto vb = utils::cast<int>(v);
-    if (vb == 0) {
-      *value = false;
-    } else {
-      *value = true;
-    }
+    *value = vb != 0;
   } else if (utils::isa<unsigned int>(v)) {
     auto vb = utils::cast<unsigned int>(v);
-    if (vb == 0) {
-      *value = false;
-    } else {
-      *value = true;
-    }
+    *value = vb != 0;
   } else if (utils::isa<float>(v)) {
     auto vb = utils::cast<float>(v);
-    if (vb >= -FLT_EPSILON && vb <= FLT_EPSILON) {
-      *value = false;
-    } else {
-      *value = true;
-    }
+    *value = !(vb >= -FLT_EPSILON && vb <= FLT_EPSILON);
   } else if (utils::isa<double>(v)) {
     auto vb = utils::cast<double>(v);
-    if (vb >= -DBL_EPSILON && vb <= DBL_EPSILON) {
-      *value = false;
-    } else {
-      *value = true;
-    }
+    *value = !(vb >= -DBL_EPSILON && vb <= DBL_EPSILON);
   } else {
     MS_LOG(DEBUG) << "value is not supported to cast to be bool";
     return false;
@@ -274,166 +109,24 @@ bool BaseRefToBool(const BaseRef &v, bool *value) {
   return true;
 }
 
-py::object BuiltinsToPyData(const Any &value) {
-  if (value.is<int>()) {
-    MS_LOG(DEBUG) << "int";
-    py::int_ ret = value.cast<int>();
-    return std::move(ret);
-  } else if (value.is<float>()) {
-    MS_LOG(DEBUG) << "float";
-    py::float_ ret = value.cast<float>();
-    return std::move(ret);
-  } else if (value.is<double>()) {
-    MS_LOG(DEBUG) << "double";
-    py::float_ ret = value.cast<double>();
-    return std::move(ret);
-  } else {
-    MS_LOG(DEBUG) << "bool";
-    py::bool_ ret = value.cast<bool>();
-    return std::move(ret);
-  }
-}
-
-py::object BuiltinsToPyData(const BaseRef &value) {
-  if (utils::isa<int>(value)) {
-    MS_LOG(DEBUG) << "int";
-    py::int_ ret = utils::cast<int>(value);
-    return std::move(ret);
-  } else if (utils::isa<float>(value)) {
-    MS_LOG(DEBUG) << "float";
-    py::float_ ret = utils::cast<float>(value);
-    return std::move(ret);
-  } else if (utils::isa<double>(value)) {
-    MS_LOG(DEBUG) << "double";
-    py::float_ ret = utils::cast<double>(value);
-    return std::move(ret);
-  } else {
-    MS_LOG(DEBUG) << "bool";
-    py::bool_ ret = utils::cast<bool>(value);
-    return std::move(ret);
-  }
-}
-
-py::object VectorToPyData(const Any &value) {
-  py::object ret;
-  if (value.is<std::vector<tensor::TensorPtr>>()) {
-    MS_LOG(DEBUG) << "vector_tensor";
-    std::vector<tensor::TensorPtr> outputs;
-    outputs = value.cast<std::vector<tensor::TensorPtr>>();
-    py::tuple tensor_tuple(outputs.size());
-    for (std::size_t i = 0; i < outputs.size(); ++i) {
-      tensor_tuple[i] = *outputs[i];
-    }
-    ret = tensor_tuple;
-  } else {
-    MS_LOG(DEBUG) << "vector_any";
-    auto value_list = value.cast<std::vector<Any>>();
-    py::tuple any_tuple = py::tuple(value_list.size());
-    size_t i = 0;
-    for (auto &v : value_list) {
-      any_tuple[i] = AnyToPyData(v);
-      i++;
-    }
-    ret = any_tuple;
-  }
-  return ret;
-}
-
-py::object VectorRefToPyData(const VectorRef &value_list) {
-  py::object ret;
-  MS_LOG(DEBUG) << "vector_ref";
-  size_t value_size = value_list.size();
-  auto ref_tuple = py::tuple(value_size);
-  for (size_t i = 0; i < value_size; i++) {
-    ref_tuple[i] = BaseRefToPyData(value_list[i]);
-  }
-  ret = ref_tuple;
-  return ret;
-}
-
-AbstractBasePtr PyListDtype2AbstractTensor(const py::object &shape_obj, const py::object &type_obj) {
-  if ((py::isinstance<py::list>(shape_obj) || py::isinstance<py::tuple>(shape_obj)) &&
-      py::hasattr(type_obj, PYTHON_DTYPE_FLAG)) {
-    auto ret_vec = shape_obj.cast<std::vector<int>>();
-    auto ret_dtype = type_obj.cast<TypePtr>();
-    MS_EXCEPTION_IF_NULL(ret_dtype);
-    // if the size of shape list is empty, return an scalar abstract
-    if (ret_vec.empty() && (!ret_dtype->isa<TensorType>())) {
-      abstract::AbstractScalarPtr abs_scalar = std::make_shared<abstract::AbstractScalar>(kAnyValue, ret_dtype);
-      return abs_scalar;
-    }
-    AbstractBasePtr tensor = nullptr;
-    if (ret_dtype->isa<TensorType>()) {
-      auto tensor_type = type_obj.cast<TensorTypePtr>();
-      MS_EXCEPTION_IF_NULL(tensor_type);
-      tensor = std::make_shared<abstract::AbstractTensor>(tensor_type->element(), ret_vec);
-    } else {
-      tensor = std::make_shared<abstract::AbstractTensor>(ret_dtype, ret_vec);
-    }
-    return tensor;
-  } else if (py::isinstance<py::tuple>(shape_obj) && py::isinstance<py::tuple>(type_obj)) {
-    py::tuple shape_tuple = shape_obj.cast<py::tuple>();
-    py::tuple typeid_tuple = type_obj.cast<py::tuple>();
-    AbstractBasePtrList ptr_list;
-    for (size_t it = 0; it < shape_tuple.size(); ++it) {
-      auto tensor_it = PyListDtype2AbstractTensor(shape_tuple[it], typeid_tuple[it]);
-      ptr_list.push_back(tensor_it);
-    }
-    auto tuple = std::make_shared<abstract::AbstractTuple>(ptr_list);
-    return tuple;
-  } else if (shape_obj.is_none() && type_obj.is_none()) {
-    // AbstractNone indicates there is no output for this CNode node.
-    auto abstract_none = std::make_shared<abstract::AbstractNone>();
-    return abstract_none;
-  } else {
-    MS_LOG(EXCEPTION) << "Python evaluator return invalid shape or type. " << (std::string)py::str(type_obj);
-  }
-}
-bool IsGraphOutputValueNodeOrParameter(const AnfNodePtr &output, const py::tuple &args,
-                                       const std::shared_ptr<py::object> &ret_val) {
-  if (output->isa<ValueNode>()) {
-    MS_LOG(INFO) << "Graph's output is a constant. No need to execute.";
-    ValuePtr value = GetValueNode(output);
-    *ret_val = ValuePtrToPyData(value);
-    return true;
-  }
-
-  // Adapter will transform values in __init__() and construct() to parameters, this could cause
-  // inputs (a.k.a args in current function) size less than parameters'.
-  if (output->isa<Parameter>()) {
-    MS_LOG(INFO) << "Graph's output is a parameter. If all params are inputs, no need to execute.";
-    if (args.empty()) {
-      MS_LOG(EXCEPTION) << "Inputs size is 0, let graph to be executed.";
-    }
-    // Find the right parameter as ret_val.
-    auto func_graph = output->func_graph();
-    MS_EXCEPTION_IF_NULL(func_graph);
-    auto params = func_graph->parameters();
-    if (params.empty()) {
-      MS_EXCEPTION(UnknownError) << "Graph's parameters size is 0";
-    }
-    if ((args.size() + func_graph->hyper_param_count()) != params.size()) {
-      MS_LOG(EXCEPTION) << "Input size " << args.size() << " add Parameter count " << func_graph->hyper_param_count()
-                        << " not equal to graph input size " << params.size() << ", let graph to be executed.";
-    }
-
-    auto it = std::find(params.begin(), params.end(), output);
-    if (it == params.end()) {
-      MS_EXCEPTION(UnknownError) << "When graph output is Parameter,  it should be found in graph parameters";
-    }
-    size_t index = it - params.cbegin();
-    if (index >= args.size()) {
-      MS_EXCEPTION(UnknownError) << "Index " << index << " equal or larger than args size " << args.size() << ".";
-    }
-    *ret_val = args[index];
-    return true;
-  }
-  return false;
-}
-
+namespace {
 // Isomorphism
-static bool SameNodeShallow(const AnfNodePtr &node1, const AnfNodePtr &node2, FuncGraphPairMapEquiv *equiv_func_graph,
-                            NodeMapEquiv *const equiv_node) {
+bool SameNode(const AnfNodePtr &node1, const AnfNodePtr &node2, FuncGraphPairMapEquiv *equiv_func_graph,
+              NodeMapEquiv *const equiv_node);
+
+bool SameValueNode(const AnfNodePtr &node1, const AnfNodePtr &node2) {
+  auto a1 = GetValueNode(node1);
+  auto a2 = GetValueNode(node2);
+  if (a1->isa<Primitive>() && a2->isa<Primitive>()) {
+    return a1->cast<PrimitivePtr>()->name() == a2->cast<PrimitivePtr>()->name();
+  } else if (a1->isa<tensor::Tensor>() && a2->isa<tensor::Tensor>()) {
+    return a1->cast<tensor::TensorPtr>()->ValueEqual(*(a2->cast<tensor::TensorPtr>()));
+  }
+  return *a1 == *a2;
+}
+
+bool SameNodeShallow(const AnfNodePtr &node1, const AnfNodePtr &node2, FuncGraphPairMapEquiv *equiv_func_graph,
+                     NodeMapEquiv *const equiv_node) {
   if (equiv_node == nullptr) {
     MS_LOG(ERROR) << "Invalid equiv_node";
     return false;
@@ -446,15 +139,7 @@ static bool SameNodeShallow(const AnfNodePtr &node1, const AnfNodePtr &node2, Fu
                       equiv_node);
   }
   if (node1->isa<ValueNode>() && node2->isa<ValueNode>()) {
-    auto a1 = GetValueNode(node1);
-    auto a2 = GetValueNode(node2);
-    if (a1->isa<Primitive>() && a2->isa<Primitive>()) {
-      return a1->cast<PrimitivePtr>()->name() == a2->cast<PrimitivePtr>()->name();
-    } else if (a1->isa<tensor::Tensor>() && a2->isa<tensor::Tensor>()) {
-      return a1->cast<tensor::TensorPtr>()->ValueEqual(*(a2->cast<tensor::TensorPtr>()));
-    } else {
-      return *a1 == *a2;
-    }
+    return SameValueNode(node1, node2);
   }
   if (node1->isa<Parameter>() && node2->isa<Parameter>()) {
     auto para1 = node1->cast<ParameterPtr>();
@@ -465,12 +150,18 @@ static bool SameNodeShallow(const AnfNodePtr &node1, const AnfNodePtr &node2, Fu
     MS_LOG(DEBUG) << "two parameters are not equal.";
     return false;
   }
+  if (AnfUtils::IsCustomActorNode(node1) && AnfUtils::IsCustomActorNode(node2)) {
+    return AnfUtils::IsCutomActorNodeSame(node1, node2);
+  }
+  if (node1->isa<CNode>() && node2->isa<CNode>()) {
+    return SameNode(node1, node2, equiv_func_graph, equiv_node);
+  }
   MS_LOG(ERROR) << "type error";
   return false;
 }
 
-static bool SameNode(const AnfNodePtr &node1, const AnfNodePtr &node2, FuncGraphPairMapEquiv *equiv_func_graph,
-                     NodeMapEquiv *const equiv_node) {
+bool SameNode(const AnfNodePtr &node1, const AnfNodePtr &node2, FuncGraphPairMapEquiv *equiv_func_graph,
+              NodeMapEquiv *const equiv_node) {
   MS_EXCEPTION_IF_NULL(node1);
   MS_EXCEPTION_IF_NULL(node2);
   if (node1->isa<CNode>() && node2->isa<CNode>()) {
@@ -486,13 +177,13 @@ static bool SameNode(const AnfNodePtr &node1, const AnfNodePtr &node2, FuncGraph
   return SameNodeShallow(node1, node2, equiv_func_graph, equiv_node);
 }
 
-static bool SameSubgraph(AnfNodePtr root1, AnfNodePtr root2, FuncGraphPairMapEquiv *equiv_func_graph,
-                         NodeMapEquiv *const equiv_node) {
-  std::unordered_set<AnfNodePtr> done;
+bool SameSubgraph(const AnfNodePtr &root1, const AnfNodePtr &root2, FuncGraphPairMapEquiv *equiv_func_graph,
+                  NodeMapEquiv *const equiv_node) {
+  mindspore::HashSet<AnfNodePtr> done;
   std::stack<std::pair<AnfNodePtr, AnfNodePtr>> todo;
 
   todo.push(std::make_pair(root1, root2));
-  while (todo.size() > 0) {
+  while (!todo.empty()) {
     AnfNodePtr node1 = todo.top().first;
     if (done.count(node1) > 0) {
       todo.pop();
@@ -501,8 +192,8 @@ static bool SameSubgraph(AnfNodePtr root1, AnfNodePtr root2, FuncGraphPairMapEqu
     AnfNodePtr node2 = todo.top().second;
 
     bool condition = false;
-    std::vector<AnfNodePtr> s1 = SuccIncoming(node1);
-    std::vector<AnfNodePtr> s2 = SuccIncoming(node2);
+    const auto &s1 = GetInputs(node1);
+    const auto &s2 = GetInputs(node2);
 
     if (s1.size() != s2.size()) {
       return false;
@@ -528,8 +219,9 @@ static bool SameSubgraph(AnfNodePtr root1, AnfNodePtr root2, FuncGraphPairMapEqu
   }
   return true;
 }
+}  // namespace
 
-bool Isomorphic(FuncGraphPtr fg1, FuncGraphPtr fg2, FuncGraphPairMapEquiv *equiv_func_graph,
+bool Isomorphic(const FuncGraphPtr &fg1, const FuncGraphPtr &fg2, FuncGraphPairMapEquiv *equiv_func_graph,
                 NodeMapEquiv *const equiv_node) {
   auto fg1_fg2 = std::make_pair(fg1, fg2);
   if (equiv_func_graph == nullptr) {
@@ -565,19 +257,615 @@ tensor::TensorPtr ScalarToTensor(const ScalarPtr &scalar) {
   if (scalar == nullptr) {
     MS_EXCEPTION(ArgumentError) << "Nullptr Error!";
   }
-  tensor::TensorPtr tensor = nullptr;
-  if (scalar->isa<FloatImm>()) {
-    tensor = std::make_shared<tensor::Tensor>(py::float_(GetValue<float>(scalar)), kFloat32);
-  } else if (scalar->isa<IntergerImm>()) {
-    tensor = std::make_shared<tensor::Tensor>(py::int_(GetValue<int>(scalar)), kInt32);
-  } else if (scalar->isa<BoolImm>()) {
-    tensor = std::make_shared<tensor::Tensor>(py::array(py::bool_(GetValue<bool>(scalar))), kBool);
-  } else {
-    auto type = scalar->type();
-    auto type_str = (type == nullptr) ? "nullptr" : type->ToString();
-    MS_LOG(EXCEPTION) << "Invalid scalar type: " << type_str;
+  TypePtr data_type = scalar->type();
+  MS_EXCEPTION_IF_NULL(data_type);
+  TypeId type_id = data_type->type_id();
+  switch (type_id) {
+    case kNumberTypeBool:
+      return std::make_shared<tensor::Tensor>(GetValue<bool>(scalar), data_type);
+    case kNumberTypeInt8:
+      return std::make_shared<tensor::Tensor>(static_cast<int64_t>(GetValue<int8_t>(scalar)), data_type);
+    case kNumberTypeInt16:
+      return std::make_shared<tensor::Tensor>(static_cast<int64_t>(GetValue<int16_t>(scalar)), data_type);
+    case kNumberTypeInt32:
+      return std::make_shared<tensor::Tensor>(static_cast<int64_t>(GetValue<int32_t>(scalar)), data_type);
+    case kNumberTypeInt64:
+      return std::make_shared<tensor::Tensor>(GetValue<int64_t>(scalar), data_type);
+    case kNumberTypeUInt8:
+      return std::make_shared<tensor::Tensor>(static_cast<uint64_t>(GetValue<uint8_t>(scalar)), data_type);
+    case kNumberTypeUInt16:
+      return std::make_shared<tensor::Tensor>(static_cast<uint64_t>(GetValue<uint16_t>(scalar)), data_type);
+    case kNumberTypeUInt32:
+      return std::make_shared<tensor::Tensor>(static_cast<uint64_t>(GetValue<uint32_t>(scalar)), data_type);
+    case kNumberTypeUInt64:
+      return std::make_shared<tensor::Tensor>(GetValue<uint64_t>(scalar), data_type);
+    case kNumberTypeFloat32:
+      return std::make_shared<tensor::Tensor>(GetValue<float>(scalar), data_type);
+    case kNumberTypeFloat64:
+      return std::make_shared<tensor::Tensor>(GetValue<double>(scalar), data_type);
+    default:
+      MS_LOG(EXCEPTION) << "When convert scalar to tensor, the scalar type: " << data_type << " is invalid.";
   }
-  MS_EXCEPTION_IF_NULL(tensor);
-  return tensor;
+}
+
+template <typename T>
+std::vector<T> ConvertValueListToVector(const ValuePtrList &seq_values) {
+  size_t element_num = seq_values.size();
+  std::vector<T> array_data(element_num);
+  for (size_t i = 0; i < element_num; i++) {
+    const auto &element = seq_values[i];
+    MS_EXCEPTION_IF_NULL(element);
+    array_data[i] = GetValue<T>(element);
+  }
+  return array_data;
+}
+
+tensor::TensorPtr SequenceToTensor(const ValueSequencePtr &sequence) {
+  MS_EXCEPTION_IF_NULL(sequence);
+  const auto &element_values = sequence->value();
+  if (element_values.empty()) {
+    std::vector<int32_t> array_data;
+    MS_LOG(WARNING) << "The value sequence is empty.";
+    return std::make_shared<tensor::Tensor>(std::move(array_data), TypeIdToType(kNumberTypeInt32));
+  }
+
+  const auto &first_element = element_values[0];
+  if (!first_element->isa<Scalar>()) {
+    MS_LOG(EXCEPTION) << "For sequence value, only sequence of scalar can convert to TensorValue, but got: "
+                      << sequence->ToString();
+  }
+
+  TypePtr data_type = first_element->type();
+  MS_EXCEPTION_IF_NULL(data_type);
+  TypeId type_id = data_type->type_id();
+  switch (type_id) {
+    case kNumberTypeInt32:
+      return std::make_shared<tensor::Tensor>(ConvertValueListToVector<int32_t>(element_values), data_type);
+    case kNumberTypeInt64:
+      return std::make_shared<tensor::Tensor>(ConvertValueListToVector<int64_t>(element_values), data_type);
+    case kNumberTypeFloat64:
+      return std::make_shared<tensor::Tensor>(ConvertValueListToVector<double>(element_values), data_type);
+    default:
+      MS_LOG(EXCEPTION) << "When convert sequence to tensor, the sequence type: " << data_type << " is invalid.";
+  }
+}
+
+namespace {
+KernelTensorValuePtr ConvertScalarToKernelTensorValue(const ValuePtr &scalar) {
+  MS_EXCEPTION_IF_NULL(scalar);
+  TypePtr data_type = scalar->type();
+  MS_EXCEPTION_IF_NULL(data_type);
+  TypeId type_id = data_type->type_id();
+  switch (type_id) {
+    case kNumberTypeBool:
+      return std::make_shared<KernelTensorValue>(GetValue<bool>(scalar), data_type);
+    case kNumberTypeInt8:
+      return std::make_shared<KernelTensorValue>(GetValue<int8_t>(scalar), data_type);
+    case kNumberTypeInt16:
+      return std::make_shared<KernelTensorValue>(GetValue<int16_t>(scalar), data_type);
+    case kNumberTypeInt32:
+      return std::make_shared<KernelTensorValue>(GetValue<int32_t>(scalar), data_type);
+    case kNumberTypeInt64:
+      return std::make_shared<KernelTensorValue>(GetValue<int64_t>(scalar), data_type);
+    case kNumberTypeUInt8:
+      return std::make_shared<KernelTensorValue>(GetValue<uint8_t>(scalar), data_type);
+    case kNumberTypeUInt16:
+      return std::make_shared<KernelTensorValue>(GetValue<uint16_t>(scalar), data_type);
+    case kNumberTypeUInt32:
+      return std::make_shared<KernelTensorValue>(GetValue<uint32_t>(scalar), data_type);
+    case kNumberTypeUInt64:
+      return std::make_shared<KernelTensorValue>(GetValue<uint64_t>(scalar), data_type);
+    case kNumberTypeFloat32:
+      return std::make_shared<KernelTensorValue>(GetValue<float>(scalar), data_type);
+    case kNumberTypeFloat64:
+      return std::make_shared<KernelTensorValue>(GetValue<double>(scalar), data_type);
+    default:
+      MS_LOG(EXCEPTION) << "When convert scalar to KernelTensorValue, the scalar type: " << data_type->ToString()
+                        << " is invalid.";
+  }
+}
+
+template <typename T>
+KernelTensorValuePtr ConvertValueListToKernelTensorValue(const ValuePtrList &seq_values, const TypePtr &type) {
+  MS_EXCEPTION_IF_NULL(type);
+  size_t element_num = seq_values.size();
+  std::vector<uint8_t> array_data(element_num * sizeof(T));
+  T *array_data_ptr = reinterpret_cast<T *>(array_data.data());
+  MS_EXCEPTION_IF_NULL(array_data_ptr);
+
+  for (size_t i = 0; i < element_num; i++) {
+    const auto &element = seq_values[i];
+    MS_EXCEPTION_IF_NULL(element);
+    array_data_ptr[i] = GetValue<T>(element);
+  }
+  return std::make_shared<KernelTensorValue>(std::move(array_data), type);
+}
+
+KernelTensorValuePtr ConvertSequenceToKernelTensorValue(const ValueSequencePtr &value_seq) {
+  MS_EXCEPTION_IF_NULL(value_seq);
+  const auto &element_values = value_seq->value();
+  std::vector<uint8_t> array_data;
+  if (element_values.empty()) {
+    MS_LOG(INFO) << "The value sequence is empty.";
+    return std::make_shared<KernelTensorValue>(std::move(array_data), value_seq->type());
+  }
+
+  const auto &first_element = element_values[0];
+  if (!first_element->isa<Scalar>()) {
+    MS_LOG(EXCEPTION) << "For sequence value, only sequence of scalar can convert to KernelTensorValue, but got: "
+                      << value_seq->ToString();
+  }
+
+  TypePtr data_type = first_element->type();
+  MS_EXCEPTION_IF_NULL(data_type);
+  TypeId type_id = data_type->type_id();
+
+  switch (type_id) {
+    case kNumberTypeBool:
+      return ConvertValueListToKernelTensorValue<bool>(element_values, value_seq->type());
+    case kNumberTypeInt8:
+      return ConvertValueListToKernelTensorValue<int8_t>(element_values, value_seq->type());
+    case kNumberTypeInt16:
+      return ConvertValueListToKernelTensorValue<int16_t>(element_values, value_seq->type());
+    case kNumberTypeInt32:
+      return ConvertValueListToKernelTensorValue<int32_t>(element_values, value_seq->type());
+    case kNumberTypeInt64:
+      return ConvertValueListToKernelTensorValue<int64_t>(element_values, value_seq->type());
+    case kNumberTypeUInt8:
+      return ConvertValueListToKernelTensorValue<uint8_t>(element_values, value_seq->type());
+    case kNumberTypeUInt16:
+      return ConvertValueListToKernelTensorValue<uint16_t>(element_values, value_seq->type());
+    case kNumberTypeUInt32:
+      return ConvertValueListToKernelTensorValue<uint32_t>(element_values, value_seq->type());
+    case kNumberTypeUInt64:
+      return ConvertValueListToKernelTensorValue<uint64_t>(element_values, value_seq->type());
+    case kNumberTypeFloat32:
+      return ConvertValueListToKernelTensorValue<float>(element_values, value_seq->type());
+    case kNumberTypeFloat64:
+      return ConvertValueListToKernelTensorValue<double>(element_values, value_seq->type());
+    default:
+      MS_LOG(EXCEPTION) << "When convert sequence to KernelTensorValue, the element type: " << data_type->ToString()
+                        << " is invalid.";
+  }
+}
+}  // namespace
+
+KernelTensorValuePtr ConvertValueToKernelTensorValue(const ValuePtr &value) {
+  MS_EXCEPTION_IF_NULL(value);
+  if (value->isa<Scalar>()) {
+    return ConvertScalarToKernelTensorValue(value);
+  } else if (value->isa<ValueSequence>()) {
+    auto value_seq = value->cast<ValueSequencePtr>();
+    return ConvertSequenceToKernelTensorValue(value_seq);
+  } else if (value->isa<tensor::Tensor>()) {
+    auto tensor_ptr = value->cast<tensor::TensorPtr>();
+    MS_EXCEPTION_IF_NULL(tensor_ptr);
+    return std::make_shared<KernelTensorValue>(tensor_ptr->data_ptr(), tensor_ptr->type());
+  } else if (value->isa<StringImm>()) {
+    auto string_ptr = value->cast<StringImmPtr>();
+    MS_EXCEPTION_IF_NULL(string_ptr);
+    return std::make_shared<KernelTensorValue>(string_ptr, string_ptr->type());
+  } else if (value->isa<Type>()) {
+    return nullptr;
+  } else {
+    MS_LOG(WARNING) << "KernelTensorValue not support the value type: " << value->ToString();
+    return nullptr;
+  }
+}
+
+template <typename T, typename Scalar>
+ValuePtr GetTensorValue(const tensor::TensorPtr &tensor) {
+  ValuePtr ret;
+  auto tensor_value = TensorValueToVector<T>(tensor);
+  if (tensor_value.size() == 1) {
+    ret = std::make_shared<Scalar>(tensor_value[0]);
+  } else {
+    std::vector<ValuePtr> value_vec;
+    for (const auto &elem : tensor_value) {
+      auto value = std::make_shared<Scalar>(elem);
+      MS_EXCEPTION_IF_NULL(value);
+      value_vec.push_back(value);
+    }
+    ret = std::make_shared<ValueTuple>(value_vec);
+  }
+  return ret;
+}
+
+ValuePtr CreateValueFromTensor(const tensor::TensorPtr &tensor) {
+  ValuePtr ret;
+  if (tensor->has_user_data(kTensorValueIsType)) {
+    ret = tensor->user_data<mindspore::Type>(kTensorValueIsType);
+    return ret;
+  }
+
+  if (tensor->has_user_data(kTensorValueIsEmpty)) {
+    ret = tensor->user_data<mindspore::Value>(kTensorValueIsEmpty);
+    return ret;
+  }
+
+  TypePtr data_type = tensor->Dtype();
+  MS_EXCEPTION_IF_NULL(data_type);
+  TypeId type_id = data_type->type_id();
+  switch (type_id) {
+    case kNumberTypeBool: {
+      ret = GetTensorValue<bool, BoolImm>(tensor);
+      break;
+    }
+
+    case kNumberTypeInt8: {
+      ret = GetTensorValue<int8_t, Int8Imm>(tensor);
+      break;
+    }
+
+    case kNumberTypeUInt8: {
+      ret = GetTensorValue<uint8_t, UInt8Imm>(tensor);
+      break;
+    }
+
+    case kNumberTypeInt16: {
+      ret = GetTensorValue<int16_t, Int16Imm>(tensor);
+      break;
+    }
+
+    case kNumberTypeUInt16: {
+      ret = GetTensorValue<uint16_t, UInt16Imm>(tensor);
+      break;
+    }
+
+    case kNumberTypeInt32: {
+      ret = GetTensorValue<int32_t, Int32Imm>(tensor);
+      break;
+    }
+
+    case kNumberTypeUInt32: {
+      ret = GetTensorValue<uint32_t, UInt32Imm>(tensor);
+      break;
+    }
+
+    case kNumberTypeInt64: {
+      ret = GetTensorValue<int64_t, Int64Imm>(tensor);
+      break;
+    }
+
+    case kNumberTypeUInt64: {
+      ret = GetTensorValue<uint64_t, UInt64Imm>(tensor);
+      break;
+    }
+
+    case kNumberTypeFloat32: {
+      ret = GetTensorValue<float, FP32Imm>(tensor);
+      break;
+    }
+
+    case kNumberTypeFloat64: {
+      ret = GetTensorValue<double, FP64Imm>(tensor);
+      break;
+    }
+
+    default:
+      MS_LOG(EXCEPTION) << "Can't parse attr value :" << tensor->ToString() << ", Type:" << tensor->type_name();
+  }
+  return ret;
+}
+
+void TensorValueToTensor(const ValuePtr &value, std::vector<tensor::TensorPtr> *tensors) {
+  MS_EXCEPTION_IF_NULL(value);
+  MS_EXCEPTION_IF_NULL(tensors);
+  if (value->isa<tensor::Tensor>()) {
+    auto tensor = value->cast<tensor::TensorPtr>();
+    MS_EXCEPTION_IF_NULL(tensor);
+    tensors->emplace_back(tensor);
+  } else if (value->isa<Scalar>()) {
+    auto tensor = ScalarToTensor(value->cast<ScalarPtr>());
+    MS_EXCEPTION_IF_NULL(tensor);
+    tensors->emplace_back(tensor);
+  } else if (value->isa<ValueSequence>()) {
+    const auto &value_seq = value->cast<ValueSequencePtr>();
+    MS_EXCEPTION_IF_NULL(value_seq);
+    for (const auto &v : value_seq->value()) {
+      TensorValueToTensor(v, tensors);
+    }
+  }
+}
+
+size_t CountValueNum(const ValueSequencePtr &value_sequence) {
+  MS_EXCEPTION_IF_NULL(value_sequence);
+  size_t cnt = 0;
+  const auto &value_list = value_sequence->value();
+  for (const auto &value : value_list) {
+    if (value->isa<ValueSequence>()) {
+      cnt += CountValueNum(value->cast<ValueSequencePtr>());
+    } else {
+      cnt++;
+    }
+  }
+  return cnt;
+}
+
+bool IsAKGSparseOP(const AnfNodePtr &cnode) {
+  MS_EXCEPTION_IF_NULL(cnode);
+  const PrimitiveSet prims{prim::kPrimCSRReduceSum, prim::kPrimCSRMul,  prim::kPrimCSRMV,  prim::kPrimCSRGather,
+                           prim::kPrimCSR2COO,      prim::kPrimCOO2CSR, prim::kPrimCSRDiv, prim::kPrimCSRMM};
+  return IsOneOfPrimitiveCNode(cnode, prims);
+}
+
+namespace {
+ShapeVector ConvertTensorListToShapeVector(const tensor::TensorPtrList &tensor_list, size_t index) {
+  ShapeVector shape;
+  if (index >= tensor_list.size()) {
+    MS_LOG(EXCEPTION) << "Index " << index << " is out of range of " << tensor_list.size();
+    return shape;
+  }
+
+  auto converter = [](const tensor::TensorPtr tensorptr) {
+    MS_EXCEPTION_IF_NULL(tensorptr);
+    if (tensorptr->DataDim() != 0) {
+      MS_LOG(EXCEPTION) << "Element must be scalar!";
+    }
+    tensorptr->data_sync(false);
+    return *(static_cast<int64_t *>(tensorptr->data_c()));
+  };
+  std::transform(tensor_list.begin() + index, tensor_list.end(), std::back_inserter(shape), converter);
+  if (shape.empty()) {
+    MS_LOG(ERROR) << "ShapeVector is empty!";
+  }
+  return shape;
+}
+tensor::CSRTensorPtr TensorListToCSRTensor(const tensor::TensorPtrList &tensor_list) {
+  tensor::TensorPtr indptr = utils::cast<tensor::TensorPtr>(tensor_list[tensor::CSRTensor::kIndptrIdx]);
+  tensor::TensorPtr indices = utils::cast<tensor::TensorPtr>(tensor_list[tensor::CSRTensor::kIndicesIdx]);
+  tensor::TensorPtr values = utils::cast<tensor::TensorPtr>(tensor_list[tensor::CSRTensor::kValuesIdx]);
+  ShapeVector shape = ConvertTensorListToShapeVector(tensor_list, tensor::CSRTensor::kShapeIdx);
+  auto csr_tensor_ptr = std::make_shared<tensor::CSRTensor>(indptr, indices, values, shape);
+  return csr_tensor_ptr;
+}
+
+tensor::COOTensorPtr TensorListToCOOTensor(const tensor::TensorPtrList &tensor_list) {
+  tensor::TensorPtr indices = utils::cast<tensor::TensorPtr>(tensor_list[tensor::COOTensor::kIndicesIdx]);
+  tensor::TensorPtr values = utils::cast<tensor::TensorPtr>(tensor_list[tensor::COOTensor::kValuesIdx]);
+  ShapeVector shape = ConvertTensorListToShapeVector(tensor_list, tensor::COOTensor::kShapeIdx);
+  auto coo_tensor_ptr = std::make_shared<tensor::COOTensor>(indices, values, shape);
+  return coo_tensor_ptr;
+}
+}  // namespace
+
+tensor::MetaSparseTensorPtr TensorListToSparseTensor(const abstract::AbstractBasePtr &abs_sparse,
+                                                     const tensor::TensorPtrList &tensor_list) {
+  if (abs_sparse->isa<abstract::AbstractCOOTensor>()) {
+    return TensorListToCOOTensor(tensor_list);
+  }
+  return TensorListToCSRTensor(tensor_list);
+}
+
+std::vector<ShapeVector> BaseShapeToShapeVector(const abstract::BaseShapePtr &base_shape) {
+  MS_EXCEPTION_IF_NULL(base_shape);
+  if (base_shape->isa<abstract::Shape>()) {
+    const auto &shape = base_shape->cast<abstract::ShapePtr>();
+    MS_EXCEPTION_IF_NULL(shape);
+    return {shape->shape()};
+  } else if (base_shape->isa<abstract::SequenceShape>()) {
+    const auto &tuple_shape = base_shape->cast<abstract::SequenceShapePtr>();
+    MS_EXCEPTION_IF_NULL(tuple_shape);
+    if (tuple_shape->size() == 0) {
+      return {};
+    }
+    // If the shape is a tuple shape, all shapes need to be consistent.
+    auto element_base_shape = (*tuple_shape)[0];
+    if (element_base_shape->isa<abstract::Shape>()) {
+      const auto &element_shape = element_base_shape->cast<abstract::ShapePtr>();
+      MS_EXCEPTION_IF_NULL(element_shape);
+      return std::vector<ShapeVector>(tuple_shape->size(), element_shape->shape());
+    } else if (element_base_shape->isa<abstract::NoShape>()) {
+      return std::vector<ShapeVector>(tuple_shape->size(), {1});
+    }
+  } else if (base_shape->isa<abstract::NoShape>() || base_shape->isa<abstract::DynamicSequenceShape>()) {
+    return {};
+  }
+  MS_LOG(WARNING) << "Invalid shape:" << base_shape->ToString();
+  return {};
+}
+
+ShapeVector BaseShapeToShape(const abstract::BaseShapePtr &base_shape) {
+  MS_EXCEPTION_IF_NULL(base_shape);
+  if (base_shape->isa<abstract::Shape>()) {
+    const auto &shape = base_shape->cast<abstract::ShapePtr>();
+    MS_EXCEPTION_IF_NULL(shape);
+    return shape->shape();
+  } else if (base_shape->isa<abstract::NoShape>()) {
+    return {};
+  }
+  MS_LOG(WARNING) << "Invalid shape:" << base_shape->ToString();
+  return {};
+}
+
+ValuePtr UpdateValueByAttrDataType(const ValuePtr &value, const std::string &attr_data_type) {
+  static std::set<std::string> kListDataType = {"listInt", "listStr", "listBool", "listFloat"};
+  auto iter = kListDataType.find(attr_data_type);
+  ValuePtr ret = value;
+  if (iter != kListDataType.end()) {
+    if (!value->isa<ValueSequence>()) {
+      std::vector<ValuePtr> value_vec;
+      value_vec.push_back(value);
+      ret = std::make_shared<ValueTuple>(value_vec);
+    }
+  }
+  return ret;
+}
+
+namespace {
+size_t GetHashId(int a, int b) { return a < b ? hash_combine(a, b) : hash_combine(b, a); }
+
+static const std::map<size_t, TypeId> tensor_tensor_convert_map = {
+  // Bool
+  {GetHashId(kNumberTypeBool, kNumberTypeBool), kNumberTypeBool},
+  {GetHashId(kNumberTypeBool, kNumberTypeInt8), kNumberTypeInt8},
+  {GetHashId(kNumberTypeBool, kNumberTypeInt16), kNumberTypeInt16},
+  {GetHashId(kNumberTypeBool, kNumberTypeInt32), kNumberTypeInt32},
+  {GetHashId(kNumberTypeBool, kNumberTypeInt64), kNumberTypeInt64},
+  {GetHashId(kNumberTypeBool, kNumberTypeUInt8), kNumberTypeUInt8},
+  {GetHashId(kNumberTypeBool, kNumberTypeUInt16), kNumberTypeUInt16},
+  {GetHashId(kNumberTypeBool, kNumberTypeUInt32), kNumberTypeUInt32},
+  {GetHashId(kNumberTypeBool, kNumberTypeUInt64), kNumberTypeUInt64},
+  {GetHashId(kNumberTypeBool, kNumberTypeFloat16), kNumberTypeFloat16},
+  {GetHashId(kNumberTypeBool, kNumberTypeBFloat16), kNumberTypeBFloat16},
+  {GetHashId(kNumberTypeBool, kNumberTypeFloat32), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeBool, kNumberTypeFloat64), kNumberTypeFloat64},
+  // Int8
+  {GetHashId(kNumberTypeInt8, kNumberTypeInt8), kNumberTypeInt8},
+  {GetHashId(kNumberTypeInt8, kNumberTypeInt16), kNumberTypeInt16},
+  {GetHashId(kNumberTypeInt8, kNumberTypeInt32), kNumberTypeInt32},
+  {GetHashId(kNumberTypeInt8, kNumberTypeInt64), kNumberTypeInt64},
+  {GetHashId(kNumberTypeInt8, kNumberTypeUInt8), kNumberTypeInt16},
+  {GetHashId(kNumberTypeInt8, kNumberTypeFloat16), kNumberTypeFloat16},
+  {GetHashId(kNumberTypeInt8, kNumberTypeBFloat16), kNumberTypeBFloat16},
+  {GetHashId(kNumberTypeInt8, kNumberTypeFloat32), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeInt8, kNumberTypeFloat64), kNumberTypeFloat64},
+  // Int16
+  {GetHashId(kNumberTypeInt16, kNumberTypeInt16), kNumberTypeInt16},
+  {GetHashId(kNumberTypeInt16, kNumberTypeInt32), kNumberTypeInt32},
+  {GetHashId(kNumberTypeInt16, kNumberTypeInt64), kNumberTypeInt64},
+  {GetHashId(kNumberTypeInt16, kNumberTypeUInt8), kNumberTypeInt16},
+  {GetHashId(kNumberTypeInt16, kNumberTypeFloat16), kNumberTypeFloat16},
+  {GetHashId(kNumberTypeInt16, kNumberTypeBFloat16), kNumberTypeBFloat16},
+  {GetHashId(kNumberTypeInt16, kNumberTypeFloat32), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeInt16, kNumberTypeFloat64), kNumberTypeFloat64},
+  // Int32
+  {GetHashId(kNumberTypeInt32, kNumberTypeInt32), kNumberTypeInt32},
+  {GetHashId(kNumberTypeInt32, kNumberTypeInt64), kNumberTypeInt64},
+  {GetHashId(kNumberTypeInt32, kNumberTypeUInt8), kNumberTypeInt32},
+  {GetHashId(kNumberTypeInt32, kNumberTypeFloat16), kNumberTypeFloat16},
+  {GetHashId(kNumberTypeInt32, kNumberTypeBFloat16), kNumberTypeBFloat16},
+  {GetHashId(kNumberTypeInt32, kNumberTypeFloat32), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeInt32, kNumberTypeFloat64), kNumberTypeFloat64},
+  // Int64
+  {GetHashId(kNumberTypeInt64, kNumberTypeInt64), kNumberTypeInt64},
+  {GetHashId(kNumberTypeInt64, kNumberTypeUInt8), kNumberTypeInt64},
+  {GetHashId(kNumberTypeInt64, kNumberTypeFloat16), kNumberTypeFloat16},
+  {GetHashId(kNumberTypeInt64, kNumberTypeBFloat16), kNumberTypeBFloat16},
+  {GetHashId(kNumberTypeInt64, kNumberTypeFloat32), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeInt64, kNumberTypeFloat64), kNumberTypeFloat64},
+  // UInt8
+  {GetHashId(kNumberTypeUInt8, kNumberTypeUInt8), kNumberTypeUInt8},
+  {GetHashId(kNumberTypeUInt8, kNumberTypeFloat16), kNumberTypeFloat16},
+  {GetHashId(kNumberTypeUInt8, kNumberTypeBFloat16), kNumberTypeBFloat16},
+  {GetHashId(kNumberTypeUInt8, kNumberTypeFloat32), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeUInt8, kNumberTypeFloat64), kNumberTypeFloat64},
+  // UInt16
+  {GetHashId(kNumberTypeUInt16, kNumberTypeUInt16), kNumberTypeUInt16},
+  // UInt32
+  {GetHashId(kNumberTypeUInt32, kNumberTypeUInt32), kNumberTypeUInt32},
+  // UInt64
+  {GetHashId(kNumberTypeUInt64, kNumberTypeUInt64), kNumberTypeUInt64},
+  // Float16
+  {GetHashId(kNumberTypeFloat16, kNumberTypeFloat16), kNumberTypeFloat16},
+  {GetHashId(kNumberTypeFloat16, kNumberTypeBFloat16), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeFloat16, kNumberTypeFloat32), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeFloat16, kNumberTypeFloat64), kNumberTypeFloat64},
+  // BFloat16
+  {GetHashId(kNumberTypeBFloat16, kNumberTypeBFloat16), kNumberTypeBFloat16},
+  {GetHashId(kNumberTypeBFloat16, kNumberTypeFloat32), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeBFloat16, kNumberTypeFloat64), kNumberTypeFloat64},
+  // Float32
+  {GetHashId(kNumberTypeFloat32, kNumberTypeFloat32), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeFloat32, kNumberTypeFloat64), kNumberTypeFloat64},
+  // Float64
+  {GetHashId(kNumberTypeFloat64, kNumberTypeFloat64), kNumberTypeFloat64},
+};
+
+static const std::map<size_t, TypeId> scalar_tensor_convert_map = {
+  // Scalar is bool.
+  {GetHashId(kNumberTypeBool, kNumberTypeBool), kNumberTypeBool},
+  {GetHashId(kNumberTypeBool, kNumberTypeInt8), kNumberTypeInt8},
+  {GetHashId(kNumberTypeBool, kNumberTypeInt16), kNumberTypeInt16},
+  {GetHashId(kNumberTypeBool, kNumberTypeInt32), kNumberTypeInt32},
+  {GetHashId(kNumberTypeBool, kNumberTypeInt64), kNumberTypeInt64},
+  {GetHashId(kNumberTypeBool, kNumberTypeUInt8), kNumberTypeUInt8},
+  {GetHashId(kNumberTypeBool, kNumberTypeUInt16), kNumberTypeUInt16},
+  {GetHashId(kNumberTypeBool, kNumberTypeUInt32), kNumberTypeUInt32},
+  {GetHashId(kNumberTypeBool, kNumberTypeUInt64), kNumberTypeUInt64},
+  {GetHashId(kNumberTypeBool, kNumberTypeFloat16), kNumberTypeFloat16},
+  {GetHashId(kNumberTypeBool, kNumberTypeBFloat16), kNumberTypeBFloat16},
+  {GetHashId(kNumberTypeBool, kNumberTypeFloat32), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeBool, kNumberTypeFloat64), kNumberTypeFloat64},
+  // Scalar is int.
+  {GetHashId(kNumberTypeInt64, kNumberTypeBool), kNumberTypeInt64},
+  {GetHashId(kNumberTypeInt64, kNumberTypeInt8), kNumberTypeInt8},
+  {GetHashId(kNumberTypeInt64, kNumberTypeInt16), kNumberTypeInt16},
+  {GetHashId(kNumberTypeInt64, kNumberTypeInt32), kNumberTypeInt32},
+  {GetHashId(kNumberTypeInt64, kNumberTypeInt64), kNumberTypeInt64},
+  {GetHashId(kNumberTypeInt64, kNumberTypeUInt8), kNumberTypeUInt8},
+  {GetHashId(kNumberTypeInt64, kNumberTypeFloat16), kNumberTypeFloat16},
+  {GetHashId(kNumberTypeInt64, kNumberTypeBFloat16), kNumberTypeBFloat16},
+  {GetHashId(kNumberTypeInt64, kNumberTypeFloat32), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeInt64, kNumberTypeFloat64), kNumberTypeFloat64},
+  // Scalar is float.
+  {GetHashId(kNumberTypeFloat32, kNumberTypeBool), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeFloat32, kNumberTypeInt8), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeFloat32, kNumberTypeInt16), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeFloat32, kNumberTypeInt32), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeFloat32, kNumberTypeInt64), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeFloat32, kNumberTypeUInt8), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeFloat32, kNumberTypeFloat16), kNumberTypeFloat16},
+  {GetHashId(kNumberTypeFloat32, kNumberTypeBFloat16), kNumberTypeBFloat16},
+  {GetHashId(kNumberTypeFloat32, kNumberTypeFloat32), kNumberTypeFloat32},
+  {GetHashId(kNumberTypeFloat32, kNumberTypeFloat64), kNumberTypeFloat64},
+};
+
+TypeId ConvertTypeForTensorsOrScalars(const TypeId &current, const TypeId &other, const size_t hash_id) {
+  auto iter = tensor_tensor_convert_map.find(hash_id);
+  if (iter != tensor_tensor_convert_map.end()) {
+    return iter->second;
+  }
+  MS_EXCEPTION(TypeError) << "Type implicit conversion between " << TypeIdToString(current) << " and "
+                          << TypeIdToString(other) << " is not supported.";
+}
+
+TypeId ConvertTypeBetweenTensorAndScalar(const TypeId &tensor_type_id, const TypeId &scalar_type_id,
+                                         const size_t hash_id) {
+  auto iter = scalar_tensor_convert_map.find(hash_id);
+  if (iter != scalar_tensor_convert_map.end()) {
+    return iter->second;
+  }
+  MS_EXCEPTION(TypeError) << "Type implicit conversion between Tensor[" << TypeIdToString(tensor_type_id) << "] and "
+                          << TypeIdToString(scalar_type_id) << " is not supported.";
+}
+
+TypeId GetConversionType(const TypeId &current, const TypeId &saved_type_id, bool current_arg_is_tensor,
+                         bool saved_has_tensor) {
+  static std::set<int> black_types{kTypeUnknown, kNumberTypeComplex64, kNumberTypeComplex128};
+  if (current == saved_type_id) {
+    return current;
+  }
+  if (MS_UNLIKELY(black_types.find(current) != black_types.end() ||
+                  black_types.find(saved_type_id) != black_types.end())) {
+    return kTypeUnknown;
+  }
+
+  // Tensor + Scalar, Scalar + Tensor
+  auto hash_id = GetHashId(current, saved_type_id);
+  if (MS_UNLIKELY(current_arg_is_tensor ^ saved_has_tensor)) {
+    return ConvertTypeBetweenTensorAndScalar(current, saved_type_id, hash_id);
+  }
+  // Tensor + Tensor, Scalar + Scalar
+  return ConvertTypeForTensorsOrScalars(current, saved_type_id, hash_id);
+}
+}  // namespace
+
+std::map<SignatureEnumDType, std::pair<TypeId, bool>> GetSignatureTypeMap(const std::vector<SignatureEnumDType> &dtypes,
+                                                                          const std::vector<TypeId> &args_type_id,
+                                                                          const std::vector<bool> &args_is_tensor) {
+  // {T0: (target_type_id=Int32, has_tensor=true), T1: (target_type_id=Float32, has_tensor=false), ...}
+  std::map<SignatureEnumDType, std::pair<TypeId, bool>> sig_type_map;
+  size_t args_size = args_type_id.size();
+  for (size_t i = 0; i < args_size; ++i) {
+    const auto &it = sig_type_map.find(dtypes[i]);
+    if (it == sig_type_map.end()) {
+      (void)sig_type_map.insert(std::make_pair(dtypes[i], std::make_pair(args_type_id[i], args_is_tensor[i])));
+    } else {
+      it->second.first = GetConversionType(args_type_id[i], it->second.first, args_is_tensor[i], it->second.second);
+      it->second.second = args_is_tensor[i] || it->second.second;
+    }
+  }
+  return sig_type_map;
 }
 }  // namespace mindspore

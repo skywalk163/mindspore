@@ -14,20 +14,25 @@
 # ============================================================================
 """test callback function."""
 import os
+import platform
 import stat
+import secrets
+from unittest import mock
 
 import numpy as np
 import pytest
 
+from mindspore import context
 import mindspore.common.dtype as mstype
 import mindspore.nn as nn
-from mindspore.common.api import ms_function
+from mindspore.common.api import jit
 from mindspore.common.tensor import Tensor
 from mindspore.nn import TrainOneStepCell, WithLossCell
 from mindspore.nn.optim import Momentum
-from mindspore.train.callback import ModelCheckpoint, _check_file_name_prefix, RunContext, _checkpoint_cb_for_save_op, \
-    LossMonitor, _InternalCallbackParam, _chg_ckpt_file_name_if_same_exist, \
-    _build_callbacks, CheckpointConfig, _set_cur_net
+from mindspore.train import ModelCheckpoint, RunContext, LossMonitor, Callback, CheckpointConfig, \
+    LambdaCallback, History
+from mindspore.train.callback import _InternalCallbackParam, _CallbackManager, _checkpoint_cb_for_save_op, _set_cur_net
+from mindspore.train.callback._checkpoint import _chg_ckpt_file_name_if_same_exist
 
 
 class Net(nn.Cell):
@@ -41,7 +46,7 @@ class Net(nn.Cell):
         self.flatten = nn.Flatten()
         self.fc = nn.Dense(64 * 222 * 222, 3)
 
-    @ms_function
+    @jit
     def construct(self, x):
         x = self.conv(x)
         x = self.bn(x)
@@ -63,7 +68,7 @@ class LossNet(nn.Cell):
         self.fc = nn.Dense(64 * 222 * 222, 3)  # padding=0
         self.loss = nn.SoftmaxCrossEntropyWithLogits()
 
-    @ms_function
+    @jit
     def construct(self, x, y):
         x = self.conv(x)
         x = self.bn(x)
@@ -74,8 +79,12 @@ class LossNet(nn.Cell):
         return out
 
 
-def test_Model_Checkpoint_prefix_invalid():
-    """Test ModelCheckpoint prefix invalid."""
+def test_model_checkpoint_prefix_invalid():
+    """
+    Feature: callback
+    Description: Test ModelCheckpoint prefix invalid
+    Expectation: run success
+    """
     with pytest.raises(ValueError):
         ModelCheckpoint(123)
     ModelCheckpoint(directory="./")
@@ -85,8 +94,68 @@ def test_Model_Checkpoint_prefix_invalid():
     ModelCheckpoint(prefix="ckpt_2", directory="./test_files")
 
 
-def test_save_checkpoint():
-    """Test save checkpoint."""
+def test_loss_monitor_sink_mode():
+    """
+    Feature: callback
+    Description: Test loss monitor sink mode
+    Expectation: run success
+    """
+    cb_params = _InternalCallbackParam()
+    cb_params.cur_epoch_num = 4
+    cb_params.epoch_num = 4
+    cb_params.cur_step_num = 2
+    cb_params.batch_num = 2
+    cb_params.net_outputs = Tensor(2.0)
+    run_context = RunContext(cb_params)
+    loss_cb = LossMonitor(1)
+    callbacks = [loss_cb]
+    with _CallbackManager(callbacks) as callbacklist:
+        callbacklist.begin(run_context)
+        callbacklist.epoch_begin(run_context)
+        callbacklist.step_begin(run_context)
+        callbacklist.step_end(run_context)
+        callbacklist.epoch_end(run_context)
+        callbacklist.end(run_context)
+
+
+def test_loss_monitor_normal_mode():
+    """
+    Feature: callback
+    Description: Test loss monitor normal(non-sink) mode
+    Expectation: run success
+    """
+    cb_params = _InternalCallbackParam()
+    run_context = RunContext(cb_params)
+    loss_cb = LossMonitor(1)
+    cb_params.cur_epoch_num = 4
+    cb_params.epoch_num = 4
+    cb_params.cur_step_num = 1
+    cb_params.batch_num = 1
+    cb_params.net_outputs = Tensor(2.0)
+    loss_cb.begin(run_context)
+    loss_cb.epoch_begin(run_context)
+    loss_cb.step_begin(run_context)
+    loss_cb.step_end(run_context)
+    loss_cb.epoch_end(run_context)
+    loss_cb.end(run_context)
+
+
+def test_loss_monitor_args():
+    """
+    Feature: callback
+    Description: Test loss monitor illegal args
+    Expectation: run success
+    """
+    with pytest.raises(ValueError):
+        LossMonitor(per_print_times=-1)
+
+
+def test_save_ckpt_and_test_chg_ckpt_file_name_if_same_exist():
+    """
+    Feature: Save checkpoint and check if there is a file with the same name.
+    Description: Save checkpoint and check if there is a file with the same name.
+    Expectation: Checkpoint is saved and checking is successful.
+    """
     train_config = CheckpointConfig(
         save_checkpoint_steps=16,
         save_checkpoint_seconds=0,
@@ -110,77 +179,15 @@ def test_save_checkpoint():
     if os.path.exists('./test_files/test_ckpt-model.pkl'):
         os.chmod('./test_files/test_ckpt-model.pkl', stat.S_IWRITE)
         os.remove('./test_files/test_ckpt-model.pkl')
-
-
-def test_loss_monitor_sink_mode():
-    """Test loss monitor sink mode."""
-    cb_params = _InternalCallbackParam()
-    cb_params.cur_epoch_num = 4
-    cb_params.cur_step_num = 2
-    cb_params.batch_num = 2
-    cb_params.net_outputs = Tensor(2.0)
-    run_context = RunContext(cb_params)
-    loss_cb = LossMonitor(1)
-    callbacks = [loss_cb]
-    callbacklist = _build_callbacks(callbacks)
-    callbacklist.begin(run_context)
-    callbacklist.epoch_begin(run_context)
-    callbacklist.step_begin(run_context)
-    callbacklist.step_end(run_context)
-    callbacklist.epoch_end(run_context)
-    callbacklist.end(run_context)
-
-
-def test_loss_monitor_normal_mode():
-    """Test loss monitor normal(non-sink) mode."""
-    cb_params = _InternalCallbackParam()
-    run_context = RunContext(cb_params)
-    loss_cb = LossMonitor(1)
-    cb_params.cur_epoch_num = 4
-    cb_params.cur_step_num = 1
-    cb_params.batch_num = 1
-    cb_params.net_outputs = Tensor(2.0)
-    loss_cb.begin(run_context)
-    loss_cb.epoch_begin(run_context)
-    loss_cb.step_begin(run_context)
-    loss_cb.step_end(run_context)
-    loss_cb.epoch_end(run_context)
-    loss_cb.end(run_context)
-
-
-def test_check_file_name_not_str():
-    """Test check file name not str."""
-    ret = _check_file_name_prefix(1)
-    assert not ret
-
-
-def test_check_file_name_back_err():
-    """Test check file name back err."""
-    ret = _check_file_name_prefix('abc.')
-    assert ret
-
-
-def test_check_file_name_one_alpha():
-    """Test check file name one alpha."""
-    ret = _check_file_name_prefix('a')
-    assert ret
-    ret = _check_file_name_prefix('_')
-    assert ret
-
-
-def test_check_file_name_err():
-    """Test check file name err."""
-    ret = _check_file_name_prefix('_123')
-    assert ret
-
-
-def test_chg_ckpt_file_name_if_same_exist():
-    """Test chg ckpt file name if same exist."""
     _chg_ckpt_file_name_if_same_exist(directory="./test_files", prefix="ckpt")
 
 
 def test_checkpoint_cb_for_save_op():
-    """Test checkpoint cb for save op."""
+    """
+    Feature: callback
+    Description: Test checkpoint cb for save op
+    Expectation: run success
+    """
     parameter_list = []
     one_param = {}
     one_param['name'] = "conv1.weight"
@@ -190,7 +197,11 @@ def test_checkpoint_cb_for_save_op():
 
 
 def test_checkpoint_cb_for_save_op_update_net():
-    """Test checkpoint cb for save op."""
+    """
+    Feature: callback
+    Description: Test checkpoint cb for save op
+    Expectation: run success
+    """
     parameter_list = []
     one_param = {}
     one_param['name'] = "conv.weight"
@@ -199,11 +210,15 @@ def test_checkpoint_cb_for_save_op_update_net():
     net = Net()
     _set_cur_net(net)
     _checkpoint_cb_for_save_op(parameter_list)
-    assert net.conv.weight.default_input.asnumpy()[0][0][0][0] == 1
+    assert net.conv.weight.data.asnumpy()[0][0][0][0] == 1
 
 
 def test_internal_callback_param():
-    """Test Internal CallbackParam."""
+    """
+    Feature: callback
+    Description: Test Internal CallbackParam
+    Expectation: run success
+    """
     cb_params = _InternalCallbackParam()
     cb_params.member1 = 1
     cb_params.member2 = "abc"
@@ -212,7 +227,11 @@ def test_internal_callback_param():
 
 
 def test_checkpoint_save_ckpt_steps():
-    """Test checkpoint save ckpt steps."""
+    """
+    Feature: callback
+    Description: Test checkpoint save ckpt steps
+    Expectation: run success
+    """
     train_config = CheckpointConfig(
         save_checkpoint_steps=16,
         save_checkpoint_seconds=0,
@@ -241,7 +260,11 @@ def test_checkpoint_save_ckpt_steps():
 
 
 def test_checkpoint_save_ckpt_seconds():
-    """Test checkpoint save ckpt seconds."""
+    """
+    Feature: callback
+    Description: Test checkpoint save ckpt seconds
+    Expectation: run success
+    """
     train_config = CheckpointConfig(
         save_checkpoint_steps=16,
         save_checkpoint_seconds=100,
@@ -269,29 +292,195 @@ def test_checkpoint_save_ckpt_seconds():
     ckpt_cb2.step_end(run_context)
 
 
-def test_build_callbacks():
-    """Test_build_callbacks."""
+def test_checkpoint_save_ckpt_with_encryption():
+    """
+    Feature: callback
+    Description: Test checkpoint save ckpt with encryption
+    Expectation: run success
+    """
+    train_config = CheckpointConfig(
+        save_checkpoint_steps=16,
+        save_checkpoint_seconds=0,
+        keep_checkpoint_max=5,
+        keep_checkpoint_per_n_minutes=0,
+        enc_key=secrets.token_bytes(16),
+        enc_mode="AES-GCM")
+    ckpt_cb = ModelCheckpoint(config=train_config)
+    cb_params = _InternalCallbackParam()
+    net = Net()
+    loss = nn.SoftmaxCrossEntropyWithLogits()
+    optim = Momentum(net.trainable_params(), learning_rate=0.1, momentum=0.9)
+    network_ = WithLossCell(net, loss)
+    _train_network = TrainOneStepCell(network_, optim)
+    cb_params.train_network = _train_network
+    cb_params.epoch_num = 10
+    cb_params.cur_epoch_num = 5
+    cb_params.cur_step_num = 160
+    cb_params.batch_num = 32
+    run_context = RunContext(cb_params)
+    ckpt_cb.begin(run_context)
+    ckpt_cb.step_end(run_context)
+    ckpt_cb2 = ModelCheckpoint(config=train_config)
+    cb_params.cur_epoch_num = 1
+    cb_params.cur_step_num = 15
+
+    if platform.system().lower() == "windows":
+        with pytest.raises(NotImplementedError):
+            ckpt_cb2.begin(run_context)
+            ckpt_cb2.step_end(run_context)
+    else:
+        ckpt_cb2.begin(run_context)
+        ckpt_cb2.step_end(run_context)
+
+
+def test_callbackmanager():
+    """
+    Feature: callback
+    Description: Test CallbackManager
+    Expectation: run success
+    """
     ck_obj = ModelCheckpoint()
     loss_cb_1 = LossMonitor(1)
 
     callbacks = [None]
     with pytest.raises(TypeError):
-        callbacks = _build_callbacks(callbacks)
+        _CallbackManager(callbacks)
 
     callbacks = ['Error']
     with pytest.raises(TypeError):
-        callbacks = _build_callbacks(callbacks)
+        _CallbackManager(callbacks)
 
     callbacks = [ck_obj, loss_cb_1, 'Error', None]
     with pytest.raises(TypeError):
-        _ = _build_callbacks(callbacks)
+        _CallbackManager(callbacks)
 
 
-def test_RunContext():
-    """Test RunContext."""
+def test_callbackmanager_exit_called():
+    """
+    Feature: callback
+    Description: Test CallbackManager exit called
+    Expectation: run success
+    """
+    with mock.patch.object(Callback, '__exit__', return_value=None) as mock_exit:
+        cb1, cb2 = Callback(), Callback()
+        with _CallbackManager([cb1, cb2]):
+            pass
+    for call_args in mock_exit.call_args_list:
+        assert call_args == mock.call(mock.ANY, None, None, None)
+    assert mock_exit.call_count == 2
+
+
+def prefix_func(cb_params):
+    return str(cb_params.cur_step_num) + "_custom_file"
+
+
+def directory_func(cb_params):
+    return "./custom_ckpt"
+
+
+def custom_checkpoint_dir_and_prefix(prefix, directory):
+    train_config = CheckpointConfig(
+        save_checkpoint_steps=16,
+        save_checkpoint_seconds=100,
+        keep_checkpoint_max=0,
+        keep_checkpoint_per_n_minutes=1)
+    ckpt_cb = ModelCheckpoint(prefix=prefix, directory=directory, config=train_config)
+    cb_params = _InternalCallbackParam()
+    net = Net()
+    loss = nn.SoftmaxCrossEntropyWithLogits()
+    optim = Momentum(net.trainable_params(), learning_rate=0.1, momentum=0.9)
+    network_ = WithLossCell(net, loss)
+    _train_network = TrainOneStepCell(network_, optim)
+    cb_params.train_network = _train_network
+    cb_params.epoch_num = 10
+    cb_params.cur_epoch_num = 4
+    cb_params.cur_step_num = 128
+    cb_params.batch_num = 32
+    run_context = RunContext(cb_params)
+    ckpt_cb.begin(run_context)
+    ckpt_cb.step_end(run_context)
+
+
+def test_checkpoint_custom_dir_and_prefix():
+    """
+    Feature: callback
+    Description: Test checkpoint save ckpt with custom dir and custom prefix
+    Expectation: run success
+    """
+    custom_checkpoint_dir_and_prefix(prefix_func, directory_func)
+    ckpt_name = './custom_ckpt/128_custom_file.ckpt'
+    assert os.path.exists(ckpt_name)
+    os.chmod(ckpt_name, stat.S_IWRITE)
+    os.remove(ckpt_name)
+
+
+def test_checkpoint_custom_dir():
+    """
+    Feature: callback
+    Description: Test checkpoint save ckpt with custom dir
+    Expectation: run success
+    """
+    custom_checkpoint_dir_and_prefix("100", directory_func)
+    ckpt_name = './custom_ckpt/100-4_32.ckpt'
+    assert os.path.exists(ckpt_name)
+    os.chmod(ckpt_name, stat.S_IWRITE)
+    os.remove(ckpt_name)
+
+
+def test_checkpoint_custom_prefix():
+    """
+    Feature: callback
+    Description: Test checkpoint save ckpt with custom prefix
+    Expectation: run success
+    """
+    custom_checkpoint_dir_and_prefix(prefix_func, "./ckpt_path")
+    ckpt_name = './ckpt_path/128_custom_file.ckpt'
+    assert os.path.exists(ckpt_name)
+    os.chmod(ckpt_name, stat.S_IWRITE)
+    os.remove(ckpt_name)
+
+
+def test_callbackmanager_exit_called_when_raises():
+    """
+    Feature: callback
+    Description: Test when CallbackManager exit called
+    Expectation: run success
+    """
+    with mock.patch.object(Callback, '__exit__', return_value=None) as mock_exit:
+        cb1, cb2 = Callback(), Callback()
+        with pytest.raises(ValueError):
+            with _CallbackManager([cb1, cb2]):
+                raise ValueError()
+    for call_args in mock_exit.call_args_list:
+        assert call_args == mock.call(*[mock.ANY] * 4)
+    assert mock_exit.call_count == 2
+
+
+def test_callbackmanager_begin_called():
+    """
+    Feature: callback
+    Description: Test CallbackManager called begin
+    Expectation: run success
+    """
+    run_context = dict()
+    with mock.patch.object(Callback, 'begin', return_value=None) as mock_begin:
+        cb1, cb2 = Callback(), Callback()
+        with _CallbackManager([cb1, cb2]) as cm:
+            cm.begin(run_context)
+    for call_args in mock_begin.call_args_list:
+        assert call_args == mock.call(run_context)
+    assert mock_begin.call_count == 2
+
+
+def test_runcontext():
+    """
+    Feature: callback
+    Description: Test RunContext init
+    Expectation: run success
+    """
     context_err = 666
     with pytest.raises(TypeError):
-        _ = RunContext(context_err)
+        RunContext(context_err)
 
     cb_params = _InternalCallbackParam()
     cb_params.member1 = 1
@@ -307,8 +496,12 @@ def test_RunContext():
     assert should_stop
 
 
-def test_Checkpoint_Config():
-    """Test CheckpointConfig all None or 0."""
+def test_checkpoint_config():
+    """
+    Feature: callback
+    Description: Test checkpoint config error args
+    Expectation: run success
+    """
     with pytest.raises(ValueError):
         CheckpointConfig(0, 0, 0, 0, True)
 
@@ -317,7 +510,12 @@ def test_Checkpoint_Config():
 
 
 def test_step_end_save_graph():
-    """Test save checkpoint."""
+    """
+    Feature: callback
+    Description: Test save graph at step end
+    Expectation: run success
+    """
+    context.set_context(mode=context.GRAPH_MODE)
     train_config = CheckpointConfig(
         save_checkpoint_steps=16,
         save_checkpoint_seconds=0,
@@ -336,11 +534,65 @@ def test_step_end_save_graph():
     ckpoint_cb = ModelCheckpoint(prefix="test", directory='./test_files', config=train_config)
     run_context = RunContext(cb_params)
     ckpoint_cb.begin(run_context)
-    # import pdb;pdb.set_trace()
     ckpoint_cb.step_end(run_context)
-    assert os.path.exists('./test_files/test-graph.meta') == True
+    assert os.path.exists('./test_files/test-graph.meta')
     if os.path.exists('./test_files/test-graph.meta'):
         os.chmod('./test_files/test-graph.meta', stat.S_IWRITE)
         os.remove('./test_files/test-graph.meta')
     ckpoint_cb.step_end(run_context)
-    assert os.path.exists('./test_files/test-graph.meta') == False
+    assert not os.path.exists('./test_files/test-graph.meta')
+
+
+def test_history():
+    """
+    Feature: callback.
+    Description: Test history object saves epoch and history properties.
+    Expectation: run success.
+    """
+    cb_params = _InternalCallbackParam()
+    cb_params.cur_epoch_num = 4
+    cb_params.epoch_num = 4
+    cb_params.cur_step_num = 2
+    cb_params.batch_num = 2
+    cb_params.net_outputs = Tensor(2.0)
+    cb_params.metrics = {'mae': 6.343789100646973, 'mse': 59.03999710083008}
+
+    run_context = RunContext(cb_params)
+    history_cb = History()
+    callbacks = [history_cb]
+    with _CallbackManager(callbacks) as callbacklist:
+        callbacklist.begin(run_context)
+        callbacklist.epoch_begin(run_context)
+        callbacklist.step_begin(run_context)
+        callbacklist.step_end(run_context)
+        callbacklist.epoch_end(run_context)
+        callbacklist.end(run_context)
+    print(history_cb.epoch)
+    print(history_cb.history)
+
+
+def test_lambda():
+    """
+    Feature: callback.
+    Description: Test lambda callback.
+    Expectation: run success.
+    """
+    cb_params = _InternalCallbackParam()
+    cb_params.cur_epoch_num = 4
+    cb_params.epoch_num = 4
+    cb_params.cur_step_num = 2
+    cb_params.batch_num = 2
+    cb_params.net_outputs = Tensor(2.0)
+
+    run_context = RunContext(cb_params)
+    lambda_cb = LambdaCallback(
+        on_train_epoch_end=lambda run_context: print("loss result: ", run_context.original_args().net_outputs))
+
+    callbacks = [lambda_cb]
+    with _CallbackManager(callbacks) as callbacklist:
+        callbacklist.on_train_begin(run_context)
+        callbacklist.on_train_epoch_begin(run_context)
+        callbacklist.on_train_step_begin(run_context)
+        callbacklist.on_train_step_end(run_context)
+        callbacklist.on_train_epoch_end(run_context)
+        callbacklist.on_train_end(run_context)

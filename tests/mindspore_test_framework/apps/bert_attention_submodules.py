@@ -25,7 +25,7 @@ import mindspore.ops.functional as F
 from mindspore import nn
 from mindspore.common.initializer import TruncatedNormal
 from mindspore.common.tensor import Tensor
-from mindspore.model_zoo.Bert_NEZHA.bert_model import SaturateCast, RelaPosEmbeddingsGenerator
+from mindspore.tests.models.Bert_NEZHA.bert_model import SaturateCast, RelaPosEmbeddingsGenerator
 from mindspore.ops import operations as P
 
 
@@ -108,7 +108,7 @@ class BertAttentionRelativePositionKeys(nn.Cell):
         self.trans_shape_position = (1, 2, 0, 3)
         self.trans_shape_relative = (2, 0, 1, 3)
 
-        self.scores_mul = Tensor([1.0 / math.sqrt(float(self.size_per_head))], dtype=dtype)
+        self.scores_mul = 1.0 / math.sqrt(float(self.size_per_head))
 
         self.reshape = P.Reshape()
         self.multiply = P.Mul()
@@ -173,7 +173,7 @@ class BertAttentionMask(nn.Cell):
         if self.has_attention_mask:
             self.expand_dims = P.ExpandDims()
             self.sub = P.Sub()
-            self.add = P.TensorAdd()
+            self.add = P.Add()
             self.cast = P.Cast()
             self.get_dtype = P.DType()
 
@@ -204,7 +204,7 @@ class BertAttentionMaskBackward(nn.Cell):
         if self.has_attention_mask:
             self.expand_dims = P.ExpandDims()
             self.sub = P.Sub()
-            self.add = P.TensorAdd()
+            self.add = P.Add()
             self.cast = P.Cast()
             self.get_dtype = P.DType()
 
@@ -251,7 +251,7 @@ class BertAttentionSoftmax(nn.Cell):
         self.weight = TruncatedNormal(initializer_range)
 
         self.softmax = nn.Softmax()
-        self.dropout = nn.Dropout(1 - attention_probs_dropout_prob)
+        self.dropout = nn.Dropout(p=attention_probs_dropout_prob)
         self.transpose = P.Transpose()
 
         self.value_layer = nn.Dense(self.to_tensor_width,
@@ -301,7 +301,7 @@ class BertAttentionRelativePositionValues(nn.Cell):
         self.trans_shape_position = (1, 2, 0, 3)
         self.trans_shape_relative = (2, 0, 1, 3)
 
-        self.scores_mul = Tensor([1.0 / math.sqrt(float(self.size_per_head))], dtype=dtype)
+        self.scores_mul = 1.0 / math.sqrt(float(self.size_per_head))
         self.trans_shape = (0, 2, 1, 3)
 
         self.reshape = P.Reshape()
@@ -322,7 +322,6 @@ class BertAttentionRelativePositionValues(nn.Cell):
                                        max_relative_position=16,
                                        initializer_range=initializer_range,
                                        use_one_hot_embeddings=use_one_hot_embeddings)
-        self.fill = P.Fill()
         self.multiply = P.Mul()
         self.type = P.DType()
         self.cast = P.Cast()
@@ -358,7 +357,7 @@ class BertAttentionRelativePositionValues(nn.Cell):
         context_layer = self.transpose(input_tensor, self.trans_shape)
         context_layer = self.reshape(context_layer, self.shp_return)
         # ge reshape should not return, need an operator here
-        ones = self.cast(self.fill((1, 1), 1), self.type(context_layer))
+        ones = self.cast(F.fill((1, 1), 1), self.type(context_layer))
         context_layer = self.multiply(context_layer, ones)
         return relations_values_embedding, context_layer
 

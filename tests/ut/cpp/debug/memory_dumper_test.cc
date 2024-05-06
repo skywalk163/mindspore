@@ -17,11 +17,10 @@
 #include <iostream>
 #include <memory>
 #include "common/common_test.h"
-#include "./common.h"
 #include "utils/system/file_system.h"
 #include "utils/system/env.h"
 #define private public
-#include "debug/e2e_dump.h"
+#include "include/backend/debug/data_dump/dump_json_parser.h"
 #undef private
 
 namespace mindspore {
@@ -32,25 +31,28 @@ class TestMemoryDumper : public UT::Common {
 
 TEST_F(TestMemoryDumper, test_DumpToFileAbsPath) {
   int len = 1000;
-  int data[1000] = {0};
+  int data[len] = {0};
   for (uint32_t i = 0; i < len; i++) {
     data[i] = i % 10;
   }
 
   int ret;
-  char filename[] = "/tmp/dumpToFileTestFile";
-  ret = mindspore::Dump::DumpToFile(filename, data, len * sizeof(int));
+  const std::string filename = "/tmp/dumpToFileTestFile";
+  ret = DumpJsonParser::DumpToFile(filename, data, len * sizeof(int), ShapeVector{10, 100}, kNumberTypeInt32);
   ASSERT_EQ(ret, true);
 
-  int fd = open(filename, O_RDONLY);
-  int readBack[1000] = {0};
-  int readSize = read(fd, readBack, len * sizeof(int));
+  int fd = open((filename + ".npy").c_str(), O_RDONLY);
+  int header_size = 32;
+  int npylen = len + header_size;
+  int readBack[npylen] = {0};
+  int readSize = read(fd, readBack, npylen * sizeof(int));
   (void)close(fd);
-  ASSERT_EQ(readSize, len * sizeof(int));
+  ASSERT_EQ(readSize, npylen * sizeof(int));
 
   ret = true;
   for (uint32_t i = 0; i < len; i++) {
-    if (data[i] != readBack[i]) {
+    // Skip the size of npy header.
+    if (data[i] != readBack[i+header_size]) {
       ret = false;
       break;
     }
@@ -64,35 +66,15 @@ TEST_F(TestMemoryDumper, test_DumpToFileAbsPath) {
 
 TEST_F(TestMemoryDumper, test_DumpToFileRelativePath) {
   int len = 1000;
-  int data[1000] = {0};
+  int data[len] = {0};
   for (uint32_t i = 0; i < len; i++) {
     data[i] = i % 10;
   }
 
   int ret;
-  char filename[] = "../../dumpToFileTestFile";
-  ret = mindspore::Dump::DumpToFile(filename, data, len * sizeof(int));
-  ASSERT_EQ(ret, true);
-
-  int fd = open(filename, O_RDONLY);
-  int readBack[1000] = {0};
-  int readSize = read(fd, readBack, len * sizeof(int));
-  (void)close(fd);
-  ASSERT_EQ(readSize, len * sizeof(int));
-
-  ret = true;
-  for (uint32_t i = 0; i < len; i++) {
-    if (data[i] != readBack[i]) {
-      ret = false;
-      break;
-    }
-  }
-  std::shared_ptr<system::FileSystem> fs = system::Env::GetFileSystem();
-  if (fs->FileExist(filename)) {
-    fs->DeleteFile(filename);
-  }
-
-  ASSERT_EQ(ret, true);
+   const std::string filename = "../../dumpToFileTestFile";
+  ret = DumpJsonParser::DumpToFile(filename, data, len * sizeof(int), ShapeVector{100, 10}, kNumberTypeInt32);
+  ASSERT_EQ(ret, false);
 }
 
 TEST_F(TestMemoryDumper, test_DumpToFileNotExistDir) {
@@ -102,11 +84,11 @@ TEST_F(TestMemoryDumper, test_DumpToFileNotExistDir) {
     data[i] = i % 10;
   }
 
-  char filename[] = "./tmp/dumpToFileTestFile";
-  int ret = mindspore::Dump::DumpToFile(filename, data, len * sizeof(int));
+  const std::string filename = "./tmp/dumpToFileTestFile";
+  int ret = DumpJsonParser::DumpToFile(filename, data, len * sizeof(int), ShapeVector {1,}, kNumberTypeInt32);
   ASSERT_EQ(ret, true);
 
-  int fd = open(filename, O_RDONLY);
+  int fd = open((filename + ".npy").c_str(), O_RDONLY);
   int readBack[1000] = {0};
   int readSize = read(fd, readBack, len * sizeof(int));
   (void)close(fd);
@@ -114,7 +96,8 @@ TEST_F(TestMemoryDumper, test_DumpToFileNotExistDir) {
 
   ret = true;
   for (uint32_t i = 0; i < len; i++) {
-    if (data[i] != readBack[i]) {
+    // Skip the size of npy header.
+    if (data[i] != readBack[i+1]) {
       ret = false;
       break;
     }

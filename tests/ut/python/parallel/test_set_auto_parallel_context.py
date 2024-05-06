@@ -19,25 +19,34 @@ from mindspore.parallel import set_algo_parameters
 from mindspore.parallel._auto_parallel_context import auto_parallel_context
 
 
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
 def test_set_auto_parallel_context():
-    context.set_auto_parallel_context(device_num=4, global_rank=3, mirror_mean=True, cast_before_mirror=False,
-                                      parallel_mode="auto_parallel", parameter_broadcast=False)
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
+    context.set_auto_parallel_context(device_num=4, global_rank=3, gradients_mean=True, gradient_fp32_sync=False,
+                                      parallel_mode="auto_parallel", search_mode="dynamic_programming",
+                                      parameter_broadcast=False,
+                                      communi_parallel_mode="same_server_group_parallel")
     device_num = context.get_auto_parallel_context("device_num")
     global_rank = context.get_auto_parallel_context("global_rank")
-    mirror_mean = context.get_auto_parallel_context("mirror_mean")
-    cast_before_mirror = context.get_auto_parallel_context("cast_before_mirror")
+    gradients_mean = context.get_auto_parallel_context("gradients_mean")
+    gradient_fp32_sync = context.get_auto_parallel_context("gradient_fp32_sync")
     parallel_mode = context.get_auto_parallel_context("parallel_mode")
     parameter_broadcast = context.get_auto_parallel_context("parameter_broadcast")
+    communi_parallel_mode = context.get_auto_parallel_context("communi_parallel_mode")
     assert device_num == 4
     assert global_rank == 3
-    assert mirror_mean
-    assert not cast_before_mirror
+    assert gradients_mean
+    assert not gradient_fp32_sync
     assert parallel_mode == "auto_parallel"
     assert not parameter_broadcast
-
-    auto_parallel_context().set_communication_backend("hccl")
-    backend = auto_parallel_context().get_communication_backend()
-    assert backend == "hccl"
+    assert communi_parallel_mode == "same_server_group_parallel"
 
     auto_parallel_context().set_device_num(4)
     device_num = auto_parallel_context().get_device_num()
@@ -49,22 +58,23 @@ def test_set_auto_parallel_context():
     global_rank = auto_parallel_context().get_global_rank()
     assert global_rank == 4
 
-    auto_parallel_context().set_mirror_mean(True)
-    mirror_mean = auto_parallel_context().get_mirror_mean()
-    assert mirror_mean
+    auto_parallel_context().set_gradients_mean(True)
+    gradients_mean = auto_parallel_context().get_gradients_mean()
+    assert gradients_mean
 
-    auto_parallel_context().set_cast_before_mirror(False)
-    cast_before_mirror = auto_parallel_context().get_cast_before_mirror()
-    assert not cast_before_mirror
+    auto_parallel_context().set_gradient_fp32_sync(False)
+    gradient_fp32_sync = auto_parallel_context().get_gradient_fp32_sync()
+    assert not gradient_fp32_sync
 
     parameter_broadcast_is_set = auto_parallel_context().get_parameter_broadcast_is_set()
     assert parameter_broadcast_is_set
 
-    with pytest.raises(ValueError):
-        context.set_auto_parallel_context(device_num=0)
+    auto_parallel_context().set_optimizer_weight_shard_aggregated_save(True)
+    integrated_save = auto_parallel_context().get_optimizer_weight_shard_aggregated_save()
+    assert integrated_save
 
     with pytest.raises(ValueError):
-        context.set_auto_parallel_context(device_num=4097)
+        context.set_auto_parallel_context(device_num=0)
 
     with pytest.raises(ValueError):
         context.set_auto_parallel_context(global_rank=-1)
@@ -81,22 +91,52 @@ def test_set_auto_parallel_context():
     with pytest.raises(ValueError):
         set_algo_parameters(tensor_slice_align_size=1025)
 
+    with pytest.raises(ValueError):
+        context.set_auto_parallel_context(communi_parallel_mode="wrong_mode")
+
+    context.set_auto_parallel_context(enable_parallel_optimizer=True)
+    assert context.get_auto_parallel_context("enable_parallel_optimizer")
+    assert not auto_parallel_context().get_all_reduce_fusion_split_indices()
+
+
+def test_pipeline_parallel_context():
+    context.set_auto_parallel_context(device_num=8, global_rank=4,
+                                      parallel_mode="semi_auto_parallel", pipeline_stages=2,
+                                      pipeline_config={"pipeline_interleave": True, "pipeline_scheduler": "gpipe"})
+    stage = auto_parallel_context().get_pipeline_stages()
+    pipeline_interleave = auto_parallel_context().get_pipeline_interleave()
+    pipeline_scheduler = auto_parallel_context().get_pipeline_scheduler()
+    assert stage == 2
+    assert pipeline_interleave
+    assert pipeline_scheduler == "gpipe"
+
 
 def test_reset_auto_parallel_context():
     context.reset_auto_parallel_context()
     device_num = context.get_auto_parallel_context("device_num")
     global_rank = context.get_auto_parallel_context("global_rank")
-    mirror_mean = context.get_auto_parallel_context("mirror_mean")
-    cast_before_mirror = context.get_auto_parallel_context("cast_before_mirror")
+    gradients_mean = context.get_auto_parallel_context("gradients_mean")
+    gradient_fp32_sync = context.get_auto_parallel_context("gradient_fp32_sync")
     parallel_mode = context.get_auto_parallel_context("parallel_mode")
     parameter_broadcast = context.get_auto_parallel_context("parameter_broadcast")
     device_num_is_set = auto_parallel_context().get_device_num_is_set()
     parameter_broadcast_is_set = auto_parallel_context().get_parameter_broadcast_is_set()
+    stage = auto_parallel_context().get_pipeline_stages()
+    communi_parallel_mode = context.get_auto_parallel_context("communi_parallel_mode")
+    integrated_save = auto_parallel_context().get_optimizer_weight_shard_aggregated_save()
+    pipeline_interleave = auto_parallel_context().get_pipeline_interleave()
+    pipeline_scheduler = auto_parallel_context().get_pipeline_scheduler()
+
     assert device_num == 1
     assert global_rank == 0
-    assert not mirror_mean
-    assert cast_before_mirror
+    assert not gradients_mean
+    assert gradient_fp32_sync
     assert parallel_mode == "stand_alone"
     assert not parameter_broadcast
     assert not device_num_is_set
     assert not parameter_broadcast_is_set
+    assert stage == 1
+    assert communi_parallel_mode == "all_group_parallel"
+    assert not integrated_save
+    assert not pipeline_interleave
+    assert pipeline_scheduler == "1f1b"

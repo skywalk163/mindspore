@@ -19,11 +19,18 @@ import mindspore.common.dtype as mstype
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.context import set_auto_parallel_context
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
 from tests.ut.python.ops.test_math_ops import VirtualLoss
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
+grad_all = C.GradOperation(get_all=True)
 
 
 class NetWithLoss(nn.Cell):
@@ -43,12 +50,12 @@ class GradWrap(nn.Cell):
         self.network = network
 
     def construct(self, x, y):
-        return C.grad_all(self.network)(x, y)
+        return grad_all(self.network)(x, y)
 
 
 def compile_net(net, x, y):
-    net.set_auto_parallel()
-    _executor.compile(net, x, y)
+    net.set_train()
+    _cell_graph_executor.compile(net, x, y)
 
 
 # model_parallel test
@@ -56,14 +63,15 @@ def test_two_matmul():
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2, strategy3):
             super().__init__()
-            self.matmul1 = P.MatMul().set_strategy(strategy1)
-            self.matmul2 = P.MatMul().set_strategy(strategy2)
-            self.matmul3 = P.MatMul().set_strategy(strategy3)
+            self.matmul1 = P.MatMul().shard(strategy1)
+            self.matmul2 = P.MatMul().shard(strategy2)
+            self.matmul3 = P.MatMul().shard(strategy3)
             self.diag = P.Diag()
-            self.fill = P.Fill()
+            self.fillv2 = P.FillV2()
+            self.diag_value = self.fillv2((128,), Tensor(1.0, mstype.float32))
 
         def construct(self, x, y):
-            fill = self.diag(self.fill(mstype.float32, (128,), 1.0))
+            fill = self.diag(self.diag_value)
             out1 = self.matmul1(fill, x)
             out2 = self.matmul2(y, fill)
             out = self.matmul3(out1, out2)
@@ -86,8 +94,8 @@ def test_matmul_mul_broadcast2():
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2):
             super().__init__()
-            self.matmul = P.MatMul().set_strategy(strategy1)
-            self.mul = P.Mul().set_strategy(strategy2)
+            self.matmul = P.MatMul().shard(strategy1)
+            self.mul = P.Mul().shard(strategy2)
             self.t = Tensor(0.9, ms.float32)
 
         def construct(self, x, y):
@@ -110,14 +118,15 @@ def test_two_matmul1():
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2, strategy3):
             super().__init__()
-            self.matmul1 = P.MatMul().set_strategy(strategy1)
-            self.matmul2 = P.MatMul().set_strategy(strategy2)
-            self.matmul3 = P.MatMul().set_strategy(strategy3)
+            self.matmul1 = P.MatMul().shard(strategy1)
+            self.matmul2 = P.MatMul().shard(strategy2)
+            self.matmul3 = P.MatMul().shard(strategy3)
             self.diag = P.Diag()
-            self.fill = P.Fill()
+            self.fillv2 = P.FillV2()
+            self.diag_value = self.fillv2((128,), Tensor(1.0, mstype.float32))
 
         def construct(self, x, y):
-            fill = self.diag(self.fill(mstype.float32, (128,), 1.0))
+            fill = self.diag(self.diag_value)
             out1 = self.matmul1(fill, x)
             out2 = self.matmul2(fill, y)
             out = self.matmul3(out1, out2)
@@ -140,8 +149,8 @@ def test_matmul_add_tensor():
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2):
             super().__init__()
-            self.matmul = P.MatMul().set_strategy(strategy1)
-            self.add = P.TensorAdd().set_strategy(strategy2)
+            self.matmul = P.MatMul().shard(strategy1)
+            self.add = P.Add().shard(strategy2)
             self.b = Tensor(0.9, ms.float32)
 
         def construct(self, x, y):

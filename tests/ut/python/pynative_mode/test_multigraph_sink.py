@@ -15,13 +15,12 @@
 """ test_multigraph_sink """
 import mindspore.context as context
 from mindspore.common import dtype as mstype
-from mindspore.common import ms_function
+from mindspore.common import jit
 from mindspore.common.tensor import Tensor
 
 
 def setup_module(module):
-    context.set_context(mode=context.PYNATIVE_MODE, save_graphs=False, device_target="Ascend")
-    context.set_context(device_id=0)
+    context.set_context(mode=context.PYNATIVE_MODE, device_target="Ascend")
 
 
 c1 = Tensor([2], mstype.int32)
@@ -31,7 +30,7 @@ c4 = Tensor([0], mstype.int32)
 c5 = Tensor([14], mstype.int32)
 
 
-@ms_function
+@jit
 def simple_if(x, y, z):
     if x < y:
         x = x + 1
@@ -41,7 +40,7 @@ def simple_if(x, y, z):
     return x
 
 
-@ms_function
+@jit
 def if_by_if(x, y, z):
     if x < y:
         x = x + 1
@@ -51,7 +50,7 @@ def if_by_if(x, y, z):
     return x
 
 
-@ms_function
+@jit
 def if_in_if(x, y, z):
     out = c4
     if x < y:
@@ -64,7 +63,7 @@ def if_in_if(x, y, z):
     return out
 
 
-@ms_function
+@jit
 def simple_while(x, y, z):
     y = y + 4
     while x < y:
@@ -73,7 +72,7 @@ def simple_while(x, y, z):
     return x
 
 
-@ms_function
+@jit
 def while_by_while(x, y, z):
     while x < y:
         x = x + 1
@@ -84,7 +83,7 @@ def while_by_while(x, y, z):
     return x
 
 
-@ms_function
+@jit
 def while_in_while(x, y, z):
     out = c4
     while x < y:
@@ -130,4 +129,27 @@ def test_while_by_while():
 def test_while_in_while():
     output = while_in_while(c1, c2, c3)
     expect = Tensor([1274], mstype.int32)
+    assert output == expect
+
+
+@jit
+def while_by_while_in_while(x, y, z):
+    out = c4
+    while x < c2:
+        y = c4 + c4
+        while y < c2:
+            y = y + 1
+        out = out + y
+        z = c4 + c4
+        while z < c2:
+            z = z + 1
+        out = out + z
+        x = x + 1
+    out = out + x
+    return out
+
+
+def test_while_by_while_in_while():
+    output = while_by_while_in_while(c1, c2, c3)
+    expect = Tensor([350], mstype.int32)
     assert output == expect

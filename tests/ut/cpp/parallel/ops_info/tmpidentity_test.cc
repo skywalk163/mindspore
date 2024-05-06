@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,11 @@
  */
 
 #include "common/common_test.h"
-#include "parallel/strategy.h"
-#include "parallel/device_manager.h"
-#include "parallel/ops_info/operator_info.h"
-#include "parallel/ops_info/tmp_identity_info.h"
+#include "frontend/parallel/strategy.h"
+#include "frontend/parallel/device_manager.h"
+#include "frontend/parallel/ops_info/operator_info.h"
+#include "frontend/parallel/ops_info/tmp_identity_info.h"
+#include "frontend/parallel/step_parallel.h"
 
 namespace mindspore {
 namespace parallel {
@@ -26,7 +27,6 @@ namespace parallel {
 class TmpIdentityInfo;
 using TmpIdentityInfoPtr = std::shared_ptr<TmpIdentityInfo>;
 TmpIdentityInfoPtr identity_ptr;
-using TensorMap = std::vector<int32_t>;
 
 class TestTmpIdentityInfo : public UT::Common {
  public:
@@ -38,13 +38,13 @@ class TestTmpIdentityInfo : public UT::Common {
 };
 
 void TestTmpIdentityInfo::SetUp() {
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 1050; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(1024);
   stage_map.push_back(26);
 
@@ -54,7 +54,7 @@ void TestTmpIdentityInfo::SetUp() {
   g_device_manager = std::make_shared<DeviceManager>();
   g_device_manager->Init(dev_list, local_dev, stage_map, "hccl");
 
-  std::unordered_map<std::string, ValuePtr> attr = {};
+  mindspore::HashMap<std::string, ValuePtr> attr = {};
   Shapes inputs_shape = {{2, 4, 8, 16}};
   Shapes outputs_shape = {{2, 4, 8, 16}};
   identity_ptr = std::make_shared<TmpIdentityInfo>(inputs_shape, outputs_shape, attr);
@@ -65,21 +65,21 @@ void TestTmpIdentityInfo::SetUp() {
 }
 
 TEST_F(TestTmpIdentityInfo, InferDevMatrixShape1) {
-  std::vector<Dimensions> inputs = {{2, 4, 8, 16}};
+  Strategies inputs = {{2, 4, 8, 16}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  identity_ptr->Init(strategy);
-  std::vector<int32_t> dev_matrix_shape = identity_ptr->dev_matrix_shape();
+  identity_ptr->Init(strategy, nullptr);
+  Shape dev_matrix_shape = identity_ptr->dev_matrix_shape();
 
-  std::vector<int32_t> expect = {2, 4, 8, 16};
+  Shape expect = {2, 4, 8, 16};
   ASSERT_EQ(dev_matrix_shape, expect);
 }
 
 TEST_F(TestTmpIdentityInfo, InferSliceShape1) {
-  std::vector<Dimensions> str = {{2, 4, 8, 16}};
+  Strategies str = {{2, 4, 8, 16}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  identity_ptr->Init(strategy);
+  identity_ptr->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = identity_ptr->inputs_tensor_info();
   std::vector<TensorInfo> outputs = identity_ptr->outputs_tensor_info();
 
@@ -97,10 +97,10 @@ TEST_F(TestTmpIdentityInfo, InferSliceShape1) {
 }
 
 TEST_F(TestTmpIdentityInfo, GetTensorLayout1) {
-  std::vector<Dimensions> str = {{2, 4, 8, 16}};
+  Strategies str = {{2, 4, 8, 16}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  identity_ptr->Init(strategy);
+  identity_ptr->Init(strategy, nullptr);
   std::vector<TensorInfo> inputs = identity_ptr->inputs_tensor_info();
   std::vector<TensorInfo> outputs = identity_ptr->outputs_tensor_info();
 
@@ -119,19 +119,19 @@ TEST_F(TestTmpIdentityInfo, GetTensorLayout1) {
 
 TEST_F(TestTmpIdentityInfo, CheckStrategy1) {
   // Success: {{2,4,8,16}}
-  std::vector<Dimensions> inputs = {{2, 2, 8, 16}, {2, 4, 16, 1}};
+  Strategies inputs = {{2, 2, 8, 16}, {2, 4, 16, 1}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = identity_ptr->Init(strategy);
+  Status ret = identity_ptr->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 
 TEST_F(TestTmpIdentityInfo, CheckStrategy2) {
   // Success: {{2,4,8,16}}
-  std::vector<Dimensions> inputs = {{2, 4, 8}};
+  Strategies inputs = {{2, 4, 8}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status ret = identity_ptr->Init(strategy);
+  Status ret = identity_ptr->Init(strategy, nullptr);
   ASSERT_EQ(ret, FAILED);
 }
 
@@ -142,7 +142,7 @@ TEST_F(TestTmpIdentityInfo, test_generate_strategies) {
     StrategyPtr sp = swc->strategy_ptr;
     Cost cost = *(swc->cost_list[0]);
 
-    identity_ptr->Init(sp);
+    identity_ptr->Init(sp, nullptr);
     std::vector<TensorInfo> inputs_info = identity_ptr->inputs_tensor_info();
     std::vector<TensorInfo> outputs_info = identity_ptr->outputs_tensor_info();
     ASSERT_DOUBLE_EQ(identity_ptr->operator_cost()->GetComputationCost(inputs_info, outputs_info, sp->GetInputStage()),

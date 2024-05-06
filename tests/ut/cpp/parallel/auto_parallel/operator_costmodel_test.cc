@@ -15,10 +15,10 @@
  */
 
 #include <common/common_test.h>
-#include "parallel/tensor_layout/tensor_layout.h"
-#include "parallel/tensor_layout/tensor_info.h"
-#include "parallel/auto_parallel/operator_costmodel.h"
-#include "parallel/device_manager.h"
+#include "frontend/parallel/tensor_layout/tensor_layout.h"
+#include "frontend/parallel/tensor_layout/tensor_info.h"
+#include "frontend/parallel/auto_parallel/operator_costmodel.h"
+#include "frontend/parallel/device_manager.h"
 
 namespace mindspore {
 namespace parallel {
@@ -33,13 +33,13 @@ class TestMatMulCost : public UT::Common {
 
 void TestMatMulCost::SetUp() {
   mmcost_ = MatMulCost();
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 1050; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(1024);
   stage_map.push_back(26);
 
@@ -85,18 +85,18 @@ class TestActivationCost : public UT::Common {
   TestActivationCost() {}
   void SetUp();
   void TearDown();
-  ActivationCost ac_cost_;
+  ActivationInfoCost ac_cost_;
 };
 
 void TestActivationCost::SetUp() {
-  ac_cost_ = ActivationCost();
-  std::vector<int32_t> dev_list;
+  ac_cost_ = ActivationInfoCost();
+  RankList dev_list;
 
   for (int32_t i = 0; i < 1050; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(1024);
   stage_map.push_back(26);
 
@@ -142,13 +142,13 @@ class TestPReLUCost : public UT::Common {
 
 void TestPReLUCost::SetUp() {
   prelu_cost_ = PReLUCost();
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 1050; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(1024);
   stage_map.push_back(26);
 

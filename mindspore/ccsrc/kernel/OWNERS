@@ -1,0 +1,9 @@
+approvers:
+- zhaizhiqiang #
+- limingqi107
+- chujinjin
+- liulili-huawei
+- zhang_xue_tong
+
+options:
+    no_parent_owners: true

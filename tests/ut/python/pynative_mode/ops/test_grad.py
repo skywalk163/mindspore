@@ -17,22 +17,28 @@ import numpy as np
 
 import mindspore as ms
 import mindspore.ops.operations as P
-from mindspore import Tensor
-from mindspore.common.api import ms_function
-from mindspore.common.dtype import get_py_obj_dtype
+from mindspore import Tensor, context
+from mindspore.common.api import jit
 from mindspore.ops import composite as C
-from mindspore.ops import functional as F
-from mindspore.ops.composite import grad_all_with_sens
 from ...ut_filter import non_graph_engine
+
+
+# pylint: disable=unused-argument
+def setup_module(module):
+    context.set_context(mode=context.PYNATIVE_MODE)
+
+
+grad = C.GradOperation()
+grad_all_with_sens = C.GradOperation(get_all=True, sens_param=True)
 
 
 def mul(x, y):
     return x * y
 
 
-@ms_function
+@jit
 def mainf(x, y):
-    return C.grad(mul)(x, y)
+    return grad(mul)(x, y)
 
 
 @non_graph_engine
@@ -41,7 +47,7 @@ def test_grad():
 
 
 @non_graph_engine
-def test_expand_dims_grad():
+def Xtest_expand_dims_grad():
     """ test_expand_dims_grad """
     input_tensor = Tensor(np.array([[2, 2], [2, 2]]))
     expand_dims = P.ExpandDims()
@@ -78,20 +84,6 @@ def test_cast_grad():
     gout = gfn(*args)
     expect = np.ones((2, 3), dtype=np.float32)
     assert np.all(gout[0].asnumpy() == expect)
-
-
-def test_scalar_cast_grad():
-    """ test_scalar_cast_grad """
-    input_x = 255.5
-    input_t = get_py_obj_dtype(ms.int8)
-
-    def fx_cast(x):
-        output = F.scalar_cast(x, input_t)
-        return output
-
-    gfn = C.grad(fx_cast)(input_x)
-    expect_dx = 1
-    assert gfn == expect_dx
 
 
 @non_graph_engine
@@ -133,6 +125,30 @@ def test_transpose_grad():
     assert np.all(gout[0].asnumpy() == expect)
 
 
+def test_select_grad():
+    """ test_select_grad """
+    select = P.Select()
+    cond = Tensor(np.array([[True, False, False], [False, True, True]]))
+    x = Tensor(np.array([[1, 2, 3], [4, 5, 6]]).astype(np.float32))
+    y = Tensor(np.array([[7, 8, 9], [10, 11, 12]]).astype(np.float32))
+
+    def fn(cond, x, y):
+        output = select(cond, x, y)
+        return output
+
+    out = fn(cond, x, y)
+    gfn = grad_all_with_sens(fn)
+    sens = Tensor(np.ones_like(out.asnumpy()).astype(np.float32))
+    args = [cond, x, y, sens]
+    gout = gfn(*args)
+    expect_cond = np.zeros_like(cond.asnumpy())
+    expect_x = np.array([[1, 0, 0], [0, 1, 1]])
+    expect_y = np.array([[0, 1, 1], [1, 0, 0]])
+    assert np.all(gout[0].asnumpy() == expect_cond)
+    assert np.all(gout[1].asnumpy() == expect_x)
+    assert np.all(gout[2].asnumpy() == expect_y)
+
+
 @non_graph_engine
 def test_squeeze_grad():
     """ test_squeeze_grad """
@@ -152,33 +168,9 @@ def test_squeeze_grad():
     assert np.all(gout[0].asnumpy() == expect)
 
 
-def test_select_grad():
-    """ test_select_grad """
-    select = P.Select()
-    cond = Tensor(np.array([[True, False, False], [False, True, True]]))
-    x = Tensor(np.array([[1, 2, 3], [4, 5, 6]]).astype(np.float32))
-    y = Tensor(np.array([[7, 8, 9], [10, 11, 12]]).astype(np.float32))
-
-    def fn(cond, x, y):
-        output = select(cond, x, y)
-        return output
-
-    out = fn(cond, x, y)
-    gfn = grad_all_with_sens(fn)
-    sens = Tensor(np.ones_like(out.asnumpy()).astype(np.float32))
-    args = [cond, x, y, sens]
-    gout = gfn(*args)
-    expect_cond = np.zeros_like(cond)
-    expect_x = np.array([[1, 0, 0], [0, 1, 1]])
-    expect_y = np.array([[0, 1, 1], [1, 0, 0]])
-    assert np.all(gout[0].asnumpy() == expect_cond)
-    assert np.all(gout[1].asnumpy() == expect_x)
-    assert np.all(gout[2].asnumpy() == expect_y)
-
-
 def test_SubGrad():
     """ test_SubGrad """
-    input_x = Tensor(np.array([[2, 2]]))
+    input_x = Tensor(np.array([2, 2]))
     input_y = Tensor(np.array([[2, 2], [2, 2]]))
     sub = P.Sub()
 
@@ -191,7 +183,7 @@ def test_SubGrad():
     sens = Tensor(np.ones_like(out.asnumpy()))
     args = [input_x, input_y, sens]
     gout = gfn(*args)
-    expect_dx = np.ones([1, 2]).astype(np.int32) * 2  # reduce sum dout to the shape of x
+    expect_dx = np.ones([2]).astype(np.int32) * 2  # reduce sum dout to the shape of x
     expect_dy = np.ones([2, 2]).astype(np.int32) * (-1)
     assert np.array_equal(gout[0].asnumpy(), expect_dx)
     assert np.array_equal(gout[1].asnumpy(), expect_dy)

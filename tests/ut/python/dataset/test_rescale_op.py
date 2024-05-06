@@ -1,4 +1,4 @@
-# Copyright 2019 Huawei Technologies Co., Ltd
+# Copyright 2019-2022 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,15 +15,15 @@
 """
 Testing the rescale op in DE
 """
-import matplotlib.pyplot as plt
-import numpy as np
-
 import mindspore.dataset as ds
-import mindspore.dataset.transforms.vision.c_transforms as vision
+import mindspore.dataset.vision as vision
 from mindspore import log as logger
+from util import visualize_image, diff_mse, save_and_check_md5
 
 DATA_DIR = ["../data/dataset/test_tf_file_3_images/train-0000-of-0001.data"]
 SCHEMA_DIR = "../data/dataset/test_tf_file_3_images/datasetSchema.json"
+
+GENERATE_GOLDEN = False
 
 
 def rescale_np(image):
@@ -41,10 +41,10 @@ def get_rescaled(image_id):
     """
     data1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
     decode_op = vision.Decode()
-    data1 = data1.map(input_columns=["image"], operations=decode_op)
+    data1 = data1.map(operations=decode_op, input_columns=["image"])
     num_iter = 0
-    for item in data1.create_dict_iterator():
-        image = item["image"]
+    for item in data1.create_dict_iterator(num_epochs=1):
+        image = item["image"].asnumpy()
         if num_iter == image_id:
             return rescale_np(image)
         num_iter += 1
@@ -52,27 +52,11 @@ def get_rescaled(image_id):
     return None
 
 
-def visualize(image_de_rescaled, image_np_rescaled, mse):
+def test_rescale_op(plot=False):
     """
-    visualizes the image using DE op and Numpy op
-    """
-    plt.subplot(131)
-    plt.imshow(image_de_rescaled)
-    plt.title("DE rescale image")
-
-    plt.subplot(132)
-    plt.imshow(image_np_rescaled)
-    plt.title("Numpy rescaled image")
-
-    plt.subplot(133)
-    plt.imshow(image_de_rescaled - image_np_rescaled)
-    plt.title("Difference image, mse : {}".format(mse))
-    plt.show()
-
-
-def test_rescale_op():
-    """
-    Test rescale
+    Feature: Rescale op
+    Description: Test rescale op basic usage
+    Expectation: Output is the same as expected output
     """
     logger.info("Test rescale")
     data1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
@@ -82,20 +66,46 @@ def test_rescale_op():
     rescale_op = vision.Rescale(1.0 / 255.0, -1.0)
 
     # apply map operations on images
-    data1 = data1.map(input_columns=["image"], operations=decode_op)
-    data1 = data1.map(input_columns=["image"], operations=rescale_op)
+    data1 = data1.map(operations=decode_op, input_columns=["image"])
+
+    data2 = data1.map(operations=rescale_op, input_columns=["image"])
 
     num_iter = 0
-    for item in data1.create_dict_iterator():
-        image_de_rescaled = item["image"]
+    for item1, item2 in zip(data1.create_dict_iterator(num_epochs=1, output_numpy=True),
+                            data2.create_dict_iterator(num_epochs=1, output_numpy=True)):
+        image_original = item1["image"]
+        image_de_rescaled = item2["image"]
         image_np_rescaled = get_rescaled(num_iter)
-        diff = image_de_rescaled - image_np_rescaled
-        mse = np.sum(np.power(diff, 2))
+        mse = diff_mse(image_de_rescaled, image_np_rescaled)
+        assert mse < 0.001  # rounding error
         logger.info("image_{}, mse: {}".format(num_iter + 1, mse))
-        # Uncomment below line if you want to visualize images
-        # visualize(image_de_rescaled, image_np_rescaled, mse)
         num_iter += 1
+        if plot:
+            visualize_image(image_original, image_de_rescaled, mse, image_np_rescaled)
+
+
+def test_rescale_md5():
+    """
+    Feature: Rescale op
+    Description: Test rescale op with md5 check
+    Expectation: Passes the md5 check test
+    """
+    logger.info("Test Rescale with md5 comparison")
+
+    # generate dataset
+    data = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
+    decode_op = vision.Decode()
+    rescale_op = vision.Rescale(1.0 / 255.0, -1.0)
+
+    # apply map operations on images
+    data = data.map(operations=decode_op, input_columns=["image"])
+    data = data.map(operations=rescale_op, input_columns=["image"])
+
+    # check results with md5 comparison
+    filename = "rescale_01_result.npz"
+    save_and_check_md5(data, filename, generate_golden=GENERATE_GOLDEN)
 
 
 if __name__ == "__main__":
-    test_rescale_op()
+    test_rescale_op(plot=True)
+    test_rescale_md5()

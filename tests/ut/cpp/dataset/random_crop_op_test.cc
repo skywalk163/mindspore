@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2021-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,46 +15,63 @@
  */
 #include "common/common.h"
 #include "common/cvop_common.h"
-#include "dataset/kernels/image/random_crop_op.h"
+#include "minddata/dataset/kernels/image/random_crop_op.h"
 #include "utils/log_adapter.h"
 
 using namespace mindspore::dataset;
-using mindspore::MsLogLevel::INFO;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::LogStream;
 
 class MindDataTestRandomCropOp : public UT::CVOP::CVOpCommon {
  protected:
   MindDataTestRandomCropOp() : CVOpCommon() {}
 
-  std::shared_ptr<Tensor> output_tensor_;
+  TensorRow output_tensor_row;
 };
 
+/// Feature: RandomCrop op
+/// Description: Test RandomCropOp with crop size (128, 128) and padding = (0, 0, 0, 0)
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestRandomCropOp, TestOp1) {
   MS_LOG(INFO) << "Doing testRandomCrop.";
   // Crop params
   unsigned int crop_height = 128;
   unsigned int crop_width = 128;
-  std::unique_ptr<RandomCropOp> op(new RandomCropOp(crop_height, crop_width, 0, 0, 0, 0, BorderType::kConstant, false));
-  EXPECT_TRUE(op->OneToOne());
-  Status s = op->Compute(input_tensor_, &output_tensor_);
-  size_t actual = 0;
-  if (s == Status::OK()) {
-    actual = output_tensor_->shape()[0] * output_tensor_->shape()[1] * output_tensor_->shape()[2];
+  auto op = std::make_unique<RandomCropOp>(crop_height, crop_width, 0, 0, 0, 0, false, BorderType::kConstant, 0, 0, 0);
+  TensorRow input_tensor_row;
+  std::shared_ptr<Tensor> input1;
+  Tensor::CreateFromTensor(input_tensor_, &input1);
+  input_tensor_row.push_back(input1);
+  std::shared_ptr<Tensor> input2;
+  Tensor::CreateFromTensor(input_tensor_, &input2);
+  input_tensor_row.push_back(input2);
+  Status s = op->Compute(input_tensor_row, &output_tensor_row);
+  for (size_t i = 0; i < input_tensor_row.size(); i++) {
+    size_t actual = 0;
+    if (s == Status::OK()) {
+      actual = output_tensor_row[i]->shape()[0] * output_tensor_row[i]->shape()[1] * output_tensor_row[i]->shape()[2];
+    }
+    EXPECT_EQ(actual, crop_height * crop_width * 3);
+    EXPECT_EQ(s, Status::OK());
   }
-  EXPECT_EQ(actual, crop_height * crop_width * 3);
-  EXPECT_EQ(s, Status::OK());
 }
 
+/// Feature: RandomCrop op
+/// Description: Test RandomCropOp with crop size (1280, 1280) and padding = (513, 513, 513, 513)
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestRandomCropOp, TestOp2) {
   MS_LOG(INFO) << "Doing testRandomCrop.";
   // Crop params
   unsigned int crop_height = 1280;
   unsigned int crop_width = 1280;
-  std::unique_ptr<RandomCropOp> op(
-    new RandomCropOp(crop_height, crop_width, 513, 513, 513, 513, BorderType::kConstant, false));
-  EXPECT_TRUE(op->OneToOne());
-  Status s = op->Compute(input_tensor_, &output_tensor_);
+  TensorRow input_tensor_row;
+  std::shared_ptr<Tensor> input1;
+  Tensor::CreateFromTensor(input_tensor_, &input1);
+  input_tensor_row.push_back(input1);
+  std::shared_ptr<Tensor> input2;
+  Tensor::CreateFromTensor(input_tensor_, &input2);
+  input_tensor_row.push_back(input2);
+  auto op =
+    std::make_unique<RandomCropOp>(crop_height, crop_width, 513, 513, 513, 513, false, BorderType::kConstant, 0, 0, 0);
+  Status s = op->Compute(input_tensor_row, &output_tensor_row);
   EXPECT_EQ(true, s.IsOk());
   MS_LOG(INFO) << "testRandomCrop end.";
 }

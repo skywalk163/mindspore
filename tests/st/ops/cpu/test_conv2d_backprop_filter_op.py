@@ -61,19 +61,13 @@ class Net4(nn.Cell):
         return self.conv_filter(self.out, self.x, self.get_shape(self.w))
 
 
-@pytest.mark.level0
+@pytest.mark.level1
 @pytest.mark.platform_x86_cpu
 @pytest.mark.env_onecard
 def test_conv2d_backprop_filter():
     conv2d_filter = Net4()
     output = conv2d_filter()
-    print("================================")
-#   expect output:
-#   [[[[ -60, -142, -265]
-#      [-104, -211, -322]
-#      [-102, -144, -248]]]]
     expect = np.array([[[[-60, -142, -265],
                          [-104, -211, -322],
                          [-102, -144, -248]]]]).astype(np.float32)
-    print(output)
     assert (output.asnumpy() == expect).all()

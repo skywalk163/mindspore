@@ -22,13 +22,13 @@
 #include <string>
 #include <vector>
 
-#include "common/utils.h"
+#include "utils/ms_utils.h"
 #include "gtest/gtest.h"
 #include "utils/log_adapter.h"
-#include "mindrecord/include/shard_index.h"
-#include "mindrecord/include/shard_header.h" 
-#include "mindrecord/include/shard_index_generator.h"
-#include "mindrecord/include/shard_writer.h"
+#include "minddata/mindrecord/include/shard_index.h"
+#include "minddata/mindrecord/include/shard_header.h"
+#include "minddata/mindrecord/include/shard_index_generator.h"
+#include "minddata/mindrecord/include/shard_writer.h"
 using json = nlohmann::json;
 using std::ifstream;
 using std::pair;

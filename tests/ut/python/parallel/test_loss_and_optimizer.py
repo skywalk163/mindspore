@@ -18,16 +18,20 @@ import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor, Parameter
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.nn import TrainOneStepCell
 from mindspore.nn.optim import Momentum, LARS
 from mindspore.ops import operations as P
 
 
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
 class NetWithLoss(nn.Cell):
     def __init__(self, network, strategy3):
         super(NetWithLoss, self).__init__()
-        self.loss = P.SoftmaxCrossEntropyWithLogits().set_strategy(strategy3)
+        self.loss = P.SoftmaxCrossEntropyWithLogits().shard(strategy3)
         self.network = network
 
     def construct(self, x, b):
@@ -36,8 +40,8 @@ class NetWithLoss(nn.Cell):
 
 
 def compile_net(net, x, b):
-    net.set_auto_parallel()
-    _executor.compile(net, x, b)
+    net.set_train()
+    _cell_graph_executor.compile(net, x, b)
 
 
 def test_momentum():
@@ -45,8 +49,8 @@ def test_momentum():
         def __init__(self, strategy1, strategy2, weight):
             super().__init__()
             self.weight = Parameter(weight, "w1")
-            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).set_strategy(strategy1)
-            self.relu = P.ReLU().set_strategy(strategy2)
+            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).shard(strategy1)
+            self.relu = P.ReLU().shard(strategy2)
 
         def construct(self, x):
             out = self.matmul(x, self.weight)
@@ -54,6 +58,7 @@ def test_momentum():
             return out
 
     context.set_auto_parallel_context(device_num=4, global_rank=0)
+    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
     strategy1 = ((2, 1), (2, 1))
     strategy2 = ((4, 1),)
     strategy3 = ((4, 1), (4, 1))
@@ -69,7 +74,6 @@ def test_momentum():
     net_with_loss = NetWithLoss(net, strategy3)
 
     train_net = TrainOneStepCell(net_with_loss, optimizer)
-    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
 
     compile_net(train_net, x, b)
 
@@ -79,8 +83,8 @@ def test_momentum_with_loss_scale():
         def __init__(self, strategy1, strategy2, weight):
             super().__init__()
             self.weight = Parameter(weight, "w1")
-            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).set_strategy(strategy1)
-            self.relu = P.ReLU().set_strategy(strategy2)
+            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).shard(strategy1)
+            self.relu = P.ReLU().shard(strategy2)
 
         def construct(self, x):
             out = self.matmul(x, self.weight)
@@ -88,6 +92,7 @@ def test_momentum_with_loss_scale():
             return out
 
     context.set_auto_parallel_context(device_num=4, global_rank=0)
+    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
     strategy1 = ((2, 1), (2, 1))
     strategy2 = ((4, 1),)
     strategy3 = ((4, 1), (4, 1))
@@ -103,7 +108,6 @@ def test_momentum_with_loss_scale():
     net_with_loss = NetWithLoss(net, strategy3)
 
     train_net = TrainOneStepCell(net_with_loss, optimizer)
-    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
 
     compile_net(train_net, x, b)
 
@@ -113,8 +117,8 @@ def test_momentum_with_dynamic_lr():
         def __init__(self, strategy1, strategy2, weight):
             super().__init__()
             self.weight = Parameter(weight, "w1")
-            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).set_strategy(strategy1)
-            self.relu = P.ReLU().set_strategy(strategy2)
+            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).shard(strategy1)
+            self.relu = P.ReLU().shard(strategy2)
 
         def construct(self, x):
             out = self.matmul(x, self.weight)
@@ -122,6 +126,7 @@ def test_momentum_with_dynamic_lr():
             return out
 
     context.set_auto_parallel_context(device_num=4, global_rank=0)
+    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
     strategy1 = ((2, 1), (2, 1))
     strategy2 = ((4, 1),)
     strategy3 = ((4, 1), (4, 1))
@@ -138,7 +143,6 @@ def test_momentum_with_dynamic_lr():
     net_with_loss = NetWithLoss(net, strategy3)
 
     train_net = TrainOneStepCell(net_with_loss, optimizer)
-    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
 
     compile_net(train_net, x, b)
 
@@ -148,8 +152,8 @@ def test_momentum_with_loss_scale_and_dynamic_lr():
         def __init__(self, strategy1, strategy2, weight):
             super().__init__()
             self.weight = Parameter(weight, "w1")
-            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).set_strategy(strategy1)
-            self.relu = P.ReLU().set_strategy(strategy2)
+            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).shard(strategy1)
+            self.relu = P.ReLU().shard(strategy2)
 
         def construct(self, x):
             out = self.matmul(x, self.weight)
@@ -157,6 +161,7 @@ def test_momentum_with_loss_scale_and_dynamic_lr():
             return out
 
     context.set_auto_parallel_context(device_num=4, global_rank=0)
+    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
 
     strategy1 = ((2, 1), (2, 1))
     strategy2 = ((4, 1),)
@@ -174,7 +179,6 @@ def test_momentum_with_loss_scale_and_dynamic_lr():
     net_with_loss = NetWithLoss(net, strategy3)
 
     train_net = TrainOneStepCell(net_with_loss, optimizer)
-    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
 
     compile_net(train_net, x, b)
 
@@ -184,8 +188,8 @@ def test_lars():
         def __init__(self, strategy1, strategy2, weight):
             super().__init__()
             self.weight = Parameter(weight, "w1")
-            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).set_strategy(strategy1)
-            self.relu = P.ReLU().set_strategy(strategy2)
+            self.matmul = P.MatMul(transpose_a=False, transpose_b=True).shard(strategy1)
+            self.relu = P.ReLU().shard(strategy2)
 
         def construct(self, x):
             out = self.matmul(x, self.weight)
@@ -193,6 +197,7 @@ def test_lars():
             return out
 
     context.set_auto_parallel_context(device_num=4, global_rank=0)
+    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
     strategy1 = ((2, 1), (2, 1))
     strategy2 = ((4, 1),)
     strategy3 = ((4, 1), (4, 1))
@@ -205,10 +210,9 @@ def test_lars():
 
     lr = Tensor(np.ones([6]), dtype=ms.float32)
     sgd = Momentum(net.trainable_params(), lr, 0.9)
-    optimizer = LARS(sgd, epsilon=1e-08, hyperpara=0.02, decay_filter=lambda x: 'bn' not in x.name,
+    optimizer = LARS(sgd, epsilon=1e-08, coefficient=0.02,
                      lars_filter=lambda x: 'bn' not in x.name)
     net_with_loss = NetWithLoss(net, strategy3)
     train_net = TrainOneStepCell(net_with_loss, optimizer)
-    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
 
     compile_net(train_net, x, b)

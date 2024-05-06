@@ -14,38 +14,42 @@
  * limitations under the License.
  */
 
-#ifndef MINDSPORE_CCSRC_KERNEL_OPLIB_OPLIB_H_
-#define MINDSPORE_CCSRC_KERNEL_OPLIB_OPLIB_H_
+#ifndef MINDSPORE_CCSRC_BACKEND_KERNEL_COMPILER_OPLIB_OPLIB_H_
+#define MINDSPORE_CCSRC_BACKEND_KERNEL_COMPILER_OPLIB_OPLIB_H_
 #include <vector>
 #include <string>
 #include <memory>
+#include <map>
 #include <nlohmann/json.hpp>
+#include "utils/ms_utils.h"
 #include "kernel/oplib/opinfo.h"
+#include "include/backend/visible.h"
 
 namespace mindspore {
 namespace kernel {
-class OpLib {
+class BACKEND_EXPORT OpLib {
  public:
   OpLib() = default;
   virtual ~OpLib() = default;
-  bool RegOp(const std::string &json_string, const std::string &impl_path);
-  static std::shared_ptr<OpInfo> FindOp(const std::string &op_name, OpImplyType imply_type);
-
- protected:
-  static std::vector<std::shared_ptr<OpInfo>> op_info_;
+  static bool RegOp(const std::string &json_string, const std::string &impl_path);
+  static std::shared_ptr<OpInfo> FindOp(const std::string &op_name, OpImplyType imply_type,
+                                        bool is_dynamic_shape = false);
+  static std::map<mindspore::kernel::OpImplyType, std::map<std::string, std::shared_ptr<OpInfo>>> &GetOpInfoMap();
+  static std::shared_ptr<OpInfo> DecodeOpInfo(const nlohmann::json &obj, const OpImplyType &imply_type,
+                                              const std::string &impl_path);
 
  private:
-  static bool DecodeOpInfo(const nlohmann::json &obj, const OpImplyType imply_type, const std::string &impl_path);
-  static bool DecodeAttr(const nlohmann::json &obj, const OpImplyType imply_type,
+  static bool DecodeAttr(const nlohmann::json &obj, const OpImplyType &imply_type,
                          const std::shared_ptr<OpInfo> &op_info);
   static bool DecodeDtypeFormat(const nlohmann::json &dtype_format, const std::shared_ptr<OpIOInfo> &op_io,
                                 size_t index);
   static void DecodeTBESpecificInfo(const nlohmann::json &obj, const std::shared_ptr<OpInfo> &op_info);
-  static bool DecodeInputOutput(const nlohmann::json &obj, const OpImplyType imply_type, const OpIOType io_type,
+  static bool DecodeInputOutput(const nlohmann::json &obj, OpImplyType imply_type, bool is_input,
                                 const std::shared_ptr<OpInfo> &op_info, const nlohmann::json &dtype_format);
   static bool GetRefInfo(const std::shared_ptr<OpInfo> &op_info);
-  static bool CheckRepetition(const std::shared_ptr<OpInfo> &op_info);
+
+  friend class OpInfoUtils;
 };
 }  // namespace kernel
 }  // namespace mindspore
-#endif  // MINDSPORE_CCSRC_KERNEL_OPLIB_OPLIB_H_
+#endif  // MINDSPORE_CCSRC_BACKEND_KERNEL_COMPILER_OPLIB_OPLIB_H_

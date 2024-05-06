@@ -19,33 +19,20 @@ import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
 from mindspore import dtype as mstype
-from mindspore.common.api import _executor
 
 context.set_context(device_target="Ascend")
 
 
-def test_check_dropout_1():
+def test_check_dropout():
     x = Tensor(np.ones([20, 16, 50]), mstype.float32)
-    m = nn.Dropout(0.8)
-    m(x)
-
-
-def test_check_dropout_2():
-    x = Tensor(np.ones([20, 16, 50]), mstype.float32)
-    m = nn.Dropout(0.3, seed0=1)
-    m(x)
-
-
-def test_check_dropout_3():
-    x = Tensor(np.ones([20, 16, 50]), mstype.float32)
-    m = nn.Dropout(0.3, seed0=1, seed1=1)
+    m = nn.Dropout(p=0.2)
     m(x)
 
 
 class Net_Dropout(nn.Cell):
     def __init__(self):
         super(Net_Dropout, self).__init__()
-        self.dropout = nn.Dropout(0.5)
+        self.dropout = nn.Dropout(p=0.5)
 
     def construct(self, x):
         return self.dropout(x)
@@ -54,4 +41,4 @@ class Net_Dropout(nn.Cell):
 def test_compile_dropout():
     net = Net_Dropout()
     input_data = Tensor(np.ones([20, 16, 50], dtype=np.float32))
-    _executor.compile(net, input_data)
+    net(input_data)

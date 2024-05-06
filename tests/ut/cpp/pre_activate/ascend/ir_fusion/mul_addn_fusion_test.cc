@@ -15,8 +15,9 @@
  */
 #include "common/backend_common_test.h"
 #include "common/py_func_graph_fetcher.h"
-#include "mindspore/ccsrc/pre_activate/ascend/ir_fusion/mul_addn_fusion.h"
-#include "debug/anf_ir_dump.h"
+#include "plugin/device/ascend/optimizer/ir_fusion/mul_addn_fusion.h"
+#include "plugin/device/ascend/optimizer/ir_fission/ascend_convert_tuple_input_to_dynamic_input.h"
+#include "include/common/debug/anf_ir_dump.h"
 
 namespace mindspore {
 namespace opt {
@@ -30,13 +31,14 @@ class TestHWMulAddNFusion : public BackendCommon {
 
 TEST_F(TestHWMulAddNFusion, test_mul_addn_fusion) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_mul_addn_fusion", "before");
-  std::vector<int> shp{2, 2, 2, 2};
+  std::vector<int64_t> shp{2, 2, 2, 2};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list({x_abstract, x_abstract});
   auto fg = GetKernelGraph(g, args_spec_list);
 
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
   auto pm = std::make_shared<opt::PassManager>();
+  pm->AddPass(std::make_shared<opt::AscendConvertTupleInputToDynamicInput>());
   pm->AddPass(std::make_shared<opt::MulAddNFusion>());
   optimizer->AddPassManager(pm);
   FuncGraphPtr new_graph = optimizer->Optimize(fg);
@@ -47,7 +49,7 @@ TEST_F(TestHWMulAddNFusion, test_mul_addn_fusion) {
 
 TEST_F(TestHWMulAddNFusion, test_unmatch) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_mul_addn_fusion", "unmatch");
-  std::vector<int> shp{2, 2, 2, 2};
+  std::vector<int64_t> shp{2, 2, 2, 2};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list({x_abstract, x_abstract, x_abstract});
   auto fg = GetKernelGraph(g, args_spec_list);
@@ -55,6 +57,7 @@ TEST_F(TestHWMulAddNFusion, test_unmatch) {
 
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
   auto pm = std::make_shared<opt::PassManager>();
+  pm->AddPass(std::make_shared<opt::AscendConvertTupleInputToDynamicInput>());
   pm->AddPass(std::make_shared<opt::MulAddNFusion>());
   optimizer->AddPassManager(pm);
   FuncGraphPtr new_graph = optimizer->Optimize(fg);

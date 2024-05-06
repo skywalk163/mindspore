@@ -1,4 +1,4 @@
-# Copyright 2020 Huawei Technologies Co., Ltd
+# Copyright 2020-2022 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,9 +17,10 @@ Testing LinearTransformation op in DE
 """
 import numpy as np
 import mindspore.dataset as ds
-import mindspore.dataset.transforms.vision.py_transforms as py_vision
+import mindspore.dataset.transforms
+import mindspore.dataset.vision as vision
 from mindspore import log as logger
-from util import diff_mse, visualize, save_and_check_md5
+from util import diff_mse, visualize_list, save_and_check_md5_pil
 
 GENERATE_GOLDEN = False
 
@@ -29,7 +30,9 @@ SCHEMA_DIR = "../data/dataset/test_tf_file_3_images/datasetSchema.json"
 
 def test_linear_transformation_op(plot=False):
     """
-    Test LinearTransformation op: verify if images transform correctly
+    Feature: LinearTransformation op
+    Description: Test LinearTransformation op by verifying if images transform correctly
+    Expectation: Output is equal to the expected output
     """
     logger.info("test_linear_transformation_01")
 
@@ -42,27 +45,28 @@ def test_linear_transformation_op(plot=False):
 
     # Define operations
     transforms = [
-        py_vision.Decode(),
-        py_vision.CenterCrop([height, weight]),
-        py_vision.ToTensor()
+        vision.Decode(True),
+        vision.CenterCrop([height, weight]),
+        vision.ToTensor()
     ]
-    transform = py_vision.ComposeOp(transforms)
+    transform = mindspore.dataset.transforms.Compose(transforms)
 
     # First dataset
     data1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
-    data1 = data1.map(input_columns=["image"], operations=transform())
+    data1 = data1.map(operations=transform, input_columns=["image"])
     # Note: if transformation matrix is diagonal matrix with all 1 in diagonal,
     #       the output matrix in expected to be the same as the input matrix.
-    data1 = data1.map(input_columns=["image"],
-                      operations=py_vision.LinearTransformation(transformation_matrix, mean_vector))
+    data1 = data1.map(operations=vision.LinearTransformation(transformation_matrix, mean_vector),
+                      input_columns=["image"])
 
     # Second dataset
     data2 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
-    data2 = data2.map(input_columns=["image"], operations=transform())
+    data2 = data2.map(operations=transform, input_columns=["image"])
 
     image_transformed = []
     image = []
-    for item1, item2 in zip(data1.create_dict_iterator(), data2.create_dict_iterator()):
+    for item1, item2 in zip(data1.create_dict_iterator(num_epochs=1, output_numpy=True),
+                            data2.create_dict_iterator(num_epochs=1, output_numpy=True)):
         image1 = (item1["image"].transpose(1, 2, 0) * 255).astype(np.uint8)
         image2 = (item2["image"].transpose(1, 2, 0) * 255).astype(np.uint8)
         image_transformed.append(image1)
@@ -71,14 +75,16 @@ def test_linear_transformation_op(plot=False):
         mse = diff_mse(image1, image2)
         assert mse == 0
     if plot:
-        visualize(image, image_transformed)
+        visualize_list(image, image_transformed)
 
-def test_linear_transformation_md5_01():
+
+def test_linear_transformation_md5():
     """
-    Test LinearTransformation op: valid params (transformation_matrix, mean_vector)
-    Expected to pass
+    Feature: LinearTransformation op
+    Description: Test LinearTransformation op with valid params (transformation_matrix, mean_vector) with md5 check
+    Expectation: Pass the md5 check test
     """
-    logger.info("test_linear_transformation_md5_01")
+    logger.info("test_linear_transformation_md5")
 
     # Initialize parameters
     height = 50
@@ -90,24 +96,26 @@ def test_linear_transformation_md5_01():
     # Generate dataset
     data1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
     transforms = [
-        py_vision.Decode(),
-        py_vision.CenterCrop([height, weight]),
-        py_vision.ToTensor(),
-        py_vision.LinearTransformation(transformation_matrix, mean_vector)
+        vision.Decode(True),
+        vision.CenterCrop([height, weight]),
+        vision.ToTensor(),
+        vision.LinearTransformation(transformation_matrix, mean_vector)
     ]
-    transform = py_vision.ComposeOp(transforms)
-    data1 = data1.map(input_columns=["image"], operations=transform())
+    transform = mindspore.dataset.transforms.Compose(transforms)
+    data1 = data1.map(operations=transform, input_columns=["image"])
 
     # Compare with expected md5 from images
     filename = "linear_transformation_01_result.npz"
-    save_and_check_md5(data1, filename, generate_golden=GENERATE_GOLDEN)
+    save_and_check_md5_pil(data1, filename, generate_golden=GENERATE_GOLDEN)
 
-def test_linear_transformation_md5_02():
+
+def test_linear_transformation_exception_01():
     """
-    Test LinearTransformation op: transformation_matrix is not provided
-    Expected to raise ValueError
+    Feature: LinearTransformation op
+    Description: Test LinearTransformation op when transformation_matrix is not provided
+    Expectation: Error is raised as expected
     """
-    logger.info("test_linear_transformation_md5_02")
+    logger.info("test_linear_transformation_exception_01")
 
     # Initialize parameters
     height = 50
@@ -119,23 +127,25 @@ def test_linear_transformation_md5_02():
     data1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
     try:
         transforms = [
-            py_vision.Decode(),
-            py_vision.CenterCrop([height, weight]),
-            py_vision.ToTensor(),
-            py_vision.LinearTransformation(None, mean_vector)
+            vision.Decode(True),
+            vision.CenterCrop([height, weight]),
+            vision.ToTensor(),
+            vision.LinearTransformation(None, mean_vector)
         ]
-        transform = py_vision.ComposeOp(transforms)
-        data1 = data1.map(input_columns=["image"], operations=transform())
-    except ValueError as e:
+        transform = mindspore.dataset.transforms.Compose(transforms)
+        data1 = data1.map(operations=transform, input_columns=["image"])
+    except TypeError as e:
         logger.info("Got an exception in DE: {}".format(str(e)))
-        assert "not provided" in str(e)
+        assert "Argument transformation_matrix with value None is not of type [<class 'numpy.ndarray'>]" in str(e)
 
-def test_linear_transformation_md5_03():
+
+def test_linear_transformation_exception_02():
     """
-    Test LinearTransformation op: mean_vector is not provided
-    Expected to raise ValueError
+    Feature: LinearTransformation op
+    Description: Test LinearTransformation op when mean_vector is not provided
+    Expectation: Error is raised as expected
     """
-    logger.info("test_linear_transformation_md5_03")
+    logger.info("test_linear_transformation_exception_02")
 
     # Initialize parameters
     height = 50
@@ -147,23 +157,25 @@ def test_linear_transformation_md5_03():
     data1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
     try:
         transforms = [
-            py_vision.Decode(),
-            py_vision.CenterCrop([height, weight]),
-            py_vision.ToTensor(),
-            py_vision.LinearTransformation(transformation_matrix, None)
+            vision.Decode(True),
+            vision.CenterCrop([height, weight]),
+            vision.ToTensor(),
+            vision.LinearTransformation(transformation_matrix, None)
         ]
-        transform = py_vision.ComposeOp(transforms)
-        data1 = data1.map(input_columns=["image"], operations=transform())
-    except ValueError as e:
+        transform = mindspore.dataset.transforms.Compose(transforms)
+        data1 = data1.map(operations=transform, input_columns=["image"])
+    except TypeError as e:
         logger.info("Got an exception in DE: {}".format(str(e)))
-        assert "not provided" in str(e)
+        assert "Argument mean_vector with value None is not of type [<class 'numpy.ndarray'>]" in str(e)
 
-def test_linear_transformation_md5_04():
+
+def test_linear_transformation_exception_03():
     """
-    Test LinearTransformation op: transformation_matrix is not a square matrix
-    Expected to raise ValueError
+    Feature: LinearTransformation op
+    Description: Test LinearTransformation op when transformation_matrix is not a square matrix
+    Expectation: Error is raised as expected
     """
-    logger.info("test_linear_transformation_md5_04")
+    logger.info("test_linear_transformation_exception_03")
 
     # Initialize parameters
     height = 50
@@ -176,50 +188,53 @@ def test_linear_transformation_md5_04():
     data1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
     try:
         transforms = [
-            py_vision.Decode(),
-            py_vision.CenterCrop([height, weight]),
-            py_vision.ToTensor(),
-            py_vision.LinearTransformation(transformation_matrix, mean_vector)
+            vision.Decode(True),
+            vision.CenterCrop([height, weight]),
+            vision.ToTensor(),
+            vision.LinearTransformation(transformation_matrix, mean_vector)
         ]
-        transform = py_vision.ComposeOp(transforms)
-        data1 = data1.map(input_columns=["image"], operations=transform())
+        transform = mindspore.dataset.transforms.Compose(transforms)
+        data1 = data1.map(operations=transform, input_columns=["image"])
     except ValueError as e:
         logger.info("Got an exception in DE: {}".format(str(e)))
         assert "square matrix" in str(e)
 
-def test_linear_transformation_md5_05():
+
+def test_linear_transformation_exception_04():
     """
-    Test LinearTransformation op: mean_vector does not match dimension of transformation_matrix
-    Expected to raise ValueError
+    Feature: LinearTransformation op
+    Description: Test LinearTransformation op when mean_vector does not match dimension of transformation_matrix
+    Expectation: Error is raised as expected
     """
-    logger.info("test_linear_transformation_md5_05")
+    logger.info("test_linear_transformation_exception_04")
 
     # Initialize parameters
     height = 50
     weight = 50
     dim = 3 * height * weight
     transformation_matrix = np.ones([dim, dim])
-    mean_vector = np.zeros(dim-1)
+    mean_vector = np.zeros(dim - 1)
 
     # Generate dataset
     data1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
     try:
         transforms = [
-            py_vision.Decode(),
-            py_vision.CenterCrop([height, weight]),
-            py_vision.ToTensor(),
-            py_vision.LinearTransformation(transformation_matrix, mean_vector)
+            vision.Decode(True),
+            vision.CenterCrop([height, weight]),
+            vision.ToTensor(),
+            vision.LinearTransformation(transformation_matrix, mean_vector)
         ]
-        transform = py_vision.ComposeOp(transforms)
-        data1 = data1.map(input_columns=["image"], operations=transform())
+        transform = mindspore.dataset.transforms.Compose(transforms)
+        data1 = data1.map(operations=transform, input_columns=["image"])
     except ValueError as e:
         logger.info("Got an exception in DE: {}".format(str(e)))
         assert "should match" in str(e)
 
+
 if __name__ == '__main__':
-    test_linear_transformation_op(True)
-    test_linear_transformation_md5_01()
-    test_linear_transformation_md5_02()
-    test_linear_transformation_md5_03()
-    test_linear_transformation_md5_04()
-    test_linear_transformation_md5_05()
+    test_linear_transformation_op(plot=True)
+    test_linear_transformation_md5()
+    test_linear_transformation_exception_01()
+    test_linear_transformation_exception_02()
+    test_linear_transformation_exception_03()
+    test_linear_transformation_exception_04()

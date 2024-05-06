@@ -20,6 +20,7 @@
 #include "ir/dtype/number.h"
 #include "ir/dtype/container.h"
 #include "ir/dtype/empty.h"
+#include "ir/scalar.h"
 
 namespace mindspore {
 class TestDType : public UT::Common {
@@ -55,7 +56,7 @@ void TestDType::TearDown() {
 TEST_F(TestDType, TestNumber) {
   try {
     Float f = Float(32);
-  } catch (std::range_error& e) {
+  } catch (std::range_error &e) {
     MS_LOG(ERROR) << "build float 32 failed!!! error:" << e.what();
     ASSERT_TRUE(0);
     return;
@@ -84,8 +85,9 @@ TEST_F(TestDType, TestTuple) {
 }
 
 TEST_F(TestDType, TestDictionary) {
-  std::vector<std::pair<std::string, TypePtr>> kv = {std::make_pair("key1", std::make_shared<Int>(8)),
-                                                     std::make_pair("key2", std::make_shared<Bool>())};
+  std::vector<std::pair<ValuePtr, TypePtr>> kv = {
+    std::make_pair(std::make_shared<Int64Imm>(8), std::make_shared<Int>(8)),
+    std::make_pair(std::make_shared<Int64Imm>(8), std::make_shared<Bool>())};
   Dictionary d1 = Dictionary(kv);
   Dictionary d2 = Dictionary(kv);
   ASSERT_EQ(d1, d2);
@@ -189,51 +191,18 @@ TEST_F(TestDType, TestTypeIdNormalize) {
   ASSERT_EQ(kNumberTypeFloat, NormalizeTypeId(kNumberTypeFloat32));
   ASSERT_EQ(kNumberTypeFloat, NormalizeTypeId(kNumberTypeFloat64));
 
+  ASSERT_EQ(kNumberTypeUInt, NormalizeTypeId(kNumberTypeUInt));
+  ASSERT_EQ(kNumberTypeUInt, NormalizeTypeId(kNumberTypeUInt8));
+  ASSERT_EQ(kNumberTypeUInt, NormalizeTypeId(kNumberTypeUInt16));
+  ASSERT_EQ(kNumberTypeUInt, NormalizeTypeId(kNumberTypeUInt32));
+  ASSERT_EQ(kNumberTypeUInt, NormalizeTypeId(kNumberTypeUInt64));
+
+  ASSERT_EQ(kNumberTypeComplex, NormalizeTypeId(kNumberTypeComplex));
+  ASSERT_EQ(kNumberTypeComplex, NormalizeTypeId(kNumberTypeComplex64));
+  ASSERT_EQ(kNumberTypeComplex, NormalizeTypeId(kNumberTypeComplex128));
+
   ASSERT_EQ(kNumberTypeBool, NormalizeTypeId(kNumberTypeBool));
 }
-
-TEST_F(TestDType, TestTypeIdLabel) {
-#define TEST_DTYPE_LABEL(type) ASSERT_EQ((#type), std::string(TypeIdLabel(type)))
-
-  TEST_DTYPE_LABEL(kMetaTypeType);
-  TEST_DTYPE_LABEL(kMetaTypeAnything);
-  TEST_DTYPE_LABEL(kMetaTypeObject);
-  TEST_DTYPE_LABEL(kMetaTypeTypeType);
-  TEST_DTYPE_LABEL(kMetaTypeProblem);
-  TEST_DTYPE_LABEL(kMetaTypeExternal);
-  TEST_DTYPE_LABEL(kMetaTypeNone);
-
-  // Object types
-  TEST_DTYPE_LABEL(kObjectTypeNumber);
-  TEST_DTYPE_LABEL(kObjectTypeList);
-  TEST_DTYPE_LABEL(kObjectTypeTuple);
-  TEST_DTYPE_LABEL(kObjectTypeTensorType);
-  TEST_DTYPE_LABEL(kObjectTypeClass);
-  TEST_DTYPE_LABEL(kObjectTypeFunction);
-  TEST_DTYPE_LABEL(kObjectTypeJTagged);
-  TEST_DTYPE_LABEL(kObjectTypeSymbolicKeyType);
-  TEST_DTYPE_LABEL(kObjectTypeEnvType);
-  TEST_DTYPE_LABEL(kObjectTypeRefKey);
-  TEST_DTYPE_LABEL(kObjectTypeRef);
-
-  // Number Types
-  TEST_DTYPE_LABEL(kNumberTypeBool);
-  TEST_DTYPE_LABEL(kNumberTypeInt);
-  TEST_DTYPE_LABEL(kNumberTypeInt8);
-  TEST_DTYPE_LABEL(kNumberTypeInt16);
-  TEST_DTYPE_LABEL(kNumberTypeInt32);
-  TEST_DTYPE_LABEL(kNumberTypeInt64);
-  TEST_DTYPE_LABEL(kNumberTypeUInt);
-  TEST_DTYPE_LABEL(kNumberTypeUInt8);
-  TEST_DTYPE_LABEL(kNumberTypeUInt16);
-  TEST_DTYPE_LABEL(kNumberTypeUInt32);
-  TEST_DTYPE_LABEL(kNumberTypeUInt64);
-  TEST_DTYPE_LABEL(kNumberTypeFloat);
-  TEST_DTYPE_LABEL(kNumberTypeFloat16);
-  TEST_DTYPE_LABEL(kNumberTypeFloat32);
-  TEST_DTYPE_LABEL(kNumberTypeFloat64);
-}
-
 }  // namespace mindspore
 
 // test_type_cloner()

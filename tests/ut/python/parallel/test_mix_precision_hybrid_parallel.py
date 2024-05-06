@@ -18,10 +18,17 @@ import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
 from tests.ut.python.ops.test_math_ops import VirtualLoss
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
+grad_all = C.GradOperation(get_all=True)
 
 
 class NetWithLoss(nn.Cell):
@@ -41,15 +48,15 @@ class GradWrap(nn.Cell):
         self.network = network
 
     def construct(self, x, y, b, z):
-        return C.grad_all(self.network)(x, y, b, z)
+        return grad_all(self.network)(x, y, b, z)
 
 
 class Net1(nn.Cell):
     def __init__(self, strategy1, strategy2, strategy3):
         super().__init__()
-        self.matmul1 = P.MatMul().set_strategy(strategy1)
-        self.matmul2 = P.MatMul().set_strategy(strategy2)
-        self.matmul3 = P.MatMul().set_strategy(strategy3)
+        self.matmul1 = P.MatMul().shard(strategy1)
+        self.matmul2 = P.MatMul().shard(strategy2)
+        self.matmul3 = P.MatMul().shard(strategy3)
 
     def construct(self, x, y, b):
         out1 = self.matmul1(x, b)
@@ -63,7 +70,7 @@ def test_two_matmul():
         def __init__(self, strategy1, strategy2, strategy3, strategy4):
             super().__init__()
             self.net1_out = Net1(strategy1, strategy2, strategy3)
-            self.matmul = P.MatMul().set_strategy(strategy4)
+            self.matmul = P.MatMul().shard(strategy4)
 
         def construct(self, x, y, b, z):
             out = self.net1_out(x, y, b)
@@ -71,17 +78,17 @@ def test_two_matmul():
             return out
 
     context.set_auto_parallel_context(device_num=8, global_rank=0)
-    strategy1 = ((2, 2), (2, 1))
+    strategy1 = ((1, 1), (1, 8))
     strategy2 = ((4, 2), (2, 1))
     strategy3 = ((1, 8), (8, 1))
     strategy4 = ((2, 4), (4, 1))
     net = GradWrap(NetWithLoss(Net2(strategy1, strategy2, strategy3, strategy4).add_flags_recursive(fp16=True)))
     context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
-    net.set_auto_parallel()
 
     x = Tensor(np.ones([128, 32]), dtype=ms.float32)
     y = Tensor(np.ones([64, 32]), dtype=ms.float32)
     b = Tensor(np.ones([32, 64]), dtype=ms.float32)
     z = Tensor(np.ones([64, 64]), dtype=ms.float32)
 
-    _executor.compile(net, x, y, b, z)
+    net.set_train()
+    _cell_graph_executor.compile(net, x, y, b, z)

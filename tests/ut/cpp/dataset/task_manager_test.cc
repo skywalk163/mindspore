@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 #include "common/common.h"
 #include "gtest/gtest.h"
-#include "dataset/util/task_manager.h"
+#include "minddata/dataset/util/task_manager.h"
 
 using namespace mindspore::dataset;
 
@@ -27,6 +27,10 @@ class MindDataTestTaskManager : public UT::Common {
   void SetUp() { Services::CreateInstance(); }
 };
 
+/// Feature: GetTaskErrorIfAny in TaskGroup
+/// Description: Test the error is passed back to the master thread if vg_rc is OK
+///     If vg_rc is kOutOfMemory, the group error is already passed back
+/// Expectation: No hangs or failures
 TEST_F(MindDataTestTaskManager, Test1) {
   // Clear the rc of the master thread if any
   (void)TaskManager::GetMasterThreadRc();
@@ -35,9 +39,9 @@ TEST_F(MindDataTestTaskManager, Test1) {
     TaskManager::FindMe()->Post();
     throw std::bad_alloc();
   });
-  ASSERT_TRUE(vg_rc.IsOk() || vg_rc.IsOutofMemory());
+  ASSERT_TRUE(vg_rc.IsOk() || vg_rc == StatusCode::kMDOutOfMemory);
   ASSERT_TRUE(vg.join_all().IsOk());
-  ASSERT_TRUE(vg.GetTaskErrorIfAny().IsOutofMemory());
+  ASSERT_TRUE(vg.GetTaskErrorIfAny() == StatusCode::kMDOutOfMemory);
   // Test the error is passed back to the master thread if vg_rc above is OK.
   // If vg_rc is kOutOfMemory, the group error is already passed back.
   // Some compiler may choose to run the next line in parallel with the above 3 lines
@@ -46,17 +50,18 @@ TEST_F(MindDataTestTaskManager, Test1) {
   // depends on previous lines.
   if (vg.GetTaskErrorIfAny().IsError() && vg_rc.IsOk()) {
     Status rc = TaskManager::GetMasterThreadRc();
-    ASSERT_TRUE(rc.IsOutofMemory());
+    ASSERT_TRUE(rc == StatusCode::kMDOutOfMemory);
   }
 }
 
+/// Feature: Wait in CondVar
+/// Description: This testcase will spawn about 100 threads and block on a conditional variable.
+///     The master thread will try to interrupt them almost at the same time. This can
+///     cause a racing condition that some threads may miss the interrupt and blocked.
+///     The new logic of Task::Join() will do a time-out join and wake up all those threads that miss the interrupt
+///     Clear the rc of the master thread if any
+/// Expectation: No hangs or failures
 TEST_F(MindDataTestTaskManager, Test2) {
-  // This testcase will spawn about 100 threads and block on a conditional variable.
-  // The master thread will try to interrupt them almost at the same time. This can
-  // cause a racing condition that some threads may miss the interrupt and blocked.
-  // The new logic of Task::Join() will do a time-out join and wake up all those
-  // threads that miss the interrupt.
-  // Clear the rc of the master thread if any
   (void)TaskManager::GetMasterThreadRc();
   TaskGroup vg;
   CondVar cv;
@@ -82,4 +87,34 @@ TEST_F(MindDataTestTaskManager, Test2) {
   EXPECT_TRUE(rc.IsOk());
   // Now we test the async Join
   ASSERT_TRUE(vg.join_all(Task::WaitFlag::kNonBlocking).IsOk());
+}
+
+/// Feature: WaitFor in CondVar
+/// Description: Test WaitFor function
+/// Expectation: No hangs or failures
+TEST_F(MindDataTestTaskManager, Test3) {
+  (void)TaskManager::GetMasterThreadRc();
+  TaskGroup vg;
+  CondVar cv;
+  std::mutex mux;
+  Status rc;
+  rc = cv.Register(vg.GetIntrpService());
+  EXPECT_TRUE(rc.IsOk());
+  auto block_forever = [&cv, &mux]() -> Status {
+    std::unique_lock<std::mutex> lck(mux);
+    TaskManager::FindMe()->Post();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    RETURN_IF_NOT_OK(cv.WaitFor(&lck, 1000 * 5));
+    return Status::OK();
+  };
+  auto f = [&vg, &block_forever]() -> Status {
+    RETURN_IF_NOT_OK(vg.CreateAsyncTask("Spawn block threads", block_forever));
+    return Status::OK();
+  };
+  rc = f();
+
+  vg.interrupt_all();
+  ASSERT_OK(rc);
+  // Now we test the async Join
+  ASSERT_OK(vg.join_all(Task::WaitFlag::kNonBlocking));
 }

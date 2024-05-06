@@ -1,4 +1,4 @@
-# Copyright 2020 Huawei Technologies Co., Ltd
+# Copyright 2020-2022 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,11 +16,13 @@
 import numpy as np
 import pytest
 
+import mindspore
 import mindspore.context as context
 from mindspore.common.tensor import Tensor
 from mindspore.nn import Cell
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
+from mindspore.common import dtype as mstype
 
 
 class Net(Cell):
@@ -35,7 +37,7 @@ class Net(Cell):
 class Grad(Cell):
     def __init__(self, network):
         super(Grad, self).__init__()
-        self.grad = C.GradOperation(name="get_all", get_all=True, sens_param=True)
+        self.grad = C.GradOperation(get_all=True, sens_param=True)
         self.network = network
 
     def construct(self, x1, x2, sens):
@@ -43,7 +45,7 @@ class Grad(Cell):
         return gout
 
 
-@pytest.mark.level0
+@pytest.mark.level1
 @pytest.mark.platform_x86_gpu_training
 @pytest.mark.env_onecard
 def test_maximum():
@@ -67,11 +69,34 @@ def test_maximum():
     assert np.all(-diff < error)
 
 
-@pytest.mark.level0
+@pytest.mark.level1
+@pytest.mark.platform_x86_gpu_training
+@pytest.mark.env_onecard
+def test_maximum_dynamic_shape():
+    """
+    Feature: test maximum op in cpu
+    Description: test the ops in dynamic shape
+    Expectation: success expect correct shape result.
+    """
+    x = Tensor(np.array([[1, 2, 3]]).astype(np.float32))
+    y = Tensor(np.array([[2]]).astype(np.float32))
+
+    x_dyn = Tensor(shape=[1, None], dtype=mindspore.float32)
+    y_dyn = Tensor(shape=[1, None], dtype=mindspore.float32)
+
+    context.set_context(mode=context.PYNATIVE_MODE, device_target="GPU")
+    max_op = Net()
+    max_op.set_inputs(x_dyn, y_dyn)
+    output = max_op(x, y)
+    expect_shape = (1, 3)
+    assert output.asnumpy().shape == expect_shape
+
+
+@pytest.mark.level1
 @pytest.mark.platform_x86_gpu_training
 @pytest.mark.env_onecard
 def test_broadcast():
-    context.set_context(mode=context.GRAPH_MODE, save_graphs=True, device_target='GPU')
+    context.set_context(mode=context.GRAPH_MODE, device_target='GPU')
 
     x1_np = np.array([[[[0.659578],
                         [0.49113268],
@@ -191,11 +216,11 @@ def test_broadcast():
     assert np.allclose(output_ms[1].asnumpy(), expect_dx2)
 
 
-@pytest.mark.level0
+@pytest.mark.level1
 @pytest.mark.platform_x86_gpu_training
 @pytest.mark.env_onecard
 def test_broadcast_diff_dims():
-    context.set_context(mode=context.GRAPH_MODE, save_graphs=True, device_target='GPU')
+    context.set_context(mode=context.GRAPH_MODE, device_target='GPU')
 
     x1_np = np.array([[[0.275478, 0.48933202, 0.71846116],
                        [0.9803821, 0.57205725, 0.28511533]],
@@ -222,3 +247,46 @@ def test_broadcast_diff_dims():
     output_ms = net(Tensor(x1_np), Tensor(x2_np), Tensor(dy_np))
     assert np.allclose(output_ms[0].asnumpy(), expect_dx1)
     assert np.allclose(output_ms[1].asnumpy(), expect_dx2)
+
+
+@pytest.mark.level1
+@pytest.mark.platform_x86_gpu_training
+@pytest.mark.env_onecard
+def test_maximum_int():
+    x = Tensor(np.array([[1, 2, 3]]).astype(np.int32))
+    y = Tensor(np.array([[2]]).astype(np.int32))
+    expect = [[2, 2, 3]]
+    error = np.ones(shape=[1, 3]) * 1.0e-5
+
+    context.set_context(mode=context.PYNATIVE_MODE, device_target="GPU")
+    max_op = Net()
+    output = max_op(x, y)
+    diff = output.asnumpy() - expect
+    assert np.all(diff < error)
+    assert np.all(-diff < error)
+
+    context.set_context(mode=context.GRAPH_MODE, device_target="GPU")
+    max_op_2 = Net()
+    output = max_op_2(x, y)
+    diff = output.asnumpy() - expect
+    assert np.all(diff < error)
+    assert np.all(-diff < error)
+
+
+@pytest.mark.level1
+@pytest.mark.platform_x86_gpu_training
+@pytest.mark.env_onecard
+@pytest.mark.parametrize('mode', [context.GRAPH_MODE, context.PYNATIVE_MODE])
+def test_maximum_tensor_api_modes(mode):
+    """
+    Feature: Test maximum tensor api.
+    Description: Test maximum tensor api for Graph and PyNative modes.
+    Expectation: The result match to the expect value.
+    """
+    context.set_context(mode=mode, device_target="GPU")
+    x = Tensor([1.0, 5.0, 3.0], mstype.float32)
+    y = Tensor([4.0, 2.0, 6.0], mstype.float32)
+    output = x.maximum(y)
+    expected = np.array([4., 5., 6.], np.float32)
+    np.testing.assert_array_equal(output.asnumpy(), expected)
+  

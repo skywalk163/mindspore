@@ -17,7 +17,7 @@ import numpy as np
 import mindspore.context as context
 import mindspore.nn as nn
 from mindspore import Tensor
-from mindspore.common.api import ms_function
+from mindspore.common.api import jit
 from mindspore.ops.composite import GradOperation
 
 context.set_context(device_target="Ascend")
@@ -26,10 +26,10 @@ context.set_context(device_target="Ascend")
 class Grad(nn.Cell):
     def __init__(self, network):
         super(Grad, self).__init__()
-        self.grad = GradOperation(name="get_all", get_all=True, sens_param=True)
+        self.grad = GradOperation(get_all=True, sens_param=True)
         self.network = network
 
-    @ms_function
+    @jit
     def construct(self, input_, output_grad):
         return self.grad(self.network)(input_, output_grad)
 
@@ -46,6 +46,13 @@ class Net(nn.Cell):
 def test_net():
     x = np.random.randn(32, 2048).astype(np.float32)
     sens = np.random.randn(32, 1001).astype(np.float32)
+    net = Grad(Net())
+    output = net(Tensor(x), Tensor(sens))
+    print(output.asnumpy())
+
+def test_net_ND():
+    x = np.random.randn(2, 32, 2048).astype(np.float32)
+    sens = np.random.randn(2, 32, 1001).astype(np.float32)
     net = Grad(Net())
     output = net(Tensor(x), Tensor(sens))
     print(output.asnumpy())

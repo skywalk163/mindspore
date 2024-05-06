@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
 import numpy as np
 
 import mindspore as ms
@@ -19,11 +20,15 @@ import mindspore.nn as nn
 from mindspore import Tensor, Parameter
 from mindspore import context
 from mindspore.common import dtype as mstype
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.ops import operations as P
 from mindspore.parallel import set_algo_parameters
 from mindspore.parallel._utils import _reset_op_id as reset_op_id
 from tests.ut.python.ops.test_math_ops import VirtualLoss
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
 
 
 class NetWithLoss(nn.Cell):
@@ -38,6 +43,12 @@ class NetWithLoss(nn.Cell):
 
 
 def test_common_parameter():
+    """
+    Features: test auto parallel
+    Description: search strategies for cast parameter
+    Expectation: Generated strategies matching expectations
+    """
+
     class Net(nn.Cell):
         def __init__(self):
             super().__init__()
@@ -63,15 +74,16 @@ def test_common_parameter():
     y = Tensor(np.ones([64, 64]), dtype=ms.float32)
 
     net = NetWithLoss(Net())
-    context.set_auto_parallel_context(parallel_mode="auto_parallel")
-    net.set_auto_parallel()
+    context.set_auto_parallel_context(parallel_mode="auto_parallel", search_mode="dynamic_programming")
     reset_op_id()
 
-    _executor.compile(net, x, y, phase='train')
-    strategies = _executor._get_strategy(net)
-    expected_strategies = {'Default/network-Net/MatMul-op1': [[8, 1], [1, 1]],
-                           'Default/network-Net/MatMul-op3': [[8, 1], [1, 1]],
-                           'Default/network-Net/Cast-op2': [[1, 1]],
-                           'Default/network-Net/MatMul-op0': [[8, 1], [1, 1]],
-                           'Default/network-Net/Cast-op4': [[1, 1]]}
-    assert strategies == expected_strategies
+    net.set_train()
+    _cell_graph_executor.compile(net, x, y, phase='train')
+    strategies = _cell_graph_executor._get_shard_strategy(net)
+    for (k, v) in strategies.items():
+        if re.search('MatMul-op0', k) is not None:
+            assert v == [[8, 1], [1, 1]]
+        elif re.search('MatMul-op4', k) is not None:
+            assert v == [[1, 1], [1, 8]]
+        elif re.search('Cast-op', k) is not None:
+            assert v == [[1, 1]]

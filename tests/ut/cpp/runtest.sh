@@ -15,30 +15,49 @@
 # ============================================================================
 
 set -e
-BASEPATH=$(cd $(dirname $0); pwd)
+BASEPATH=$(
+  cd "$(dirname "$0")"
+  pwd
+)
 PROJECT_PATH=${BASEPATH}/../../..
-if [ $BUILD_PATH ];then
-	echo "BUILD_PATH = $BUILD_PATH"
+if [ $BUILD_PATH ]; then
+  echo "BUILD_PATH = $BUILD_PATH"
 else
   BUILD_PATH=${PROJECT_PATH}/build
-	echo "BUILD_PATH = $BUILD_PATH"
+  echo "BUILD_PATH = $BUILD_PATH"
 fi
 cd ${BUILD_PATH}/mindspore/tests/ut/cpp
 
-
-export LD_LIBRARY_PATH=${BUILD_PATH}/mindspore/googletest/googlemock/gtest:${PROJECT_PATH}/mindspore:${PROJECT_PATH}/mindspore/lib:$LD_LIBRARY_PATH
-export PYTHONPATH=${PROJECT_PATH}/tests/ut/cpp/python_input:$PYTHONPATH:${PROJECT_PATH}
+export LD_LIBRARY_PATH=${BUILD_PATH}/mindspore/googletest/googlemock/gtest:${PROJECT_PATH}/mindspore/python/mindspore:${PROJECT_PATH}/mindspore/python/mindspore/lib:${LD_LIBRARY_PATH}
+export PYTHONPATH=${PROJECT_PATH}/tests/ut/cpp/python_input:$PYTHONPATH:${PROJECT_PATH}/mindspore/python:${PROJECT_PATH}/tests/ut/python:${PROJECT_PATH}
 export GLOG_v=2
+export GC_COLLECT_IN_CELL=1
 
 ## prepare data for dataset & mindrecord
 cp -fr $PROJECT_PATH/tests/ut/data ${PROJECT_PATH}/build/mindspore/tests/ut/cpp/
+## prepare album dataset, uses absolute path so has to be generated
+python ${PROJECT_PATH}/build/mindspore/tests/ut/cpp/data/dataset/testAlbum/gen_json.py
 
-if [ $# -gt 0 ]; then 
-  ./ut_tests --gtest_filter=$1
-else
-  ./ut_tests
+RET=0
+if [ $# -gt 0 ]; then
+  ./ut_CORE_tests --gtest_filter=$1
+  exit 0
 fi
-RET=$?
-cd -
 
-exit ${RET}
+pids=()
+tasks=(./ut_CORE_tests)
+set +e
+for task in "${tasks[@]}"; do
+  $task &
+  pids+=($!)
+done
+cd -
+for pid in "${pids[@]}"; do
+  wait $pid
+  status=$?
+  if [ $status != 0 ]; then
+    RET=$status
+  fi
+done
+
+exit $RET

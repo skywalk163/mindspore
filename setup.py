@@ -23,23 +23,22 @@ from setuptools import setup, find_packages
 from setuptools.command.egg_info import egg_info
 from setuptools.command.build_py import build_py
 
-version = '0.3.0'
-
 backend_policy = os.getenv('BACKEND_POLICY')
 commit_id = os.getenv('COMMIT_ID').replace("\n", "")
 package_name = os.getenv('MS_PACKAGE_NAME').replace("\n", "")
+build_path = os.getenv('BUILD_PATH')
 
 pwd = os.path.dirname(os.path.realpath(__file__))
-pkg_dir = os.path.join(pwd, 'build/package')
+pkg_dir = os.path.join(build_path, 'package')
 
 
 def _read_file(filename):
-    with open(os.path.join(pwd, filename)) as f:
+    with open(os.path.join(pwd, filename), encoding='UTF-8') as f:
         return f.read()
 
 
+version = _read_file('version.txt').replace("\n", "")
 readme = _read_file('README.md')
-release = _read_file('RELEASE.md')
 
 
 def _write_version(file):
@@ -54,13 +53,17 @@ def _write_commit_file(file):
     file.write("__commit_id__ = '{}'\n".format(commit_id))
 
 
+def _write_package_name(file):
+    file.write("__package_name__ = '{}'\n".format(package_name))
+
+
 def build_dependencies():
     """generate python file"""
     version_file = os.path.join(pkg_dir, 'mindspore', 'version.py')
     with open(version_file, 'w') as f:
         _write_version(f)
 
-    version_file = os.path.join(pwd, 'mindspore', 'version.py')
+    version_file = os.path.join(pwd, 'mindspore/python/mindspore', 'version.py')
     with open(version_file, 'w') as f:
         _write_version(f)
 
@@ -68,15 +71,23 @@ def build_dependencies():
     with open(config_file, 'w') as f:
         _write_config(f)
 
-    config_file = os.path.join(pwd, 'mindspore', 'default_config.py')
+    config_file = os.path.join(pwd, 'mindspore/python/mindspore', 'default_config.py')
     with open(config_file, 'w') as f:
         _write_config(f)
+
+    package_info = os.path.join(pkg_dir, 'mindspore', 'default_config.py')
+    with open(package_info, 'a') as f:
+        _write_package_name(f)
+
+    package_info = os.path.join(pwd, 'mindspore/python/mindspore', 'default_config.py')
+    with open(package_info, 'a') as f:
+        _write_package_name(f)
 
     commit_file = os.path.join(pkg_dir, 'mindspore', '.commit_id')
     with open(commit_file, 'w') as f:
         _write_commit_file(f)
 
-    commit_file = os.path.join(pwd, 'mindspore', '.commit_id')
+    commit_file = os.path.join(pwd, 'mindspore/python/mindspore', '.commit_id')
     with open(commit_file, 'w') as f:
         _write_commit_file(f)
 
@@ -85,14 +96,13 @@ build_dependencies()
 
 required_package = [
     'numpy >= 1.17.0',
-    'protobuf >= 3.8.0',
-    'asttokens >= 1.1.13',
+    'protobuf >= 3.13.0',
+    'asttokens >= 2.0.4',
     'pillow >= 6.2.0',
-    'scipy == 1.3.3',
-    'easydict >= 1.9',
-    'sympy >= 1.4',
-    'cffi >= 1.13.2',
-    'decorator >= 4.4.0'
+    'scipy >= 1.5.4',
+    'packaging >= 20.0',
+    'psutil >= 5.6.1',
+    'astunparse >= 1.6.3'
 ]
 
 package_data = {
@@ -100,9 +110,28 @@ package_data = {
         '*.so*',
         '*.pyd',
         '*.dll',
+        '*.pdb',
+        'bin/*',
+        'lib/plugin/*',
+        'lib/plugin/*/*',
+        'lib/plugin/*/*/*',
+        'lib/plugin/*/*/*/*',
+        'lib/plugin/*/*/*/*/*',
+        'lib/plugin/*/*/*/*/*/*',
+        'lib/plugin/*/*/*/*/*/*/*',
+        'lib/plugin/*/*/*/*/*/*/*/*',
+        'lib/plugin/*/*/*/*/*/*/*/*/*',
+        'lib/plugin/*/*/*/*/*/*/*/*/*/*',
         'lib/*.so*',
         'lib/*.a',
+        'lib/*.dylib*',
         '.commit_id',
+        'config/*',
+        'include/*',
+        'include/*/*',
+        'include/*/*/*',
+        'include/*/*/*/*',
+        'Third_Party_Open_Source_Software_Notice'
     ]
 }
 
@@ -143,7 +172,7 @@ class BuildPy(build_py):
         super().run()
         mindspore_dir = os.path.join(pkg_dir, 'build', 'lib', 'mindspore')
         update_permissions(mindspore_dir)
-        mindspore_dir = os.path.join(pkg_dir, 'build', 'lib', '_akg')
+        mindspore_dir = os.path.join(pkg_dir, 'build', 'lib', 'mindspore', '_akg')
         update_permissions(mindspore_dir)
 
 
@@ -153,20 +182,27 @@ setup(
     author='The MindSpore Authors',
     author_email='contact@mindspore.cn',
     url='https://www.mindspore.cn',
-    download_url='https://gitee.com/mindspore/mindspore/tags',
+    download_url='https://github.com/mindspore-ai/mindspore/tags',
     project_urls={
-        'Sources': 'https://gitee.com/mindspore/mindspore',
-        'Issue Tracker': 'https://gitee.com/mindspore/mindspore/issues',
+        'Sources': 'https://github.com/mindspore-ai/mindspore',
+        'Issue Tracker': 'https://github.com/mindspore-ai/mindspore/issues',
     },
     description='MindSpore is a new open source deep learning training/inference '
     'framework that could be used for mobile, edge and cloud scenarios.',
-    long_description="\n\n".join([readme, release]),
+    long_description=readme,
+    long_description_content_type="text/markdown",
     packages=find_packages(),
     package_data=package_data,
     include_package_data=True,
     cmdclass={
         'egg_info': EggInfo,
         'build_py': BuildPy,
+    },
+    entry_points={
+        'console_scripts': [
+            'cache_admin=mindspore.dataset.engine.cache_admin:main',
+            'msrun=mindspore.parallel.cluster.run:main'
+        ],
     },
     python_requires='>=3.7',
     install_requires=required_package,

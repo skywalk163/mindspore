@@ -1,4 +1,4 @@
-# Copyright 2019 Huawei Technologies Co., Ltd
+# Copyright 2019-2022 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+import time
+
 import mindspore.dataset as ds
-import mindspore.dataset.transforms.vision.c_transforms as vision
+import mindspore.dataset.vision as vision
 from mindspore import log as logger
 
 DATA_DIR = ["../data/dataset/test_tf_file_3_images/train-0000-of-0001.data"]
@@ -24,7 +26,9 @@ TF_SCHEMA_FILE = "../data/dataset/testTFTestAllTypes/datasetSchema.json"
 
 def test_case_0():
     """
-    Test Repeat
+    Feature: Device_que op
+    Description: Test device_que op after a repeat op
+    Expectation: Runs successfully
     """
     # apply dataset operations
     data = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, shuffle=False)
@@ -35,11 +39,15 @@ def test_case_0():
 
     data = data.device_que()
     data.send()
+    time.sleep(0.1)
+    data.stop_send()
 
 
 def test_case_1():
     """
-    Test Batch
+    Feature: Device_que op
+    Description: Test device_que op after a batch op
+    Expectation: Runs successfully
     """
     data = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, shuffle=False)
     # define data augmentation parameters
@@ -50,19 +58,23 @@ def test_case_1():
     resize_op = vision.Resize((resize_height, resize_width))
 
     # apply map operations on images
-    data = data.map(input_columns=["image"], operations=decode_op)
-    data = data.map(input_columns=["image"], operations=resize_op)
+    data = data.map(operations=decode_op, input_columns=["image"])
+    data = data.map(operations=resize_op, input_columns=["image"])
 
     batch_size = 3
     data = data.batch(batch_size, drop_remainder=True)
 
     data = data.device_que()
     data.send()
+    time.sleep(0.1)
+    data.stop_send()
 
 
 def test_case_2():
     """
-    Test Batch & Repeat
+    Feature: Device_que op
+    Description: Test device_que op after a batch op then a repeat op
+    Expectation: Runs successfully
     """
     data = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, shuffle=False)
     # define data augmentation parameters
@@ -73,8 +85,8 @@ def test_case_2():
     resize_op = vision.Resize((resize_height, resize_width))
 
     # apply map operations on images
-    data = data.map(input_columns=["image"], operations=decode_op)
-    data = data.map(input_columns=["image"], operations=resize_op)
+    data = data.map(operations=decode_op, input_columns=["image"])
+    data = data.map(operations=resize_op, input_columns=["image"])
 
     batch_size = 2
     data = data.batch(batch_size, drop_remainder=True)
@@ -84,11 +96,15 @@ def test_case_2():
     data = data.device_que()
     assert data.get_repeat_count() == 2
     data.send()
+    time.sleep(0.1)
+    data.stop_send()
 
 
 def test_case_3():
     """
-    Test Repeat & Batch
+    Feature: Device_que op
+    Description: Test device_que op after a repeat op then a batch op
+    Expectation: Runs successfully
     """
     data = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, shuffle=False)
     # define data augmentation parameters
@@ -99,8 +115,8 @@ def test_case_3():
     resize_op = vision.Resize((resize_height, resize_width))
 
     # apply map operations on images
-    data = data.map(input_columns=["image"], operations=decode_op)
-    data = data.map(input_columns=["image"], operations=resize_op)
+    data = data.map(operations=decode_op, input_columns=["image"])
+    data = data.map(operations=resize_op, input_columns=["image"])
 
     data = data.repeat(2)
 
@@ -109,13 +125,22 @@ def test_case_3():
 
     data = data.device_que()
     data.send()
+    time.sleep(0.1)
+    data.stop_send()
 
 
 def test_case_tf_file():
+    """
+    Feature: Device_que op
+    Description: Test device_que op using TFRecordDataset
+    Expectation: Runs successfully
+    """
     data = ds.TFRecordDataset(TF_FILES, TF_SCHEMA_FILE, shuffle=ds.Shuffle.FILES)
 
-    data = data.to_device(num_batch=10)
+    data = data.device_que()
     data.send()
+    time.sleep(0.1)
+    data.stop_send()
 
 
 if __name__ == '__main__':

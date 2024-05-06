@@ -15,7 +15,7 @@
 """Aggregator."""
 import mindspore.nn as nn
 from mindspore import Tensor, Parameter
-from mindspore._checkparam import check_int_positive, check_bool
+from mindspore import _checkparam as Validator
 from mindspore._extends import cell_attr_register
 from mindspore.common.initializer import initializer
 from mindspore.nn.layer.activation import get_activation
@@ -58,7 +58,7 @@ class GNNFeatureTransform(nn.Cell):
         Tensor, the shape of the output tensor is :math:`(*B, N, M)`.
 
     Examples:
-        >>> net = nn.Dense(3, 4)
+        >>> net = nn.GNNFeatureTransform(3, 4)
         >>> input = Tensor(np.random.randint(0, 255, [2, 3]), mindspore.float32)
         >>> net(input)
         [[ 2.5246444   2.2738023   0.5711005  -3.9399147 ]
@@ -73,20 +73,20 @@ class GNNFeatureTransform(nn.Cell):
                  bias_init='zeros',
                  has_bias=True):
         super(GNNFeatureTransform, self).__init__()
-        self.in_channels = check_int_positive(in_channels)
-        self.out_channels = check_int_positive(out_channels)
-        self.has_bias = check_bool(has_bias)
+        self.in_channels = Validator.check_positive_int(in_channels)
+        self.out_channels = Validator.check_positive_int(out_channels)
+        self.has_bias = Validator.check_bool(has_bias)
 
         if isinstance(weight_init, Tensor):
-            if weight_init.dim() != 2 or weight_init.shape()[0] != out_channels or \
-                    weight_init.shape()[1] != in_channels:
+            if weight_init.ndim != 2 or weight_init.shape[0] != out_channels or \
+                    weight_init.shape[1] != in_channels:
                 raise ValueError("weight_init shape error")
 
         self.weight = Parameter(initializer(weight_init, [out_channels, in_channels]), name="weight")
 
         if self.has_bias:
             if isinstance(bias_init, Tensor):
-                if bias_init.dim() != 1 or bias_init.shape()[0] != out_channels:
+                if bias_init.ndim != 1 or bias_init.shape[0] != out_channels:
                     raise ValueError("bias_init shape error")
 
             self.bias = Parameter(initializer(bias_init, [out_channels]), name="bias")
@@ -104,12 +104,10 @@ class GNNFeatureTransform(nn.Cell):
         return output
 
     def extend_repr(self):
-        str_info = 'in_channels={}, out_channels={}, weight={}, has_bias={}' \
-            .format(self.in_channels, self.out_channels, self.weight, self.has_bias)
+        s = 'in_channels={}, out_channels={}'.format(self.in_channels, self.out_channels)
         if self.has_bias:
-            str_info = str_info + ', bias={}'.format(self.bias)
-
-        return str_info
+            s += ', has_bias={}'.format(self.has_bias)
+        return s
 
 
 class _BaseAggregator(nn.Cell):
@@ -162,7 +160,7 @@ class _BaseAggregator(nn.Cell):
                                           has_bias=self.has_bias)
         self.dropout_ratio = dropout_ratio
         if self.dropout_ratio is not None:
-            self.dropout = nn.Dropout(keep_prob=self.dropout_ratio)
+            self.dropout = nn.Dropout(p=1.0 - self.dropout_ratio)
         self.dropout_flag = self.dropout_ratio is not None
         self.activation = get_activation(activation)
         self.activation_flag = self.activation is not None
@@ -262,11 +260,11 @@ class AttentionHead(nn.Cell):
                  coef_activation=nn.LeakyReLU(),
                  activation=nn.ELU()):
         super(AttentionHead, self).__init__()
-        self.in_channel = check_int_positive(in_channel)
-        self.out_channel = check_int_positive(out_channel)
+        self.in_channel = Validator.check_positive_int(in_channel)
+        self.out_channel = Validator.check_positive_int(out_channel)
         self.in_drop_ratio = in_drop_ratio
-        self.in_drop = nn.Dropout(keep_prob=1 - in_drop_ratio)
-        self.in_drop_2 = nn.Dropout(keep_prob=1 - in_drop_ratio)
+        self.in_drop = nn.Dropout(p=in_drop_ratio)
+        self.in_drop_2 = nn.Dropout(p=in_drop_ratio)
         self.feature_transform = GNNFeatureTransform(
             in_channels=self.in_channel,
             out_channels=self.out_channel,
@@ -280,11 +278,11 @@ class AttentionHead(nn.Cell):
             out_channels=1)
         self.softmax = nn.Softmax()
 
-        self.coef_drop = nn.Dropout(keep_prob=1 - coef_drop_ratio)
+        self.coef_drop = nn.Dropout(p=coef_drop_ratio)
         self.batch_matmul = P.BatchMatMul()
         self.bias_add = P.BiasAdd()
         self.bias = Parameter(initializer('zeros', self.out_channel), name='bias')
-        self.residual = check_bool(residual)
+        self.residual = Validator.check_bool(residual)
         if self.residual:
             if in_channel != out_channel:
                 self.residual_transform_flag = True

@@ -13,10 +13,10 @@
 # limitations under the License.
 # ============================================================================
 """ Test for GraphCloner """
-from mindspore.ops import Primitive
+from mindspore.ops import functional as F
 
-scala_add = Primitive('scalar_add')
-scalar_mul = Primitive('scalar_mul')
+scala_add = F.scalar_add
+scalar_mul = F.scalar_mul
 
 
 def test_clone_simple():

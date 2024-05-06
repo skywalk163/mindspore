@@ -1,4 +1,4 @@
-# Copyright 2019 Huawei Technologies Co., Ltd
+# Copyright 2019-2023 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,10 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ============================================================================
+import pytest
 import numpy as np
 
+import mindspore as ms
 import mindspore.context as context
 import mindspore.nn as nn
+import mindspore.ops.composite as C
 from mindspore import Tensor
 from mindspore.ops import operations as P
 
@@ -39,9 +42,36 @@ def test_net():
     print(x)
     print(y)
     print(output.asnumpy())
-    x = 1.0
-    y = 2.0
-    expect = 3.0
+
+
+def test_grad_addn_with_list():
+    grad_op = C.GradOperation(get_all=True)
+    class AddN(nn.Cell):
+        def __init__(self):
+            super().__init__()
+            self.add_n = P.AddN()
+
+        def construct(self, a, b):
+            return self.add_n([a, b])
+
+    inp = Tensor(np.ones([128, 96]).astype(np.float32))
+    grad_op(AddN())(inp, inp)
+
+
+@pytest.mark.level1
+@pytest.mark.platform_arm_ascend910b_training
+@pytest.mark.env_onecard
+@pytest.mark.parametrize('mode', [context.PYNATIVE_MODE, context.GRAPH_MODE])
+def test_net_bfloat16(mode):
+    """
+    Feature: Test functional AddN operator. Support input is bfloat16 tensor.
+    Description: Operator AddN's input Tensors with bfloat16 type.
+    Expectation: Assert result compare with tensorflow.
+    """
+    context.set_context(mode=mode, device_target="Ascend")
+    x = Tensor([1.58, 2.64, 9.34], ms.bfloat16)
+    y = Tensor([-0.29, 3.73, 8.37], ms.bfloat16)
     add = Net()
     output = add(x, y)
-    assert output == expect
+    expect_result = np.array([1.29, 6.37, 17.71]).astype(np.float32)
+    assert np.allclose(output.float().asnumpy(), expect_result, rtol=0.004, atol=0.004)

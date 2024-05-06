@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@
  */
 #include "common/backend_common_test.h"
 #include "common/py_func_graph_fetcher.h"
-#include "pre_activate/common/optimizer.h"
-#include "pre_activate/pass/optimize_dependence.h"
+#include "include/backend/optimizer/optimizer.h"
+#include "backend/common/pass/optimize_dependence.h"
 
 namespace mindspore {
 namespace opt {
@@ -66,6 +66,48 @@ TEST_F(TestHWOptimizeDependence, test_optimize_dependence_with_make_tuple) {
   FuncGraphPtr new_graph = optimizer->Optimize(g);
 
   FuncGraphPtr g_after = get_py_fun_.CallAndParseRet("test_optimize_dependence_with_make_tuple", "after");
+  EXPECT_TRUE(CheckEqualGraph(g_after, new_graph));
+}
+
+
+TEST_F(TestHWOptimizeDependence, test_optimize_control_dependence_with_make_tuple) {
+  /*
+   * def before(x, y, a, b):
+   *    z = make_tuple(TransData(a), TransData(b))
+   *    depend_intput = depend(y, z)
+   *    sum_add = add(x, depend_intput)
+   *    return sum_add
+   */
+  FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_optimize_control_dependence_with_make_tuple", "before");
+
+  auto optimizer = std::make_shared<opt::GraphOptimizer>();
+  auto pm = std::make_shared<opt::PassManager>();
+  pm->AddPass(std::make_shared<opt::OptimizeDependence>());
+  optimizer->AddPassManager(pm);
+  FuncGraphPtr new_graph = optimizer->Optimize(g);
+
+  FuncGraphPtr g_after = get_py_fun_.CallAndParseRet("test_optimize_control_dependence_with_make_tuple", "after");
+  EXPECT_TRUE(CheckEqualGraph(g_after, new_graph));
+}
+
+
+TEST_F(TestHWOptimizeDependence, test_optimize_control_dependence) {
+  /*
+   * def before(x, y, z):
+   *    new_z = TransData(z)
+   *    depend_intput = depend(y, new_z)
+   *    sum_add = add(x, depend_intput)
+   *    return sum_add
+   */
+  FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_optimize_control_dependence", "before");
+
+  auto optimizer = std::make_shared<opt::GraphOptimizer>();
+  auto pm = std::make_shared<opt::PassManager>();
+  pm->AddPass(std::make_shared<opt::OptimizeDependence>());
+  optimizer->AddPassManager(pm);
+  FuncGraphPtr new_graph = optimizer->Optimize(g);
+
+  FuncGraphPtr g_after = get_py_fun_.CallAndParseRet("test_optimize_control_dependence", "after");
   EXPECT_TRUE(CheckEqualGraph(g_after, new_graph));
 }
 }  // namespace opt

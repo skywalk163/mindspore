@@ -20,8 +20,8 @@
 
 #include "ir/func_graph_cloner.h"
 #include "utils/log_adapter.h"
-#include "pipeline/parse/parse.h"
-#include "debug/draw.h"
+#include "pipeline/jit/ps/parse/parse.h"
+#include "include/common/debug/draw.h"
 
 namespace mindspore {
 void CheckNoFreeVariables(FuncGraphPtr root) {
@@ -38,7 +38,9 @@ void CheckNoFreeVariables(FuncGraphPtr root) {
       ASSERT_EQ(node->func_graph(), g);
       auto cnode = node->cast<CNodePtr>();
       if (cnode != nullptr) {
-        for (auto &inp : cnode->inputs()) {
+        for (auto &weak_input : cnode->weak_inputs()) {
+          auto inp = weak_input.lock();
+          MS_EXCEPTION_IF_NULL(inp);
           ASSERT_TRUE(inp->func_graph() == nullptr || inp->func_graph() == g);
         }
       }

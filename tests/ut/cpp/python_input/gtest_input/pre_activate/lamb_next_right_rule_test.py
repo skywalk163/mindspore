@@ -14,13 +14,14 @@
 # ============================================================================
 from mindspore.ops import Primitive
 from mindspore.ops import operations as P
+from mindspore.ops import _constants as Constants
 
-Add = P.TensorAdd()
+Add = P.Add()
 Mul = P.Mul()
 Sqrt = P.Sqrt()
 Square = P.Square()
-make_tuple = Primitive('make_tuple')
-tuple_getitem = Primitive('tuple_getitem')
+make_tuple = Primitive('MakeTuple')
+tuple_getitem = Primitive(Constants.kTupleGetItem)
 LambNextRight = Primitive('LambNextRight')
 
 
@@ -48,8 +49,7 @@ def test_lamb_next_right_rule(tag):
         sqrt0 = Sqrt(real_div1)
         add2 = Add(sqrt0, add2_y)
         outputs = make_tuple(add1, add2)
-        output = tuple_getitem(outputs, 0)
-        return output
+        return outputs
 
     @fns
     def before_unmatched(input0, input1, mul2_x, mul3_x, true_div1_recip, add2_y):
@@ -61,14 +61,12 @@ def test_lamb_next_right_rule(tag):
         sqrt0 = Sqrt(real_div1)
         add2 = Add(sqrt0, add2_y)
         outputs = make_tuple(add1, add2)
-        output = tuple_getitem(outputs, 0)
-        return output
+        return outputs
 
     @fns
     def after(input0, input1, mul2_x, mul3_x, true_div1_recip, add2_y):
         lamb_next_right = LambNextRight(input0, input1, mul2_x, mul3_x, true_div1_recip, add2_y)
         outputs = make_tuple(tuple_getitem(lamb_next_right, 0), tuple_getitem(lamb_next_right, 1))
-        output = tuple_getitem(outputs, 0)
-        return make_tuple(output)
+        return make_tuple(outputs)
 
     return fns[tag]

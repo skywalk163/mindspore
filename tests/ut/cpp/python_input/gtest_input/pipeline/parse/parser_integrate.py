@@ -19,12 +19,12 @@ import numpy as np
 import mindspore._c_expression as me
 import mindspore.nn as nn
 from mindspore.common import dtype
-from mindspore.common.api import ms_function, _executor
+from mindspore.common.api import jit, _cell_graph_executor
 from mindspore.common.parameter import Parameter
 from mindspore.common.tensor import Tensor
-from mindspore.model_zoo.resnet import resnet50
 from mindspore.ops import functional as F
-from mindspore.train.model import Model
+from mindspore.train import Model
+from tests.ut.python.model.resnet import resnet50
 
 
 def test_high_order_function(a):
@@ -97,7 +97,7 @@ def test_closures_in_tuples(x, y):
     return ff() + gg()
 
 
-@ms_function
+@jit
 def add(x, y):
     return x + y
 
@@ -153,7 +153,7 @@ class TestNet(nn.Cell):
 def test_compile_conv2d():
     net = Net()
     inputs = Tensor(np.ones([1, 3, 16, 50]).astype(np.float32))
-    _executor.compile(net, inputs)
+    _cell_graph_executor.compile(net, inputs)
 
 
 def test_none(x, y):
@@ -170,7 +170,7 @@ def test_get_attr(x):
     return a
 
 
-@ms_function
+@jit
 def known():
     return unknown()
 

@@ -1,4 +1,4 @@
-# Copyright 2020 Huawei Technologies Co., Ltd
+# Copyright 2020-2023 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,20 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ============================================================================
+import pytest
 import numpy as np
 
 import mindspore as ms
 import mindspore.context as context
 from mindspore import Tensor
 from mindspore.nn import Cell
+import mindspore.ops as ops
+from mindspore.ops import composite as C
 from mindspore.ops import operations as P
-from mindspore.train.model import Model
+from mindspore.train import Model
 
-context.set_context(mode=context.GRAPH_MODE, device_target="Ascend")
+context.set_context(device_target="Ascend")
+grad = C.GradOperation(get_all=True, sens_param=True)
 
 
 class Select(Cell):
-    def __init__(self, dtype):
+    def __init__(self):
         super(Select, self).__init__()
         self.select = P.Select()
 
@@ -33,8 +37,18 @@ class Select(Cell):
         return self.select(cond, inputa, inputb)
 
 
-def me_select(cond, inputa, inputb, dtype=ms.float32):
-    net = Select(dtype)
+class GradWrap(Cell):
+    def __init__(self, network):
+        super(GradWrap, self).__init__()
+        self.network = network
+
+    def construct(self, cond, inputa, inputb, out_grad):
+        gout = grad(self.network)(cond, inputa, inputb, out_grad)
+        return gout
+
+
+def me_select(cond, inputa, inputb):
+    net = Select()
     net.set_train()
     model = Model(net)
     if isinstance(inputa, np.ndarray):
@@ -63,3 +77,41 @@ def test_select_2_2():
     inputa = np.random.randn(2, 2).astype(np.float32)
     inputb = np.random.randn(2, 2).astype(np.float32)
     cmp_select(input_cond, inputa, inputb)
+
+
+@pytest.mark.level1
+@pytest.mark.platform_arm_ascend_training
+@pytest.mark.platform_x86_ascend_training
+@pytest.mark.env_onecard
+def test_functional_select_scalar():
+    """
+    Feature: Test functional select operator. Support x or y is a int/float.
+    Description: Operator select's input `x` is a Tensor with int32 type, input `y` is a int.
+    Expectation: Assert result.
+    """
+    cond = np.array([[True, False], [True, False]]).astype(np.bool)
+    x = np.array([[12, 1], [1, 0]]).astype(np.int32)
+    y = 2
+    output = ops.select(Tensor(cond), Tensor(x), y)
+    expect = [[12, 2], [1, 2]]
+    error = np.ones(shape=[2, 2]) * 1.0e-6
+    diff = output.asnumpy() - expect
+    assert np.all(diff < error)
+    assert np.all(-diff < error)
+
+
+@pytest.mark.level1
+@pytest.mark.platform_arm_ascend910b_training
+@pytest.mark.env_onecard
+def test_functional_select_bf16():
+    """
+    Feature: Test functional select operator. Support x and y is a bfloat16 tensor.
+    Description: Operator select's input `x` and 'y' both are Tensor with bfloat16 type.
+    Expectation: Assert result compare with torch.
+    """
+    cond = np.array([[True, False], [True, False]]).astype(np.bool)
+    input_x_me = Tensor([[2.45, -0.38], [0.91, 0.23]], ms.bfloat16)
+    input_y_me = Tensor([[0.83, 4.72], [1.89, 0.96]], ms.bfloat16)
+    output_me = Select()(Tensor(cond), input_x_me, input_y_me)
+    except_result = np.array([[2.45, 4.72], [0.91, 0.96]]).astype(np.float32)
+    assert np.allclose(output_me.float().asnumpy(), except_result, 0.004, 0.004)

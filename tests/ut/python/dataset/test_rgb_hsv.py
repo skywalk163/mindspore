@@ -1,4 +1,4 @@
-# Copyright 2019 Huawei Technologies Co., Ltd
+# Copyright 2019-2022 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,8 +21,9 @@ import numpy as np
 from numpy.testing import assert_allclose
 
 import mindspore.dataset as ds
-import mindspore.dataset.transforms.vision.py_transforms as vision
-import mindspore.dataset.transforms.vision.py_transforms_util as util
+import mindspore.dataset.transforms
+import mindspore.dataset.vision as vision
+import mindspore.dataset.vision.py_transforms_util as util
 
 DATA_DIR = ["../data/dataset/test_tf_file_3_images/train-0000-of-0001.data"]
 SCHEMA_DIR = "../data/dataset/test_tf_file_3_images/datasetSchema.json"
@@ -36,6 +37,11 @@ def generate_numpy_random_rgb(shape):
 
 
 def test_rgb_hsv_hwc():
+    """
+    Feature: RgbToHsv and HsvToRgb ops
+    Description: Test RgbToHsv and HsvToRgb utilities with an image in HWC format
+    Expectation: Output is equal to the expected output
+    """
     rgb_flat = generate_numpy_random_rgb((64, 3)).astype(np.float32)
     rgb_np = rgb_flat.reshape((8, 8, 3))
     hsv_base = np.array([
@@ -61,6 +67,11 @@ def test_rgb_hsv_hwc():
 
 
 def test_rgb_hsv_batch_hwc():
+    """
+    Feature: RgbToHsv and HsvToRgb ops
+    Description: Test RgbToHsv and HsvToRgb utilities with a batch of images in HWC format
+    Expectation: Output is equal to the expected output
+    """
     rgb_flat = generate_numpy_random_rgb((64, 3)).astype(np.float32)
     rgb_np = rgb_flat.reshape((4, 2, 8, 3))
     hsv_base = np.array([
@@ -86,6 +97,11 @@ def test_rgb_hsv_batch_hwc():
 
 
 def test_rgb_hsv_chw():
+    """
+    Feature: RgbToHsv and HsvToRgb ops
+    Description: Test RgbToHsv and HsvToRgb utilities with an image in CHW format
+    Expectation: Output is equal to the expected output
+    """
     rgb_flat = generate_numpy_random_rgb((64, 3)).astype(np.float32)
     rgb_np = rgb_flat.reshape((3, 8, 8))
     hsv_base = np.array([
@@ -109,6 +125,11 @@ def test_rgb_hsv_chw():
 
 
 def test_rgb_hsv_batch_chw():
+    """
+    Feature: RgbToHsv and HsvToRgb ops
+    Description: Test RgbToHsv and HsvToRgb utilities with a batch of images in HWC format
+    Expectation: Output is equal to the expected output
+    """
     rgb_flat = generate_numpy_random_rgb((64, 3)).astype(np.float32)
     rgb_imgs = rgb_flat.reshape((4, 3, 2, 8))
     hsv_base_imgs = np.array([
@@ -131,33 +152,38 @@ def test_rgb_hsv_batch_chw():
 
 
 def test_rgb_hsv_pipeline():
+    """
+    Feature: RgbToHsv and HsvToRgb ops
+    Description: Test RgbToHsv and HsvToRgb ops in data pipeline
+    Expectation: Output is equal to the expected output
+    """
     # First dataset
     transforms1 = [
-        vision.Decode(),
+        vision.Decode(True),
         vision.Resize([64, 64]),
         vision.ToTensor()
     ]
-    transforms1 = vision.ComposeOp(transforms1)
+    transforms1 = mindspore.dataset.transforms.Compose(transforms1)
     ds1 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
-    ds1 = ds1.map(input_columns=["image"], operations=transforms1())
+    ds1 = ds1.map(operations=transforms1, input_columns=["image"])
 
     # Second dataset
     transforms2 = [
-        vision.Decode(),
+        vision.Decode(True),
         vision.Resize([64, 64]),
         vision.ToTensor(),
         vision.RgbToHsv(),
         vision.HsvToRgb()
     ]
-    transform2 = vision.ComposeOp(transforms2)
+    transform2 = mindspore.dataset.transforms.Compose(transforms2)
     ds2 = ds.TFRecordDataset(DATA_DIR, SCHEMA_DIR, columns_list=["image"], shuffle=False)
-    ds2 = ds2.map(input_columns=["image"], operations=transform2())
+    ds2 = ds2.map(operations=transform2, input_columns=["image"])
 
     num_iter = 0
-    for data1, data2 in zip(ds1.create_dict_iterator(), ds2.create_dict_iterator()):
+    for data1, data2 in zip(ds1.create_dict_iterator(num_epochs=1), ds2.create_dict_iterator(num_epochs=1)):
         num_iter += 1
-        ori_img = data1["image"]
-        cvt_img = data2["image"]
+        ori_img = data1["image"].asnumpy()
+        cvt_img = data2["image"].asnumpy()
         assert_allclose(ori_img.flatten(), cvt_img.flatten(), rtol=1e-5, atol=0)
         assert ori_img.shape == cvt_img.shape
 

@@ -1,5 +1,5 @@
 /**
- * Copyright 2020 Huawei Technologies Co., Ltd
+ * Copyright 2020-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,20 @@
 #include <vector>
 
 #include "common/common_test.h"
+#include "frontend/operator/ops.h"
+#include "include/common/utils/python_adapter.h"
 #include "ir/value.h"
-#include "ir/primitive.h"
-#include "operator/ops.h"
-#include "./common.h"
+#include "ops/arithmetic_ops.h"
+#include "ops/array_ops.h"
+#include "ops/comparison_ops.h"
+#include "ops/conv_pool_ops.h"
+#include "ops/framework_ops.h"
+#include "ops/image_ops.h"
+#include "ops/nn_optimizer_ops.h"
+#include "ops/sequence_ops.h"
+#include "ops/structure_ops.h"
+#include "pipeline/jit/ps/parse/parse_base.h"
+#include "pybind_api/ir/primitive_py.h"
 
 namespace mindspore {
 namespace prim {
@@ -34,52 +44,52 @@ class TestOps : public UT::Common {
 
 // Arithmetic
 TEST_F(TestOps, ScalarAddTest) {
-  auto prim = std::make_shared<Primitive>("scalar_add");
+  auto prim = std::make_shared<Primitive>("ScalarAdd");
   ASSERT_EQ(prim->name(), kPrimScalarAdd->name());
 }
 
 TEST_F(TestOps, ScalarSubTest) {
-  auto prim = std::make_shared<Primitive>("scalar_sub");
+  auto prim = std::make_shared<Primitive>("ScalarSub");
   ASSERT_EQ(prim->name(), kPrimScalarSub->name());
 }
 
 TEST_F(TestOps, ScalarMulTest) {
-  auto prim = std::make_shared<Primitive>("scalar_mul");
+  auto prim = std::make_shared<Primitive>("ScalarMul");
   ASSERT_EQ(prim->name(), kPrimScalarMul->name());
 }
 
 TEST_F(TestOps, ScalarDivTest) {
-  auto prim = std::make_shared<Primitive>("scalar_div");
+  auto prim = std::make_shared<Primitive>("ScalarDiv");
   ASSERT_EQ(prim->name(), kPrimScalarDiv->name());
 }
 
 TEST_F(TestOps, ScalarModTest) {
-  auto prim = std::make_shared<Primitive>("scalar_mod");
+  auto prim = std::make_shared<Primitive>("ScalarMod");
   ASSERT_EQ(prim->name(), kPrimScalarMod->name());
 }
 
 TEST_F(TestOps, ScalarPowTest) {
-  auto prim = std::make_shared<Primitive>("scalar_pow");
+  auto prim = std::make_shared<Primitive>("ScalarPow");
   ASSERT_EQ(prim->name(), kPrimScalarPow->name());
 }
 
 TEST_F(TestOps, ScalarTruncTest) {
-  auto prim = std::make_shared<Primitive>("scalar_trunc");
+  auto prim = std::make_shared<Primitive>(kScalarTruncOpName);
   ASSERT_EQ(prim->name(), kPrimScalarTrunc->name());
 }
 
 TEST_F(TestOps, ScalarFloorTest) {
-  auto prim = std::make_shared<Primitive>("scalar_floor");
+  auto prim = std::make_shared<Primitive>(kScalarFloorOpName);
   ASSERT_EQ(prim->name(), kPrimScalarFloor->name());
 }
 
 TEST_F(TestOps, ScalarUaddTest) {
-  auto prim = std::make_shared<Primitive>("scalar_uadd");
+  auto prim = std::make_shared<Primitive>("ScalarUadd");
   ASSERT_EQ(prim->name(), kPrimScalarUadd->name());
 }
 
 TEST_F(TestOps, ScalarUsubTest) {
-  auto prim = std::make_shared<Primitive>("scalar_usub");
+  auto prim = std::make_shared<Primitive>("ScalarUsub");
   ASSERT_EQ(prim->name(), kPrimScalarUsub->name());
 }
 
@@ -89,7 +99,7 @@ TEST_F(TestOps, ScalarExpTest) {
 }
 
 TEST_F(TestOps, ScalarLogTest) {
-  auto prim = std::make_shared<Primitive>("scalar_log");
+  auto prim = std::make_shared<Primitive>("ScalarLog");
   ASSERT_EQ(prim->name(), kPrimScalarLog->name());
 }
 
@@ -110,17 +120,17 @@ TEST_F(TestOps, ScalarTanTest) {
 
 // Comparisons
 TEST_F(TestOps, ScalarEqTest) {
-  auto prim = std::make_shared<Primitive>("scalar_eq");
+  auto prim = std::make_shared<Primitive>("ScalarEq");
   ASSERT_EQ(prim->name(), kPrimScalarEq->name());
 }
 
 TEST_F(TestOps, ScalarLtTest) {
-  auto prim = std::make_shared<Primitive>("scalar_lt");
+  auto prim = std::make_shared<Primitive>("ScalarLt");
   ASSERT_EQ(prim->name(), kPrimScalarLt->name());
 }
 
 TEST_F(TestOps, ScalarGtTest) {
-  auto prim = std::make_shared<Primitive>("scalar_gt");
+  auto prim = std::make_shared<Primitive>("ScalarGt");
   ASSERT_EQ(prim->name(), kPrimScalarGt->name());
 }
 
@@ -130,12 +140,12 @@ TEST_F(TestOps, ScalarNeTest) {
 }
 
 TEST_F(TestOps, ScalarLeTest) {
-  auto prim = std::make_shared<Primitive>("scalar_le");
+  auto prim = std::make_shared<Primitive>("ScalarLe");
   ASSERT_EQ(prim->name(), kPrimScalarLe->name());
 }
 
 TEST_F(TestOps, ScalarGeTest) {
-  auto prim = std::make_shared<Primitive>("scalar_ge");
+  auto prim = std::make_shared<Primitive>("ScalarGe");
   ASSERT_EQ(prim->name(), kPrimScalarGe->name());
 }
 
@@ -172,7 +182,7 @@ TEST_F(TestOps, HasTypeTest) {
 
 // Data structures
 TEST_F(TestOps, MakeTupleTest) {
-  auto prim = std::make_shared<Primitive>("make_tuple");
+  auto prim = std::make_shared<Primitive>("MakeTuple");
   ASSERT_EQ(prim->name(), kPrimMakeTuple->name());
 }
 
@@ -181,13 +191,8 @@ TEST_F(TestOps, MakeListTest) {
   ASSERT_EQ(prim->name(), kPrimMakeList->name());
 }
 
-TEST_F(TestOps, MakeRecordTest) {
-  auto prim = std::make_shared<Primitive>("make_record");
-  ASSERT_EQ(prim->name(), kPrimMakeRecord->name());
-}
-
 TEST_F(TestOps, TupleGetItemTest) {
-  auto prim = std::make_shared<Primitive>("tuple_getitem");
+  auto prim = std::make_shared<Primitive>(kTupleGetItemOpName);
   ASSERT_EQ(prim->name(), kPrimTupleGetItem->name());
 }
 
@@ -217,8 +222,24 @@ TEST_F(TestOps, ArraySetItemTest) {
 }
 
 TEST_F(TestOps, ListAppendTest) {
-  auto prim = std::make_shared<Primitive>("list_append");
+  auto prim = std::make_shared<Primitive>("ListAppend");
   ASSERT_EQ(prim->name(), kPrimListAppend->name());
+}
+
+/// Feature: Generate primitive.
+/// Description: Generate primitive.
+/// Expectation: No exception.
+TEST_F(TestOps, SequenceAddTest) {
+  auto prim = std::make_shared<Primitive>("SequenceAdd");
+  ASSERT_EQ(prim->name(), kPrimSequenceAdd->name());
+}
+
+/// Feature: Generate primitive.
+/// Description: Generate primitive.
+/// Expectation: No exception.
+TEST_F(TestOps, SequenceCountTest) {
+  auto prim = std::make_shared<Primitive>("SequenceCount");
+  ASSERT_EQ(prim->name(), kPrimSequenceCount->name());
 }
 
 TEST_F(TestOps, GetAttrTest) {
@@ -226,24 +247,17 @@ TEST_F(TestOps, GetAttrTest) {
   ASSERT_EQ(prim->name(), kPrimGetAttr->name());
 }
 
-TEST_F(TestOps, TupleLenTest) {
-  auto prim = std::make_shared<Primitive>("tuple_len");
-  ASSERT_EQ(prim->name(), kPrimTupleLen->name());
-}
-
-TEST_F(TestOps, ListLenTest) {
-  auto prim = std::make_shared<Primitive>("list_len");
-  ASSERT_EQ(prim->name(), kPrimListLen->name());
+/// Feature: Generate primitive.
+/// Description: Generate primitive.
+/// Expectation: No exception.
+TEST_F(TestOps, SequenceLenTest) {
+  auto prim = std::make_shared<Primitive>("sequence_len");
+  ASSERT_EQ(prim->name(), kPrimSequenceLen->name());
 }
 
 TEST_F(TestOps, ArrayLenTest) {
   auto prim = std::make_shared<Primitive>("array_len");
   ASSERT_EQ(prim->name(), kPrimArrayLen->name());
-}
-
-TEST_F(TestOps, ListMapTest) {
-  auto prim = std::make_shared<Primitive>("list_map");
-  ASSERT_EQ(prim->name(), kPrimListMap->name());
 }
 
 TEST_F(TestOps, ListReduceTest) {
@@ -252,11 +266,6 @@ TEST_F(TestOps, ListReduceTest) {
 }
 
 // Arrays
-TEST_F(TestOps, ScalarToArrayTest) {
-  auto prim = std::make_shared<Primitive>("scalar_to_array");
-  ASSERT_EQ(prim->name(), kPrimScalarToArray->name());
-}
-
 TEST_F(TestOps, ArrayToScalarTest) {
   auto prim = std::make_shared<Primitive>("array_to_scalar");
   ASSERT_EQ(prim->name(), kPrimArrayToScalar->name());
@@ -265,11 +274,6 @@ TEST_F(TestOps, ArrayToScalarTest) {
 TEST_F(TestOps, BroadCastShapeTest) {
   auto prim = std::make_shared<Primitive>("broadcast_shape");
   ASSERT_EQ(prim->name(), kPrimBroadcastShape->name());
-}
-
-TEST_F(TestOps, ShapeTest) {
-  auto prim = std::make_shared<Primitive>("Shape");
-  ASSERT_EQ(prim->name(), kPrimShape->name());
 }
 
 TEST_F(TestOps, ArrayMapTest) {
@@ -292,18 +296,13 @@ TEST_F(TestOps, TransposeTest) {
   ASSERT_EQ(prim->name(), kPrimTranspose->name());
 }
 
-TEST_F(TestOps, DotTest) {
-  auto prim = std::make_shared<Primitive>("dot");
-  ASSERT_EQ(prim->name(), kPrimDot->name());
-}
-
 TEST_F(TestOps, Im2ColTest) {
-  auto prim = std::make_shared<Primitive>("im2col");
+  auto prim = std::make_shared<Primitive>("Im2Col");
   ASSERT_EQ(prim->name(), kPrimIm2Col->name());
 }
 
 TEST_F(TestOps, Col2ImTest) {
-  auto prim = std::make_shared<Primitive>("col2im");
+  auto prim = std::make_shared<Primitive>("Col2Im");
   ASSERT_EQ(prim->name(), kPrimCol2Im->name());
 }
 
@@ -319,12 +318,12 @@ TEST_F(TestOps, Col2ImV1Test) {
 
 // Statements
 TEST_F(TestOps, SwitchTest) {
-  auto prim = std::make_shared<Primitive>("switch");
+  auto prim = std::make_shared<Primitive>("Switch");
   ASSERT_EQ(prim->name(), kPrimSwitch->name());
 }
 
 TEST_F(TestOps, ReturnTest) {
-  auto prim = std::make_shared<Primitive>("return");
+  auto prim = std::make_shared<Primitive>("Return");
   ASSERT_EQ(prim->name(), kPrimReturn->name());
 }
 
@@ -341,7 +340,7 @@ TEST_F(TestOps, ResolveTest) {
 }
 
 TEST_F(TestOps, PartialTest) {
-  auto prim = std::make_shared<Primitive>("partial");
+  auto prim = std::make_shared<Primitive>("Partial");
   ASSERT_EQ(prim->name(), kPrimPartial->name());
 }
 
@@ -355,19 +354,28 @@ TEST_F(TestOps, EmbedTest) {
   ASSERT_EQ(prim->name(), kPrimEmbed->name());
 }
 
-TEST_F(TestOps, EnvSetItemTest) {
-  auto prim = std::make_shared<Primitive>("env_setitem");
-  ASSERT_EQ(prim->name(), kPrimEnvSetItem->name());
+/// Feature: Check primitive name equivalence
+/// Description: EnvironSet primitive name equivalence
+/// Expectation: Equal
+TEST_F(TestOps, EnvironSetTest) {
+  auto prim = std::make_shared<Primitive>("EnvironSet");
+  ASSERT_EQ(prim->name(), kPrimEnvironSet->name());
 }
 
-TEST_F(TestOps, EnvGetItemTest) {
-  auto prim = std::make_shared<Primitive>("env_getitem");
-  ASSERT_EQ(prim->name(), kPrimEnvGetItem->name());
+/// Feature: Check primitive name equivalence
+/// Description: EnvironGet primitive name equivalence
+/// Expectation: Equal
+TEST_F(TestOps, EnvironGetTest) {
+  auto prim = std::make_shared<Primitive>("EnvironGet");
+  ASSERT_EQ(prim->name(), kPrimEnvironGet->name());
 }
 
-TEST_F(TestOps, EnvAddest) {
-  auto prim = std::make_shared<Primitive>("env_add");
-  ASSERT_EQ(prim->name(), kPrimEnvAdd->name());
+/// Feature: Check primitive name equivalence
+/// Description: EnvironAdd primitive name equivalence
+/// Expectation: Equal
+TEST_F(TestOps, EnvironAddTest) {
+  auto prim = std::make_shared<Primitive>("EnvironAdd");
+  ASSERT_EQ(prim->name(), kPrimEnvironAdd->name());
 }
 
 // Neural Network
@@ -379,25 +387,25 @@ TEST_F(TestOps, Conv2dTest) {
 TEST_F(TestOps, Conv2dAttrTest) {
   Primitive prim("Conv2D");
   prim.SetAttrs({
-    {"stride", MakeValue(3)},
-    {"pad", MakeValue(1)},
+    {"stride", MakeValue(static_cast<int64_t>(3))},
+    {"pad", MakeValue(static_cast<int64_t>(1))},
   });
   ASSERT_EQ(prim.name(), kPrimConv2D->name());
 
-  Int32Imm stride(3);
-  Int32Imm pad(1);
+  Int64Imm stride(3);
+  Int64Imm pad(1);
   ASSERT_EQ(*prim.GetAttr("stride"), stride);
   ASSERT_EQ(*prim.GetAttr("pad"), pad);
 }
 
 TEST_F(TestOps, CustomOpAttrTest) {
-  Primitive prim("CustomOp", true, kPrimTypePyInferShape);
+  Primitive prim("CustomOp", true, kPrimTypePyInfer);
   prim.SetAttrs({
-    {"attr1", MakeValue(3)},
-    {"attr2", MakeValue(1)},
+    {"attr1", MakeValue(static_cast<int64_t>(3))},
+    {"attr2", MakeValue(static_cast<int64_t>(1))},
   });
   ASSERT_EQ(prim.name(), std::string("CustomOp"));
-  ASSERT_EQ(prim.prim_type(), kPrimTypePyInferShape);
+  ASSERT_EQ(prim.prim_type(), kPrimTypePyInfer);
 
   auto attrs = prim.attrs();
   for (auto attr : attrs) {
@@ -420,26 +428,7 @@ TEST_F(TestOps, Conv2dBackpropFilterTest) {
 
 TEST_F(TestOps, ReluTest) {
   auto prim = std::make_shared<Primitive>("ReLU");
-  ASSERT_EQ(prim->name(), kPrimRelu->name());
-}
-
-TEST_F(TestOps, FusedBatchNormTest) {
-  auto prim = std::make_shared<Primitive>("FusedBatchNorm");
-  ASSERT_EQ(prim->name(), kPrimFusedBatchNorm->name());
-}
-
-TEST_F(TestOps, FusedBatchNormAttrTest) {
-  Primitive prim("FusedBatchNorm");
-  prim.SetAttrs({
-    {"epsilon", MakeValue(0.001f)},
-    {"momentum", MakeValue(0.1f)},
-  });
-  ASSERT_EQ(prim.name(), kPrimFusedBatchNorm->name());
-
-  FP32Imm epsilon(0.001f);
-  FP32Imm momentum(0.1f);
-  ASSERT_EQ(*prim.GetAttr("epsilon"), epsilon);
-  ASSERT_EQ(*prim.GetAttr("momentum"), momentum);
+  ASSERT_EQ(prim->name(), kPrimReLU->name());
 }
 
 TEST_F(TestOps, PoolingTest) {
@@ -454,14 +443,13 @@ TEST_F(TestOps, GetConv2DPrimPyTest) {
   ASSERT_TRUE(conv2d_ptr);
   if (nullptr != conv2d_ptr) {
     MS_LOG(INFO) << "Get PrimitivePyPtr: " << conv2d_ptr->name();
-    auto func = conv2d_ptr->GetComputeFunction();
-    if (py::isinstance<py::none>(func)) {
+    if (!conv2d_ptr->HasComputeFunction()) {
       MS_LOG(EXCEPTION) << "" << conv2d_ptr->name() << "'s compute function is not implemented";
     }
 
-    py::object conv2d_pyobj = parse::python_adapter::GetPyFn("gtest_input.pynative", "conv2d_prim");
+    py::object conv2d_pyobj = python_adapter::GetPyFn("gtest_input.pynative", "conv2d_prim");
     py::dict opAttrs = py::getattr(conv2d_pyobj, "attrs");
-    std::unordered_map<std::string, ValuePtr> attrs{};
+    mindspore::HashMap<std::string, ValuePtr> attrs{};
     for (auto item : opAttrs) {
       if (!py::isinstance<py::str>(item.first)) {
         MS_LOG(EXCEPTION) << "type error in py dict convert";

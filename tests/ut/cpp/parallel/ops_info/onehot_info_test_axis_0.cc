@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@
 #include <list>
 #include <vector>
 #include "common/common_test.h"
-#include "parallel/strategy.h"
-#include "parallel/ops_info/onehot_info.h"
-#include "parallel/device_manager.h"
-#include "parallel/tensor_layout/tensor_redistribution.h"
+#include "frontend/parallel/strategy.h"
+#include "frontend/parallel/ops_info/onehot_info.h"
+#include "frontend/parallel/device_manager.h"
+#include "frontend/parallel/tensor_layout/tensor_redistribution.h"
 
 namespace mindspore {
 namespace parallel {
@@ -38,13 +38,13 @@ class TestOneHotInfo2 : public UT::Common {
 };
 
 void TestOneHotInfo2::SetUp() {
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 10; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(8);
   stage_map.push_back(2);
 
@@ -54,8 +54,8 @@ void TestOneHotInfo2::SetUp() {
   g_device_manager = std::make_shared<DeviceManager>();
   g_device_manager->Init(dev_list, local_dev, stage_map, "hccl");
 
-  ValuePtr axis = MakeValue(std::int32_t(0));
-  std::unordered_map<std::string, ValuePtr> attr = {{"axis", axis}};
+  ValuePtr axis = MakeValue(std::int64_t(0));
+  mindspore::HashMap<std::string, ValuePtr> attr = {{"axis", axis}};
 
   Shapes inputs_shape = {{64}, {}, {}};
   Shapes outputs_shape = {{10, 64}};
@@ -64,46 +64,46 @@ void TestOneHotInfo2::SetUp() {
 }
 
 TEST_F(TestOneHotInfo2, InferDevMatrixShape1) {
-  std::vector<Dimensions> inputs = {{1, 8}, {}, {}};
+  Strategies inputs = {{1, 8}, {}, {}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status status = onehot_info2->Init(strategy);
+  Status status = onehot_info2->Init(strategy, nullptr);
   ASSERT_EQ(status, SUCCESS);
-  std::vector<int32_t> dev_matrix_shape = onehot_info2->dev_matrix_shape();
+  Shape dev_matrix_shape = onehot_info2->dev_matrix_shape();
 
-  std::vector<int32_t> expect = {8, 1};
+  Shape expect = {8, 1};
   ASSERT_EQ(dev_matrix_shape, expect);
 }
 
 TEST_F(TestOneHotInfo2, InferDevMatrixShape2) {
-  std::vector<Dimensions> inputs = {{1, 4}, {}, {}};
+  Strategies inputs = {{1, 4}, {}, {}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status status = onehot_info2->Init(strategy);
+  Status status = onehot_info2->Init(strategy, nullptr);
   ASSERT_EQ(status, SUCCESS);
-  std::vector<int32_t> dev_matrix_shape = onehot_info2->dev_matrix_shape();
+  Shape dev_matrix_shape = onehot_info2->dev_matrix_shape();
 
-  std::vector<int32_t> expect = {2, 4, 1};
+  Shape expect = {4, 1, 2};
   ASSERT_EQ(dev_matrix_shape, expect);
 }
 
 TEST_F(TestOneHotInfo2, InferDevMatrixShape3) {
-  std::vector<Dimensions> inputs = {{2, 4}, {}, {}};
+  Strategies inputs = {{2, 4}, {}, {}};
   StrategyPtr strategy = NewStrategy(0, inputs);
 
-  Status status = onehot_info2->Init(strategy);
-  ASSERT_EQ(status, FAILED);
-  std::vector<int32_t> dev_matrix_shape = onehot_info2->dev_matrix_shape();
+  Status status = onehot_info2->Init(strategy, nullptr);
+  ASSERT_EQ(status, SUCCESS);
+  Shape dev_matrix_shape = onehot_info2->dev_matrix_shape();
 
-  std::vector<int32_t> expect = {4, 2};
+  Shape expect = {4, 2};
   ASSERT_EQ(dev_matrix_shape, expect);
 }
 
 TEST_F(TestOneHotInfo2, InferTensorMap2) {
-  std::vector<Dimensions> str = {{1, 8}, {}, {}};
+  Strategies str = {{1, 8}, {}, {}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  Status status = onehot_info2->Init(strategy);
+  Status status = onehot_info2->Init(strategy, nullptr);
   ASSERT_EQ(status, SUCCESS);
   std::vector<TensorInfo> inputs = onehot_info2->inputs_tensor_info();
   std::vector<TensorInfo> outputs = onehot_info2->outputs_tensor_info();
@@ -122,10 +122,10 @@ TEST_F(TestOneHotInfo2, InferTensorMap2) {
 }
 
 TEST_F(TestOneHotInfo2, InferSliceShape1) {
-  std::vector<Dimensions> str = {{1, 8}, {}, {}};
+  Strategies str = {{1, 8}, {}, {}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  Status status = onehot_info2->Init(strategy);
+  Status status = onehot_info2->Init(strategy, nullptr);
   ASSERT_EQ(status, SUCCESS);
   std::vector<TensorInfo> inputs = onehot_info2->inputs_tensor_info();
   std::vector<TensorInfo> outputs = onehot_info2->outputs_tensor_info();
@@ -144,11 +144,11 @@ TEST_F(TestOneHotInfo2, InferSliceShape1) {
 }
 
 TEST_F(TestOneHotInfo2, InferSliceShape2) {
-  std::vector<Dimensions> str = {{2, 4}, {}, {}};
+  Strategies str = {{2, 4}, {}, {}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  Status status = onehot_info2->Init(strategy);
-  ASSERT_EQ(status, FAILED);
+  Status status = onehot_info2->Init(strategy, nullptr);
+  ASSERT_EQ(status, SUCCESS);
   std::vector<TensorInfo> inputs = onehot_info2->inputs_tensor_info();
   std::vector<TensorInfo> outputs = onehot_info2->outputs_tensor_info();
 
@@ -166,11 +166,11 @@ TEST_F(TestOneHotInfo2, InferSliceShape2) {
 }
 
 TEST_F(TestOneHotInfo2, InferSliceShape3) {
-  std::vector<Dimensions> str = {{2, 2}, {}, {}};
+  Strategies str = {{2, 2}, {}, {}};
   StrategyPtr strategy = NewStrategy(0, str);
 
-  Status status = onehot_info2->Init(strategy);
-  ASSERT_EQ(status, FAILED);
+  Status status = onehot_info2->Init(strategy, nullptr);
+  ASSERT_EQ(status, SUCCESS);
   std::vector<TensorInfo> inputs = onehot_info2->inputs_tensor_info();
   std::vector<TensorInfo> outputs = onehot_info2->outputs_tensor_info();
 

@@ -19,18 +19,19 @@ import pytest
 import mindspore.context as context
 import mindspore.nn as nn
 from mindspore import Tensor
-from mindspore.common.api import ms_function
+from mindspore.common.api import jit
 from mindspore.ops import operations as P
+from mindspore.ops.operations import _quant_ops as Q
 
-context.set_context(device_target='GPU')
+context.set_context(mode=context.PYNATIVE_MODE, device_target='GPU')
 
 
 class Net(nn.Cell):
     def __init__(self):
         super(Net, self).__init__()
-        self.op = P.BatchNormFold2(100000)
+        self.op = Q.BatchNormFold2(100000)
 
-    @ms_function
+    @jit
     def construct(self, x, beta, gamma, batch_std, batch_mean, running_std, running_mean, current_step):
         return self.op(x, beta, gamma, batch_std, batch_mean, running_std, running_mean, current_step)
 
@@ -42,7 +43,7 @@ class Net_gnd(nn.Cell):
         self.correct_add = P.CorrectionAdd(freeze_bn=100000)
         self.add_fold = P.AddFold()
 
-    @ms_function
+    @jit
     def construct(self, x, beta, gamma, batch_std, batch_mean, running_std, running_mean, current_step):
         out = self.conv_mul(x, batch_std, running_std, current_step)
         out = self.correct_add(out, gamma, batch_std, batch_mean,
@@ -51,7 +52,7 @@ class Net_gnd(nn.Cell):
         return out
 
 
-@pytest.mark.level0
+@pytest.mark.level1
 @pytest.mark.platform_x86_gpu_training
 @pytest.mark.env_onecard
 def test_batchnrom_fold2():

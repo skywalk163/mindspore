@@ -18,7 +18,10 @@ import pytest
 
 import mindspore.nn as nn
 from mindspore import Tensor
-from mindspore.common.api import _executor
+from mindspore.ops import composite as C
+from mindspore.ops import operations as P
+from mindspore.common import dtype as ms
+from mindspore.common.api import _cell_graph_executor
 
 
 class assignment1_Net(nn.Cell):
@@ -60,7 +63,7 @@ def assignment_operator_base(number):
         net = assignment1_Net(x)
     else:
         net = assignment2_Net(x)
-    _executor.compile(net, input_me)
+    _cell_graph_executor.compile(net, input_me)
 
 
 def test_ME_assignment_operator_0010():
@@ -73,23 +76,48 @@ def test_ME_assignment_operator_0020():
     assignment_operator_base((1, 3))
 
 
-class unsupported_method_net(nn.Cell):
-    """ unsupported_method_net definition """
+def test_parser_map_0002():
+    class NetMap0002(nn.Cell):
+        def __init__(self):
+            super().__init__()
+            self.relu = nn.ReLU()
+            self.hypermap = C.Map()
 
-    def __init__(self):
-        super().__init__()
-        self.relu = nn.ReLU()
+        def mul(self, x=2, y=4):
+            return x * y
 
-    def construct(self, x):
-        with open("a.txt") as f:
-            f.read()
-        return x
+        def construct(self, x):
+            if map(self.mul) == 8:
+                x = self.relu(x)
+            return x
+    input_np_x = np.random.randn(2, 3, 4, 5).astype(np.float32)
+    input_me_x = Tensor(input_np_x)
+
+    net = NetMap0002()
+    with pytest.raises(TypeError):
+        net(input_me_x)
 
 
-def test_compile_unspported():
-    """ test_compile_unspported """
-    input_np = np.random.randn(2, 3, 4, 5).astype(np.float32)
-    input_me = Tensor(input_np)
-    net = unsupported_method_net()
-    with pytest.raises(RuntimeError):
-        _executor.compile(net, input_me)
+def test_fix_expanddims_loss_scale():
+    class ControlOneIfOneScaleOneScale(nn.Cell):
+        def __init__(self):
+            super().__init__()
+            self.op = P.ExpandDims()
+
+        def construct(self, x, y, data):
+            if x > y:
+                out = 1
+            else:
+                out = 2
+            if x > y:
+                out = self.op(data, out)
+            else:
+                out = self.op(data, out)
+            return out
+    net = ControlOneIfOneScaleOneScale()
+    x = Tensor(1, ms.float32)
+    y = Tensor(0, ms.float32)
+    input_shape = (1024, 512, 7, 7)
+    input_data = np.random.randn(*input_shape).astype(np.float32)
+    net = ControlOneIfOneScaleOneScale()
+    net(x, y, Tensor(input_data))

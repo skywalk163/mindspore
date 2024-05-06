@@ -16,24 +16,26 @@
 
 #include "common/backend_common_test.h"
 #include "kernel/kernel.h"
-#include "operator/ops.h"
+#include "kernel/kash/kernel_pack.h"
+#include "frontend/operator/ops.h"
 #include "ir/tensor.h"
 #include "ir/manager.h"
-#include "debug/anf_ir_dump.h"
+#include "include/common/debug/anf_ir_dump.h"
 #include "common/py_func_graph_fetcher.h"
-// #include "device/optimizer/pass/insert_trans_op.h"
-#include "pre_activate/ascend/format_type/insert_cast.h"
-#include "pre_activate/pass/eliminate_redundant_op.h"
-#include "pre_activate/common/optimizer.h"
-#include "pre_activate/common/pass_manager.h"
-#include "utils/utils.h"
-#include "utils/context/ms_context.h"
-#include "session/anf_runtime_algorithm.h"
-#include "device/kernel_info.h"
+// #include "runtime/device/optimizer/pass/insert_trans_op.h"
+#include "plugin/device/ascend/optimizer/format_type/insert_cast.h"
+#include "backend/common/pass/eliminate_redundant_op.h"
+#include "include/backend/optimizer/optimizer.h"
+#include "include/backend/optimizer/pass_manager.h"
+#include "include/common/utils/utils.h"
+#include "utils/ms_context.h"
+#include "include/backend/anf_runtime_algorithm.h"
+#include "include/backend/kernel_info.h"
+#include "utils/ms_context.h"
 
 #define private public
 #define protected public
-#include "pre_activate/ascend/format_type/insert_trans_op.h"
+#include "plugin/device/ascend/optimizer/format_type/insert_trans_op.h"
 #undef private
 #undef protected
 
@@ -55,10 +57,14 @@ class MockEliminate5To4And4To5KernelSelect : public KernelSelect {
   ~MockEliminate5To4And4To5KernelSelect() override = default;
   void SelectKernel(const CNodePtr &cnode) override {
     KernelBuildInfoBuilder builder;
+    builder.SetInputsReshapeType({""});
+    builder.SetOutputsReshapeType({""});
     builder.SetInputsFormat({"NCHW"});
     builder.SetInputsDeviceType({kFloat16->type_id()});
     builder.SetOutputsFormat({"NC1HWC0"});
     builder.SetOutputsDeviceType({kFloat16->type_id()});
+    builder.SetInputsKernelObjectType({kernel::KernelObjectType::TENSOR});
+    builder.SetOutputsKernelObjectType({kernel::KernelObjectType::TENSOR});
     AnfAlgo::SetSelectKernelBuildInfo(builder.Build(), cnode.get());
   }
 };
@@ -71,9 +77,12 @@ TEST_F(TestHWEliminateRedundantOp, test_eliminate_5to4_4to5) {
    *     output = make_tuple(res)
    *     return output
    */
+  auto ms_context = MsContext::GetInstance();
+  MS_EXCEPTION_IF_NULL(ms_context);
+  ms_context->set_param<int>(MS_CTX_EXECUTION_MODE, kGraphMode);
   FuncGraphPtr g = getPyFun_.CallAndParseRet("test_eliminate_5to4_4to5", "before");
   // Renormalize func_graph to infer and set shape and type information.
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list{x_abstract, x_abstract};
   auto kg = GetKernelGraph(g, args_spec_list);
@@ -98,7 +107,10 @@ TEST_F(TestHWEliminateRedundantOp, test_eliminate_5to4_4to5) {
   builder.SetOutputsFormat({"NC1HWC0"});
   builder.SetInputsDeviceType({kFloat16->type_id(), kFloat16->type_id()});
   builder.SetOutputsDeviceType({kFloat16->type_id()});
-
+  builder.SetInputsReshapeType({"", ""});
+  builder.SetOutputsReshapeType({""});
+  builder.SetInputsKernelObjectType({kernel::KernelObjectType::TENSOR, kernel::KernelObjectType::TENSOR});
+  builder.SetOutputsKernelObjectType({kernel::KernelObjectType::TENSOR});
   sub->set_kernel_info(std::make_shared<device::KernelInfo>());
   add->set_kernel_info(std::make_shared<device::KernelInfo>());
   AnfAlgo::SetSelectKernelBuildInfo(builder.Build(), sub.get());
@@ -139,7 +151,7 @@ TEST_F(TestHWEliminateRedundantOp, test_eliminate_cast) {
    */
   FuncGraphPtr g = getPyFun_.CallAndParseRet("test_eliminate_cast", "before");
   // Renormalize func_graph to infer and set shape and type information.
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list{x_abstract, x_abstract};
   auto kg = GetKernelGraph(g, args_spec_list);
@@ -164,7 +176,10 @@ TEST_F(TestHWEliminateRedundantOp, test_eliminate_cast) {
   builder.SetOutputsFormat({"NC1HWC0"});
   builder.SetInputsDeviceType({kFloat16->type_id(), kFloat16->type_id()});
   builder.SetOutputsDeviceType({kFloat16->type_id()});
-
+  builder.SetInputsReshapeType({"", ""});
+  builder.SetOutputsReshapeType({"", ""});
+  builder.SetInputsKernelObjectType({kernel::KernelObjectType::TENSOR, kernel::KernelObjectType::TENSOR});
+  builder.SetOutputsKernelObjectType({kernel::KernelObjectType::TENSOR, kernel::KernelObjectType::TENSOR});
   sub->set_kernel_info(std::make_shared<device::KernelInfo>());
   add->set_kernel_info(std::make_shared<device::KernelInfo>());
   AnfAlgo::SetSelectKernelBuildInfo(builder.Build(), sub.get());
@@ -204,7 +219,7 @@ TEST_F(TestHWEliminateRedundantOp, test_eliminate_cast_depend_cast) {
    */
   FuncGraphPtr g = getPyFun_.CallAndParseRet("test_eliminate_cast_depend_cast", "before");
   // Renormalize func_graph to infer and set shape and type information.
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list{x_abstract, x_abstract};
   auto kg = GetKernelGraph(g, args_spec_list);
@@ -240,7 +255,10 @@ TEST_F(TestHWEliminateRedundantOp, test_eliminate_cast_depend_cast) {
   builder.SetOutputsFormat({"NC1HWC0"});
   builder.SetInputsDeviceType({kFloat16->type_id(), kFloat16->type_id()});
   builder.SetOutputsDeviceType({kFloat16->type_id()});
-
+  builder.SetInputsReshapeType({"", ""});
+  builder.SetOutputsReshapeType({""});
+  builder.SetInputsKernelObjectType({kernel::KernelObjectType::TENSOR, kernel::KernelObjectType::TENSOR});
+  builder.SetOutputsKernelObjectType({kernel::KernelObjectType::TENSOR});
   sub->set_kernel_info(std::make_shared<device::KernelInfo>());
   add->set_kernel_info(std::make_shared<device::KernelInfo>());
   AnfAlgo::SetSelectKernelBuildInfo(builder.Build(), sub.get());

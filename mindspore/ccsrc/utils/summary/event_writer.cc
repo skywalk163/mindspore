@@ -14,19 +14,27 @@
  * limitations under the License.
  */
 
-#include "utils/summary/event_writer.h"
+#include "include/common/utils/summary/event_writer.h"
 #include <string>
-#include <memory>
-#include <vector>
+#include "utils/system/base.h"
+#include "utils/system/file_system.h"
+#include "utils/system/crc32c.h"
+#include "utils/system/env.h"
 #include "utils/log_adapter.h"
-#include "utils/convert_utils.h"
+#include "include/common/utils/convert_utils.h"
 
 namespace mindspore {
 namespace summary {
+namespace py = pybind11;
+using string = std::string;
+using Env = system::Env;
+using WriteFile = system::WriteFile;
+using WriteFilePtr = std::shared_ptr<WriteFile>;
+using FileSystem = system::FileSystem;
 
 // implement the EventWriter
 EventWriter::EventWriter(const std::string &file_full_name) : filename_(file_full_name), events_write_count_(0) {
-  fs_ = system::Env::GetFileSystem();
+  fs_ = Env::GetFileSystem();
   if (fs_ == nullptr) {
     MS_LOG(EXCEPTION) << "Get the file system failed.";
   }
@@ -38,7 +46,9 @@ EventWriter::EventWriter(const std::string &file_full_name) : filename_(file_ful
   status_ = true;
 }
 
-EventWriter::~EventWriter() {
+EventWriter::~EventWriter() { CloseFile(); }
+
+void EventWriter::CloseFile() noexcept {
   if (event_file_ != nullptr) {
     bool result = Close();
     if (!result) {
@@ -133,11 +143,6 @@ bool EventWriter::Shut() noexcept {
   return result;
 }
 
-// Summary Record Format:
-//  1 uint64 : data length
-//  2 uint32 : mask crc value of data length
-//  3 bytes  : data
-//  4 uint32 : mask crc value of data
 bool EventWriter::WriteRecord(const std::string &data) {
   if (event_file_ == nullptr) {
     MS_LOG(ERROR) << "Writer not initialized or previously closed.";

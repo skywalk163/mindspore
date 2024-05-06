@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2021 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,9 @@
 #include <list>
 #include <vector>
 #include "common/common_test.h"
-#include "parallel/strategy.h"
-#include "parallel/ops_info/activation_info.h"
-#include "parallel/device_manager.h"
+#include "frontend/parallel/strategy.h"
+#include "frontend/parallel/ops_info/activation_info.h"
+#include "frontend/parallel/device_manager.h"
 
 namespace mindspore {
 namespace parallel {
@@ -40,13 +40,13 @@ class TestActivation : public UT::Common {
 };
 
 void TestActivation::SetUp() {
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 1050; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(1024);
   stage_map.push_back(26);
 
@@ -57,10 +57,10 @@ void TestActivation::SetUp() {
   g_device_manager->Init(dev_list, local_dev, stage_map, "hccl");
 
   ValuePtr relu = MakeValue(std::string("relu"));
-  std::unordered_map<std::string, ValuePtr> relu_attr = {{"activation_type", relu}};
+  mindspore::HashMap<std::string, ValuePtr> relu_attr = {{"activation_type", relu}};
   ValuePtr sm = MakeValue(std::string("softmax"));
-  ValuePtr axix = MakeValue(std::int32_t(2));
-  std::unordered_map<std::string, ValuePtr> softmax_attr = {{"activation_type", sm}, {"axis", axix}};
+  ValuePtr axix = MakeValue(std::int64_t(2));
+  mindspore::HashMap<std::string, ValuePtr> softmax_attr = {{"activation_type", sm}, {"axis", axix}};
 
   Shapes relu_inputs_shape = {{2, 4, 8, 16}};
   Shapes relu_outputs_shape = {{2, 4, 8, 16}};
@@ -81,7 +81,7 @@ TEST_F(TestActivation, test_activation_strategies) {
     ASSERT_NE(sp, nullptr);
     Cost cost = *(swc->cost_list[0]);
 
-    act_ptr_->InitForCostModel(sp);
+    act_ptr_->InitForCostModel(sp, nullptr);
     std::vector<TensorInfo> inputs_info = act_ptr_->inputs_tensor_info();
     std::vector<TensorInfo> outputs_info = act_ptr_->outputs_tensor_info();
     ASSERT_DOUBLE_EQ(act_ptr_->operator_cost()->GetComputationCost(inputs_info, outputs_info, sp->GetInputStage()),
@@ -101,12 +101,12 @@ TEST_F(TestActivation, test_softmax_strategies) {
     ASSERT_NE(sp, nullptr);
     Cost cost = *(swc->cost_list[0]);
 
-    std::vector<Dimensions> stra = sp->GetInputDim();
+    Strategies stra = sp->GetInputDim();
     ASSERT_GT(stra.size(), 0);
     Dimensions input0_stra = stra[0];
     ASSERT_GT(input0_stra.size(), 2);
     ASSERT_EQ(input0_stra[2], 1);
-    soft_ptr_->InitForCostModel(sp);
+    soft_ptr_->InitForCostModel(sp, nullptr);
     std::vector<TensorInfo> inputs_info = soft_ptr_->inputs_tensor_info();
     std::vector<TensorInfo> outputs_info = soft_ptr_->outputs_tensor_info();
     ASSERT_DOUBLE_EQ(soft_ptr_->operator_cost()->GetComputationCost(inputs_info, outputs_info, sp->GetInputStage()),

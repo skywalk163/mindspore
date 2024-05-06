@@ -1,4 +1,4 @@
-# Copyright 2020 Huawei Technologies Co., Ltd
+# Copyright 2020-2023 Huawei Technologies Co., Ltd
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,14 +21,15 @@
 import logging
 import numpy as np
 import pytest
-from dataclasses import dataclass
 
 import mindspore.nn as nn
 from mindspore import context
 from mindspore._extends.parse.standard_method import ms_len
-from mindspore.common.api import ms_function
+from mindspore.common.api import jit, jit_class
 from mindspore.common.tensor import Tensor
-from mindspore.ops.composite import core
+from mindspore.ops.composite.base import core
+from mindspore.ops.primitive import constexpr
+from mindspore.ops import functional as F
 from ..ut_filter import non_graph_engine
 
 
@@ -40,7 +41,7 @@ log = logging.getLogger("test")
 log.setLevel(level=logging.ERROR)
 
 
-@ms_function
+@jit
 def default_parameter_f(x, y=3):
     """ default_parameter_f """
     z = x + y
@@ -62,7 +63,7 @@ def get_val_fn(x):
 
 
 # Test case: test bool not
-@ms_function
+@jit
 def bool_exp(x, y):
     """ bool_exp """
     return not x > y
@@ -74,7 +75,7 @@ def test_bool_exp():
 
 
 # Test case: use the variable parameter for @mindspore
-@ms_function
+@jit
 def var_parameter_f(x, *args):
     """ var_parameter_f """
     z = x + args[0] + args[1] + args[2]
@@ -99,7 +100,7 @@ class Net(nn.Cell):
         self.TC = ClassTest("test_class", 1.2)
         self.value = value1
 
-    @ms_function
+    @jit
     def construct(self, x):
         x = self.get_test_value(x)
         return x
@@ -158,7 +159,7 @@ class Net1(nn.Cell):
         self.TC = ClassTest("test_class", v1)
         self.value = v2
 
-    @ms_function
+    @jit
     def construct(self, x):
         x = x + self.TC.get_value(self.value)
         return x
@@ -166,7 +167,11 @@ class Net1(nn.Cell):
 
 @non_graph_engine
 def test_call_other_object_method():
-    """ test_call_other_object_method """
+    """
+    Feature: getattr for custom class.
+    Description: Support getattr for custom class.
+    Expectation: No exception.
+    """
     log.debug("begin test_call_other_object_method")
 
     x = Tensor(np.array([[1, 2, 3], [1, 2, 3]]).astype(np.int32))
@@ -175,13 +180,9 @@ def test_call_other_object_method():
     z = np.array([[8, 9, 12], [3, 4, 7]]).astype(np.int32)
 
     net = Net1(y, y1)
-    with pytest.raises(TypeError):
-        output = net.construct(x)
-        result = output.asnumpy()
-        print(result)
-        assert np.all(result == z)
-
-    log.debug("finished test_call_other_object_method")
+    output = net.construct(x)
+    result = output.asnumpy()
+    assert np.all(result == z)
 
 
 # Test: call global object method(not self) on parse graph code
@@ -196,12 +197,12 @@ class Net2(nn.Cell):
         super(Net2, self).__init__()
         self.value = value1
 
-    @ms_function
+    @jit
     def construct(self, x):
         x = x + TC.get_value(self.value)
         return x
 
-    @ms_function
+    @jit
     def construct1(self, x):
         x = x + TC.value
         x = x + self.value
@@ -210,20 +211,20 @@ class Net2(nn.Cell):
 
 @non_graph_engine
 def test_call_no_self_other_object_method():
-    """ test_call_no_self_other_object_method """
+    """
+    Feature: getattr for custom class.
+    Description: Support getattr for custom class.
+    Expectation: No exception.
+    """
     log.debug("begin test_call_other_object_method")
     x = Tensor(np.array([[1, 2, 3], [1, 2, 3]]).astype(np.int32))
     y = Tensor(np.array([[2, 3, 4], [1, 1, 2]]).astype(np.int32))
     z = np.array([[6, 9, 12], [3, 4, 7]]).astype(np.int32)
 
     net = Net2(y)
-    with pytest.raises(TypeError):
-        output = net.construct(x)
-        result = output.asnumpy()
-        print(result)
-        assert np.all(result == z)
-
-    log.debug("finished test_call_other_object_method")
+    output = net.construct(x)
+    result = output.asnumpy()
+    assert np.all(result == z)
 
 
 def test_call_no_self_other_object_attr_value():
@@ -242,7 +243,7 @@ def vararg1(x, y):
 def varargs_main(fn):
     """ varargs_main """
 
-    @ms_function
+    @jit
     def t1(*args):
         return fn(*args)
 
@@ -264,7 +265,7 @@ def set_flag(x):
     return x + 1
 
 
-@ms_function
+@jit
 def set_test_flag_main(x, y):
     """ set_test_flag_main """
     z = set_flag(x)
@@ -279,10 +280,11 @@ def test_set_flag():
     log.debug("finished test_set_flag, ret = %r", ret)
 
 
-@dataclass
+@jit_class
 class Access:
-    a: int
-    b: int
+    def __init__(self, a, b):
+        self.a = a
+        self.b = b
 
     def max(self):
         if self.a > self.b:
@@ -290,16 +292,41 @@ class Access:
         return self.b
 
 
-@ms_function
-def invoke_dataclass(x, y):
-    """ invoke_dataclass """
+@jit
+def invoke_msclass(x, y):
+    """ invoke_msclass """
     acs = Access(x, y)
     return acs.max()
 
 
 def test_access():
     """ test_access """
-    invoke_dataclass(1, 2)
+    invoke_msclass(1, 2)
+
+
+@jit_class
+class Access2:
+    def __init__(self, a, b):
+        self.a = a
+        self.b = b
+
+    def max(self):
+        if self.a > self.b:
+            return self.c
+        return self.b
+
+
+@jit
+def invoke_msclass2(x, y):
+    """ invoke_msclass """
+    acs = Access2(x, y)
+    return acs.max()
+
+
+def test_access_attr_error():
+    """ test_access """
+    with pytest.raises(Exception):
+        invoke_msclass2(2, 1)
 
 
 def myfunc(x):
@@ -307,7 +334,7 @@ def myfunc(x):
     return x * x
 
 
-@ms_function
+@jit
 def ms_infer_for():
     """ ms_infer_for """
     a = 0.0
@@ -321,7 +348,7 @@ def test_infer_for():
     ms_infer_for()
 
 
-@ms_function
+@jit
 def ms_infer_for_func(y):
     """ ms_infer_for_func """
     for x in [1.0, 2.0, 3.0]:
@@ -334,7 +361,7 @@ def test_ms_infer_for_func():
     ms_infer_for_func(1.0)
 
 
-@ms_function
+@jit
 def add(x, y):
     """ add """
     return x + y
@@ -346,7 +373,7 @@ def test_add():
     return res
 
 
-@ms_function
+@jit
 def add_list():
     """ add_list """
     a = [1, 2, 3]
@@ -359,7 +386,7 @@ def test_list():
     return add_list()
 
 
-@ms_function
+@jit
 def compare_list_len():
     """ compare_list_len """
     a = [1, 2, 3]
@@ -371,7 +398,7 @@ def test_list_len():
     compare_list_len()
 
 
-@ms_function
+@jit
 def add_tuple():
     """ add_tuple """
     a = (1, 2, 3)
@@ -389,7 +416,7 @@ def invoke_func(x):
     return x * x
 
 
-@ms_function
+@jit
 def tuple_of_node(x, y):
     """ tuple_of_node """
     a = invoke_func(x)
@@ -405,7 +432,7 @@ def test_tuple_node():
     return res
 
 
-@ms_function
+@jit
 def range_spec(x, y):
     """ range_spec """
     for _ in range(1, 10, 3):
@@ -417,3 +444,18 @@ def test_range():
     """ test_range """
     res = range_spec(10, 10)
     return res
+
+def test_expr():
+    """ test const expr """
+    a = (1, 2)
+    @constexpr
+    def tuple_len(x):
+        assert len(x) == 2
+    tuple_len(a)
+
+
+def test_tuple_to_array():
+    """ test range tuple to array """
+    range_x = range(10)
+    res = F.tuple_to_array(range_x)
+    print(res)

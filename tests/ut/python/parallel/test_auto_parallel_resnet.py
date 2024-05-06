@@ -20,20 +20,24 @@ import mindspore.nn as nn
 import mindspore.ops.functional as F
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.common.initializer import TruncatedNormal
 from mindspore.communication.management import init
-from mindspore.nn.loss.loss import _Loss
+from mindspore.nn.loss.loss import LossBase
 from mindspore.nn.optim.momentum import Momentum
 from mindspore.ops import operations as P
 from mindspore.parallel import _cost_model_context as cost_model_context
 from mindspore.parallel import set_algo_parameters
 from mindspore.parallel._utils import _reset_op_id as resset_op_id
-from mindspore.train.model import Model, ParallelMode
+from mindspore.train import Model
+from mindspore.context import ParallelMode
+from mindspore.communication._comm_helper import GlobalComm
 
 context.set_context(mode=context.GRAPH_MODE, device_target="Ascend")
 context.set_context(device_id=0)
+GlobalComm.CHECK_ENVS = False
 init()
+GlobalComm.CHECK_ENVS = True
 
 
 def weight_variable():
@@ -78,12 +82,15 @@ class ResidualBlock(nn.Cell):
 
         out_chls = out_channels // self.expansion
         self.conv1 = _conv1x1(in_channels, out_chls, stride=1)
+        self.conv1.conv2d.shard(((8, 1, 1, 1), (1, 1, 1, 1)))
         self.bn1 = _fused_bn(out_chls, momentum=momentum)
 
         self.conv2 = _conv3x3(out_chls, out_chls, stride=stride)
+        self.conv2.conv2d.shard(((8, 1, 1, 1), (1, 1, 1, 1)))
         self.bn2 = _fused_bn(out_chls, momentum=momentum)
 
         self.conv3 = _conv1x1(out_chls, out_channels, stride=1)
+        self.conv3.conv2d.shard(((8, 1, 1, 1), (1, 1, 1, 1)))
         self.bn3 = _fused_bn(out_channels, momentum=momentum)
 
         self.relu = P.ReLU()
@@ -92,11 +99,12 @@ class ResidualBlock(nn.Cell):
         if self.downsample:
             self.conv_down_sample = _conv1x1(in_channels, out_channels,
                                              stride=stride)
+            self.conv_down_sample.conv2d.shard(((8, 1, 1, 1), (1, 1, 1, 1)))
             self.bn_down_sample = _fused_bn(out_channels, momentum=momentum)
         elif self.stride != 1:
             self.maxpool_down = nn.MaxPool2d(kernel_size=1, stride=2, pad_mode='same')
 
-        self.add = P.TensorAdd()
+        self.add = P.Add()
 
     def construct(self, x):
         identity = x
@@ -140,6 +148,7 @@ class ResNet(nn.Cell):
                              "layer_num, inchannel, outchannel list must be 4!")
 
         self.conv1 = _conv7x7(3, 64, stride=2)
+        self.conv1.conv2d.shard(((8, 1, 1, 1), (1, 1, 1, 1)))
         self.bn1 = _fused_bn(64)
         self.relu = P.ReLU()
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, pad_mode='same')
@@ -212,7 +221,7 @@ def resnet50(class_num=10):
                   class_num)
 
 
-class SoftmaxCrossEntropyExpand(_Loss):
+class SoftmaxCrossEntropyExpand(LossBase):
     def __init__(self, sparse=False):
         super(SoftmaxCrossEntropyExpand, self).__init__()
         self.exp = P.Exp()
@@ -243,7 +252,7 @@ class SoftmaxCrossEntropyExpand(_Loss):
 
         softmax_result_log = self.log(softmax_result)
         loss = self.sum_cross_entropy((self.mul(softmax_result_log, label)), -1)
-        loss = self.mul2(F.scalar_to_array(-1.0), loss)
+        loss = self.mul2(F.scalar_to_tensor(-1.0), loss)
         loss = self.mean(loss, -1)
 
         return loss
@@ -274,10 +283,20 @@ class DatasetLenet():
     def get_repeat_count(self):
         return 1
 
+    def create_tuple_iterator(self, num_epochs=-1, do_copy=True):
+        return self
+
 
 def test_train_32k_8p(batch_size=32, num_classes=32768):
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
+
     dev_num = 8
-    context.set_auto_parallel_context(parallel_mode=ParallelMode.AUTO_PARALLEL, device_num=dev_num)
+    context.set_auto_parallel_context(parallel_mode=ParallelMode.AUTO_PARALLEL, search_mode="dynamic_programming", 
+                                      device_num=dev_num)
     set_algo_parameters(elementwise_op_strategy_follow=True)
     resset_op_id()
     np.random.seed(6)
@@ -291,7 +310,7 @@ def test_train_32k_8p(batch_size=32, num_classes=32768):
     opt = Momentum(filter(lambda x: x.requires_grad, net.get_parameters()), 0.01, 0.9)
     model = Model(net, loss_fn=loss, optimizer=opt)
     model.train(5, dataset, dataset_sink_mode=False)
-    strategies = _executor._get_strategy(model._train_network)
+    strategies = _cell_graph_executor._get_shard_strategy(model._train_network)
     for (k, v) in strategies.items():
         if re.search('Conv2D-op', k) is not None:
             assert v[0][0] == dev_num
@@ -300,7 +319,7 @@ def test_train_32k_8p(batch_size=32, num_classes=32768):
         elif re.search('ReduceSum-op', k) is not None:
             assert v == [[dev_num, 1]]
 
-    allreduce_fusion_dict = _executor._get_allreduce_fusion(model._train_network)
+    allreduce_fusion_dict = _cell_graph_executor._get_allreduce_fusion(model._train_network)
     print(allreduce_fusion_dict)
     return allreduce_fusion_dict
 
@@ -651,8 +670,15 @@ def train_32k_8p_fusion2(batch_size=32, num_classes=32768):  # 1048576 #131072 #
 
 
 def test_train_64k_8p(batch_size=32, num_classes=65536):  # 1048576 #131072 #32768 #8192
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
+
     dev_num = 8
-    context.set_auto_parallel_context(parallel_mode=ParallelMode.AUTO_PARALLEL, device_num=dev_num)
+    context.set_auto_parallel_context(parallel_mode=ParallelMode.AUTO_PARALLEL, search_mode="dynamic_programming", 
+                                      device_num=dev_num)
     cost_model_context.set_cost_model_context(costmodel_gamma=0.001, costmodel_beta=400.0)
     set_algo_parameters(elementwise_op_strategy_follow=True)
     resset_op_id()
@@ -667,7 +693,7 @@ def test_train_64k_8p(batch_size=32, num_classes=65536):  # 1048576 #131072 #327
     opt = Momentum(filter(lambda x: x.requires_grad, net.get_parameters()), 0.01, 0.9)
     model = Model(net, loss_fn=loss, optimizer=opt)
     model.train(5, dataset, dataset_sink_mode=False)
-    strategies = _executor._get_strategy(model._train_network)
+    strategies = _cell_graph_executor._get_shard_strategy(model._train_network)
     for (k, v) in strategies.items():
         if re.search('Conv2D-op', k) is not None:
             assert v[0][0] == dev_num
@@ -675,3 +701,106 @@ def test_train_64k_8p(batch_size=32, num_classes=65536):  # 1048576 #131072 #327
             assert v == [[1, 1], [dev_num, 1]]
         elif re.search('ReduceSum-op', k) is not None:
             assert v == [[1, dev_num]]
+
+
+def test_train_8k_8p_gpu(batch_size=32, num_classes=8192):
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
+
+    dev_num = 8
+    context.set_context(mode=context.GRAPH_MODE, device_target="GPU")
+    context.set_auto_parallel_context(parallel_mode=ParallelMode.AUTO_PARALLEL, search_mode="dynamic_programming", 
+                                      device_num=dev_num)
+    set_algo_parameters(elementwise_op_strategy_follow=True)
+    # set_algo_parameters(enable_algo_approxi=True)
+    resset_op_id()
+    np.random.seed(6)
+    input_np = np.ones([batch_size, 3, 224, 224]).astype(np.float32)
+    label_np = np.zeros([batch_size]).astype(np.int32)
+    for i in range(0, batch_size):
+        label_np[i] = i % num_classes
+    dataset = DatasetLenet(Tensor(input_np), Tensor(label_np), 1)
+    net = resnet50(num_classes)
+    loss = SoftmaxCrossEntropyExpand(sparse=True)
+    opt = Momentum(filter(lambda x: x.requires_grad, net.get_parameters()), 0.01, 0.9)
+    model = Model(net, loss_fn=loss, optimizer=opt)
+    model.train(5, dataset, dataset_sink_mode=False)
+    strategies = _cell_graph_executor._get_shard_strategy(model._train_network)
+    for (k, v) in strategies.items():
+        if re.search('Conv2D-op', k) is not None:
+            assert v[0][0] == dev_num
+        elif re.search('MatMul-op', k) is not None:
+            assert v == [[1, 1], [dev_num, 1]]
+        elif re.search('ReduceSum-op', k) is not None:
+            assert v == [[1, dev_num]]
+
+
+def test_train_8k_8p_gpu_approxi(batch_size=32, num_classes=8192):
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
+
+    dev_num = 8
+    context.set_context(mode=context.GRAPH_MODE, device_target="GPU")
+    context.set_auto_parallel_context(parallel_mode=ParallelMode.AUTO_PARALLEL, search_mode="dynamic_programming", 
+                                      device_num=dev_num)
+    set_algo_parameters(enable_algo_approxi=True)
+    resset_op_id()
+    np.random.seed(6)
+    input_np = np.ones([batch_size, 3, 224, 224]).astype(np.float32)
+    label_np = np.zeros([batch_size]).astype(np.int32)
+    for i in range(0, batch_size):
+        label_np[i] = i % num_classes
+    dataset = DatasetLenet(Tensor(input_np), Tensor(label_np), 1)
+    net = resnet50(num_classes)
+    loss = SoftmaxCrossEntropyExpand(sparse=True)
+    opt = Momentum(filter(lambda x: x.requires_grad, net.get_parameters()), 0.01, 0.9)
+    model = Model(net, loss_fn=loss, optimizer=opt)
+    model.train(5, dataset, dataset_sink_mode=False)
+    strategies = _cell_graph_executor._get_shard_strategy(model._train_network)
+    for (k, v) in strategies.items():
+        if re.search('Conv2D-op', k) is not None:
+            assert v[0][0] == dev_num
+        elif re.search('MatMul-op', k) is not None:
+            assert v == [[1, 1], [dev_num, 1]]
+        elif re.search('ReduceSum-op', k) is not None:
+            assert v == [[1, dev_num]]
+
+
+def test_train_4k_8p_gpu(batch_size=32, num_classes=4096):
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
+
+    dev_num = 8
+    context.set_context(mode=context.GRAPH_MODE, device_target="GPU")
+    context.set_auto_parallel_context(parallel_mode=ParallelMode.AUTO_PARALLEL, search_mode="dynamic_programming", 
+                                      device_num=dev_num)
+    set_algo_parameters(elementwise_op_strategy_follow=True)
+    resset_op_id()
+    np.random.seed(6)
+    input_np = np.ones([batch_size, 3, 224, 224]).astype(np.float32)
+    label_np = np.zeros([batch_size]).astype(np.int32)
+    for i in range(0, batch_size):
+        label_np[i] = i % num_classes
+    dataset = DatasetLenet(Tensor(input_np), Tensor(label_np), 1)
+    net = resnet50(num_classes)
+    loss = SoftmaxCrossEntropyExpand(sparse=True)
+    opt = Momentum(filter(lambda x: x.requires_grad, net.get_parameters()), 0.01, 0.9)
+    model = Model(net, loss_fn=loss, optimizer=opt)
+    model.train(5, dataset, dataset_sink_mode=False)
+    strategies = _cell_graph_executor._get_shard_strategy(model._train_network)
+    for (k, v) in strategies.items():
+        if re.search('Conv2D-op', k) is not None:
+            assert v[0][0] == dev_num
+        elif re.search('MatMul-op', k) is not None:
+            assert v == [[dev_num, 1], [1, 1]]
+        elif re.search('ReduceSum-op', k) is not None:
+            assert v == [[dev_num, 1]]

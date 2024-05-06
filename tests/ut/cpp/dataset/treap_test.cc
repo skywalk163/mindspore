@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,11 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "dataset/util/treap.h"
+#include "minddata/dataset/util/treap.h"
 #include "common/common.h"
 #include "gtest/gtest.h"
-#include "dataset/util/de_error.h"
-#include "utils/log_adapter.h"
 
 using namespace mindspore::dataset;
 
@@ -26,6 +24,9 @@ class MindDataTestTreap : public UT::Common {
   MindDataTestTreap() {}
 };
 
+/// Feature: Treap
+/// Description: Test all functions of Treap
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestTreap, TestALLFunction) {
   Treap<uint64_t, uint64_t> tree;
   srand(time(NULL));

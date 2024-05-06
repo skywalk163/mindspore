@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 #include "common/common_test.h"
-#include "parallel/step_parallel.h"
-#include "parallel/step_auto_parallel.h"
-#include "parallel/auto_parallel/edge_costmodel.h"
-#include "parallel/ops_info/operator_info.h"
-#include "operator/ops.h"
-#include "pipeline/static_analysis/static_analysis.h"
+#include "mindspore/core/ops/math_ops.h"
+#include "frontend/parallel/step_parallel.h"
+#include "frontend/parallel/step_parallel_utils.h"
+#include "frontend/parallel/step_auto_parallel.h"
+#include "frontend/parallel/auto_parallel/edge_costmodel.h"
+#include "frontend/parallel/ops_info/operator_info.h"
+#include "frontend/operator/ops.h"
+#include "pipeline/jit/ps/static_analysis/static_analysis.h"
 
 namespace mindspore {
 namespace parallel {
@@ -32,13 +34,13 @@ class TestStepAutoParallel : public UT::Common {
 };
 
 void TestStepAutoParallel::SetUp() {
-  std::vector<int32_t> dev_list;
+  RankList dev_list;
 
   for (int32_t i = 0; i < 20; i++) {
     dev_list.push_back(i);
   }
 
-  std::vector<int32_t> stage_map;
+  RankList stage_map;
   stage_map.push_back(16);
   stage_map.push_back(4);
 
@@ -58,9 +60,9 @@ CNodePtr Create_Node(Shape x, Shape y, Shape out) {
   BaseShapePtr shape1 = std::make_shared<abstract::Shape>(x);
   BaseShapePtr shape2 = std::make_shared<abstract::Shape>(y);
   BaseShapePtr shape3 = std::make_shared<abstract::Shape>(out);
-  AbstractBasePtr abstract1 = abstract::FromValue(1, false);
-  AbstractBasePtr abstract2 = abstract::FromValue(1, false);
-  AbstractBasePtr abstract3 = abstract::FromValue(1, false);
+  AbstractBasePtr abstract1 = abstract::FromValue(static_cast<int64_t>(1), false);
+  AbstractBasePtr abstract2 = abstract::FromValue(static_cast<int64_t>(1), false);
+  AbstractBasePtr abstract3 = abstract::FromValue(static_cast<int64_t>(1), false);
   abstract1->set_shape(shape1);
   abstract2->set_shape(shape2);
   abstract3->set_shape(shape3);
@@ -94,11 +96,11 @@ CNodePtr Create_two_nodes(Shape x, Shape y, Shape z, Shape w, Shape out) {
   BaseShapePtr shapeZ = std::make_shared<abstract::Shape>(z);
   BaseShapePtr shapeW = std::make_shared<abstract::Shape>(w);
   BaseShapePtr shapeOut = std::make_shared<abstract::Shape>(out);
-  AbstractBasePtr abstractX = abstract::FromValue(1, false);
-  AbstractBasePtr abstractY = abstract::FromValue(1, false);
-  AbstractBasePtr abstractZ = abstract::FromValue(1, false);
-  AbstractBasePtr abstractW = abstract::FromValue(1, false);
-  AbstractBasePtr abstractOut = abstract::FromValue(1, false);
+  AbstractBasePtr abstractX = abstract::FromValue(static_cast<int64_t>(1), false);
+  AbstractBasePtr abstractY = abstract::FromValue(static_cast<int64_t>(1), false);
+  AbstractBasePtr abstractZ = abstract::FromValue(static_cast<int64_t>(1), false);
+  AbstractBasePtr abstractW = abstract::FromValue(static_cast<int64_t>(1), false);
+  AbstractBasePtr abstractOut = abstract::FromValue(static_cast<int64_t>(1), false);
   abstractX->set_shape(shapeX);
   abstractY->set_shape(shapeY);
   abstractZ->set_shape(shapeZ);
@@ -135,6 +137,9 @@ CNodePtr Create_two_nodes(Shape x, Shape y, Shape z, Shape w, Shape out) {
   return MatMul_2_node;
 }
 
+/// Features: test create op instance
+/// Description:
+/// Expectation:
 TEST_F(TestStepAutoParallel, test_create_op_instance) {
   Shape inputs_x_dims = {64, 32};
   Shape inputs_y_dims = {32, 64};
@@ -142,23 +147,26 @@ TEST_F(TestStepAutoParallel, test_create_op_instance) {
   CNodePtr node = Create_Node(inputs_x_dims, inputs_y_dims, outputs_dims);
   bool result = node->input(0)->cast<ValueNodePtr>()->value()->isa<Primitive>();
   ASSERT_EQ(result, true);
-  // creat prim and attrs
+  // create prim and attrs
   PrimitivePtr prim = node->input(0)->cast<ValueNodePtr>()->value()->cast<PrimitivePtr>();
   auto attrs = prim->attrs();
 
-  // creat shape
+  // create shape
   Shapes inputs_shape = std::vector<Shape>{inputs_x_dims, inputs_y_dims};
   Shapes outputs_shape = std::vector<Shape>{outputs_dims};
   std::vector<Shapes> shape = {inputs_shape, outputs_shape};
   StrategyPtr strategyPtr;
 
-  std::shared_ptr<OperatorInfo> matmul_info = NewOperatorInstance(prim, attrs, shape);
-  node->set_operator_info(matmul_info);
+  std::shared_ptr<OperatorInfo> matmul_info = OperatorInstance(prim, attrs, shape);
+  node->set_user_data<OperatorInfo>(matmul_info);
   std::string name_expect = "MatMulInfo00";
   std::string name_test = matmul_info->name();
   ASSERT_EQ(name_expect, name_test);
 }
 
+/// Features: test create edge
+/// Description:
+/// Expectation:
 TEST_F(TestStepAutoParallel, test_create_edge) {
   Shape inputs_x_dims = {64, 32};
   Shape inputs_y_dims = {32, 64};
@@ -173,19 +181,19 @@ TEST_F(TestStepAutoParallel, test_create_edge) {
   PrimitivePtr u_prim = node->input(1)->cast<CNodePtr>()->input(0)->cast<ValueNodePtr>()->value()->cast<PrimitivePtr>();
   auto u_attrs = u_prim->attrs();
 
-  // creat v node
+  // create v node
   Shapes v_inputs_shape = std::vector<Shape>{outputs_z_dims, inputs_w_dims};
   Shapes v_outputs_shape = std::vector<Shape>{outputs_dim};
   std::vector<Shapes> v_shape = {v_inputs_shape, v_outputs_shape};
   StrategyPtr v_strategyPtr;
-  std::shared_ptr<OperatorInfo> v_matmul_info = NewOperatorInstance(v_prim, v_attrs, v_shape);
+  std::shared_ptr<OperatorInfo> v_matmul_info = OperatorInstance(v_prim, v_attrs, v_shape);
 
   // create u node
   Shapes u_inputs_shape = std::vector<Shape>{inputs_x_dims, inputs_y_dims};
   Shapes u_outputs_shape = std::vector<Shape>{outputs_z_dims};
   std::vector<Shapes> u_shape = {u_inputs_shape, u_outputs_shape};
   StrategyPtr u_strategyPtr;
-  std::shared_ptr<OperatorInfo> u_matmul_info = NewOperatorInstance(u_prim, u_attrs, u_shape);
+  std::shared_ptr<OperatorInfo> u_matmul_info = OperatorInstance(u_prim, u_attrs, u_shape);
 
   std::string edge_name = u_prim->name() + "-" + v_prim->name();
   std::shared_ptr<Edge> edge_ptr = std::make_shared<Edge>(edge_name, u_matmul_info, v_matmul_info, 0, 0, false);

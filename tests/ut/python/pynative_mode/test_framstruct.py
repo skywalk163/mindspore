@@ -14,28 +14,29 @@
 # ============================================================================
 """ test_framstruct """
 import numpy as np
-import pytest
-
+import mindspore as ms
 import mindspore.nn as nn
 from mindspore import context
 from mindspore.common import dtype as mstype
 from mindspore.common.parameter import Parameter, ParameterTuple
-from mindspore.common.tensor import Tensor
+from mindspore.common.api import jit
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
-from mindspore.ops._grad.grad_base import bprop_getters
-from mindspore.ops.primitive import prim_attr_register, PrimitiveWithInfer
 from ..ut_filter import non_graph_engine
-from ....mindspore_test_framework.utils.check_gradient import (
-    ms_function, check_jacobian, Tensor, NNGradChecker,
-    OperationGradChecker, check_gradient, ScalarGradChecker)
+from ....mindspore_test_framework.utils.check_gradient import Tensor
+
+context.set_context(mode=context.PYNATIVE_MODE)
 
 
 def setup_module(module):
     context.set_context(mode=context.PYNATIVE_MODE)
 
 
-@ms_function
+grad_all = C.GradOperation(get_all=True)
+grad_by_list = C.GradOperation(get_by_list=True)
+
+
+@jit
 def while_upper_bound(upper):
     rval = 2
     while rval < upper:
@@ -48,7 +49,7 @@ def test_while_upper_bound():
     assert res == 16
 
 
-@ms_function
+@jit
 def while_lower_bound(lower):
     """ t_while """
     rval = lower
@@ -62,7 +63,7 @@ def test_while_lower_bound():
     assert res == 256
 
 
-@ms_function
+@jit
 def dynamic_make_tuple(x, lower, upper):
     out = ()
     i = lower
@@ -73,14 +74,12 @@ def dynamic_make_tuple(x, lower, upper):
 
 
 def test_dynamic_make_tuple():
-    # Dynamicly recursively creating static type is invalid in mindspore, as mindspore is a static language.
-    with pytest.raises(RuntimeError):
-        dynamic_make_tuple(2, 1, 5)
+    assert dynamic_make_tuple(2, 1, 5) == (2, 2, 2, 2)
 
 
 def test_make_tuple():
-    # Staticly recursively creating static type is valid in mindspore.
-    @ms_function
+    # Statically recursively creating static type is valid in mindspore.
+    @jit
     def make_tuple(x):
         out = ()
         for i in range(3):
@@ -91,7 +90,7 @@ def test_make_tuple():
     assert res == (5, 5, 5)
 
 
-@ms_function
+@jit
 def add(x, y):
     """ add """
     return x + y
@@ -109,22 +108,22 @@ def add_mul(x, y):
 
 def mainf(x, y):
     """ mainf """
-    return C.grad_all(mul)(x, y)
+    return grad_all(mul)(x, y)
 
 
 def grad_add_mul(x, y):
     """ grad_add_mul """
-    return C.grad_all(add_mul)(x, y)
+    return grad_all(add_mul)(x, y)
 
 
-@ms_function
+@jit
 def sub(x, y):
     """ sub """
     return x - y
 
 
 # pylint: disable=using-constant-test
-@ms_function
+@jit
 def if_always_true(x):
     """ if_always_true """
     if True:
@@ -155,14 +154,14 @@ def test_if_always_true():
 @non_graph_engine
 def test_f():
     """ test_f """
-    res = mainf(3, 2)
+    res = mainf(Tensor(3, dtype=ms.int32), Tensor(2, dtype=ms.int32))
     assert res == (2, 3)
 
 
 @non_graph_engine
 def test_grad_add_mul():
     """ test_grad_add_mul """
-    res = grad_add_mul(3, 2)
+    res = grad_add_mul(Tensor(3, dtype=ms.int32), Tensor(2, dtype=ms.int32))
     assert res == (2, 7)
 
 
@@ -172,7 +171,7 @@ def f(x):
     return x
 
 
-@ms_function
+@jit
 def list_subscript():
     """ list_subscript """
     x = [1, 2, 3]
@@ -185,7 +184,7 @@ def test_list_subscript():
     assert res == 2
 
 
-@ms_function
+@jit
 def ms_infer_for(xs, y):
     """ ms_infer_for """
     rval = y
@@ -202,7 +201,7 @@ def test_infer_for():
     assert res == 10
 
 
-@ms_function
+@jit
 def if_construct(a, b):
     z = a
     if a > b:
@@ -221,7 +220,7 @@ def test_if_construct():
     assert res == 15
 
 
-@ms_function
+@jit
 def if_scalar(a, b):
     """ if_abstract """
     if a:
@@ -241,7 +240,7 @@ def test_if_scalar2():
     assert res == 6
 
 
-@ms_function
+@jit
 def if_tensor(a, b):
     c = a
     if a < b:
@@ -257,22 +256,15 @@ def if_tensor(a, b):
 
 
 def test_if_tensor():
-    res = if_tensor(Tensor(np.ones([64, 10]).astype(np.int32)), Tensor(np.ones([64, 10]).astype(np.int32)))
-    assert res == Tensor(np.ones([64, 10]).astype(np.int32) * 4)
+    res = if_tensor(Tensor(np.ones([1]).astype(np.int32)), Tensor(np.ones([1]).astype(np.int32)))
+    assert res == Tensor(np.ones([1]).astype(np.int32) * 4)
 
 
-@ms_function
 def rec(x):
     """ rec """
     if x > 0:
         return rec(x - 1)
     return x
-
-
-def test_grad_rec():
-    """ test_grad_rec """
-    res = C.grad(rec)(10)
-    assert res == 1
 
 
 def test_me_rec():
@@ -281,7 +273,6 @@ def test_me_rec():
     assert res == 0
 
 
-@ms_function
 def t2_while(x, y):
     out = y - x
     i = 0
@@ -296,11 +287,6 @@ def test_while2():
     assert res == 6
 
 
-def test_grad_while2():
-    res = C.grad(t2_while)(2, 3)
-    assert res == 3
-
-
 def if_test(a, b):
     """ if_test """
     if a > b:
@@ -310,30 +296,12 @@ def if_test(a, b):
 
 def grad_if(x, y):
     """ grad_if """
-    return C.grad_all(if_test)(x, y)
+    return grad_all(if_test)(x, y)
 
 
 def test_grad_if():
     """ test_grad_if """
-    assert grad_if(5, 4) == (3, 0)
-
-
-# While loop is not unrolled in forward and backward graphs.
-def test_dont_unroll_while():
-    def dont_unroll_while(x, y):
-        i = 2
-        out = y - x
-        while i < 10:
-            out = mul(x, y)
-            i = i + 1
-        return out
-
-    @ms_function()
-    def invoke_while(x, y):
-        return C.grad(dont_unroll_while)(x, y)
-
-    res = invoke_while(2, 3)
-    assert res == 3
+    assert grad_if(Tensor(5, dtype=ms.int32), Tensor(4, dtype=ms.int32)) == (3, 0)
 
 
 class ConvNet(nn.Cell):
@@ -361,7 +329,7 @@ c2 = Tensor([10], mstype.float32)
 c3 = Tensor([1], mstype.float32)
 
 
-@ms_function
+@jit
 def t1_while(x, y, z):
     out = x
     i = c1
@@ -377,10 +345,10 @@ def test_while_net():
     x = Tensor(np.ones([1, 16, 12, 12]).astype(np.float32))
     z = Tensor(np.ones([1, 16, 16, 16]).astype(np.float32))
     res = t1_while(x, y, z)
-    assert res == Tensor(np.ones([1, 16, 12, 12]).astype(np.float32) * 2306.0)
+    assert np.all(res.asnumpy() == np.ones([1, 16, 12, 12]).astype(np.float32) * 2306.0)
 
 
-@ms_function
+@jit
 def if_while(a, b, x, z):
     c = a
     i = c1
@@ -399,8 +367,8 @@ def if_while(a, b, x, z):
 def test_if_while():
     x = Tensor(np.random.randn(1, 16, 12, 12).astype(np.float32))
     z = Tensor(np.random.randn(1, 16, 16, 16).astype(np.float32))
-    res = if_while(Tensor(np.ones([64, 10]).astype(np.float32)), Tensor(np.ones([64, 10]).astype(np.float32)), x, z)
-    assert res == Tensor(np.ones([64, 10]).astype(np.float32) * 4.0)
+    res = if_while(Tensor(np.ones([1]).astype(np.float32)), Tensor(np.ones([1]).astype(np.float32)), x, z)
+    assert np.all(res.asnumpy() == np.ones([64, 10]).astype(np.float32) * 4.0)
 
 
 def _while(x):
@@ -415,15 +383,15 @@ def _while(x):
 
 def grad_while(x):
     """ grad_while """
-    return C.grad_all(_while)(x)
+    return grad_all(_while)(x)
 
 
 def test_grad_while():
     """ test_grad_while """
-    assert grad_while(5) == (60,)
+    assert grad_while(Tensor(5, dtype=ms.int32)) == (60,)
 
 
-@ms_function
+@jit
 def factorial(n):
     """ factorial """
     if n == 0:
@@ -436,12 +404,7 @@ def test_factorial():
     assert res == 6
 
 
-def test_grad_factorial():
-    res = C.grad(factorial)(3)
-    assert res == 11
-
-
-@ms_function
+@jit
 def factorial2(n):
     """ factorial """
     if n != 0:
@@ -457,7 +420,7 @@ def test_factorial2():
     assert res == 6
 
 
-@ms_function
+@jit
 def foo(n):
     if n <= 1:
         if n == 1:
@@ -473,7 +436,7 @@ def test_foo():
     assert res == 1
 
 
-@ms_function
+@jit
 def double_nested_loop(x):
     i = 0
     s = 0
@@ -491,7 +454,7 @@ def test_nested_loop():
     assert res == 18
 
 
-@ms_function
+@jit
 def double_nested_loop2(x):
     s = 0
     for i in range(x):
@@ -513,17 +476,13 @@ def _for(x):
     return ret
 
 
+@jit
 def grad_for(x):
     """ grad_for """
-    return C.grad_all(_for)(x)
+    return grad_all(_for)(x)
 
 
-def test_grad_for():
-    """ test_grad_for """
-    assert grad_for(5) == (60,)
-
-
-@ms_function
+@jit
 def try_tail(x):
     """ try_tail """
     return C.tail(x)
@@ -535,7 +494,7 @@ def test_tail():
     try_tail((0, 1, 2, 3))
 
 
-@ms_function
+@jit
 def zero_like_tensor(x):
     """ zero_like_tensor """
     return C.zeros_like(x)
@@ -545,122 +504,123 @@ def test_zeros():
     """ test_zeros """
     x = Tensor(np.ones([2, 3]).astype(np.int32))
     res = zero_like_tensor(x)
-    assert res == Tensor(np.zeros([2, 3]).astype(np.int32))
+    assert np.all(res.asnumpy() == np.zeros([2, 3]).astype(np.int32))
 
 
-def test_ScalarGradChecker():
-    """ test_ScalarGradChecker """
-
-    def scalar_f(x, y):
-        return x * y
-
-    check_gradient(scalar_f, 1.0, 4.0, grad_checker_class=ScalarGradChecker, sampling_times=1)
+@jit
+def arithmetic_simplify_01(x, y):
+    """ arithmetic_simplify_01 """
+    return C.zeros_like(x) * y
 
 
-def test_GradCheckerPrimitive():
-    """ test_GradCheckerPrimitive """
-    matmul = P.MatMul()
-
-    def prim_f(x, y):
-        return matmul(x, y)
-
-    check_gradient(prim_f, Tensor(np.array([[0.65, 0.8, 0.8]], np.float32)),
-                   Tensor(np.array([[0.1], [0.2], [-.1]], np.float32)),
-                   grad_checker_class=OperationGradChecker, sampling_times=2)
+def test_arithmetic_simplify_01():
+    """ test_arithmetic_simplify_01 """
+    x = Tensor(np.ones([2, 3]).astype(np.int32))
+    y = Tensor(np.array([[1, 2, 3], [4, 5, 6]]).astype(np.int32))
+    res = arithmetic_simplify_01(x, y)
+    expect = np.zeros([2, 3]).astype(np.int32)
+    assert np.all(res.asnumpy() == expect)
 
 
-def test_NNGradChecker():
-    """ test_NNGradChecker """
-
-    class Net(nn.Cell):
-        """ Net definition """
-
-        def __init__(self):
-            super(Net, self).__init__()
-            self.dense = nn.Dense(10, 10)
-
-        def construct(self, x):
-            out = self.dense(x)
-            return out
-
-    check_gradient(Net(), Tensor(np.random.rand(1, 10).astype(np.float32)),
-                   delta=1e-3,
-                   max_error=1e-3,
-                   grad_checker_class=NNGradChecker, sampling_times=3)
+@jit
+def arithmetic_simplify_02(x, y):
+    """ arithmetic_simplify_02 """
+    return C.ones_like(x) * y
 
 
-def test_OperationGradChecker():
-    """ test_OperationGradChecker """
-
-    class Net(nn.Cell):
-        """ Net definition """
-
-        def __init__(self):
-            super(Net, self).__init__()
-            self.matmul = P.MatMul()
-            self.z = Parameter(Tensor(np.array([1.0], np.float32)), name='z')
-
-        def construct(self, x, y):
-            x = x * self.z
-            out = self.matmul(x, y)
-            return out
-
-    check_gradient(Net(), Tensor(np.array([[0.65, 0.8, 0.8]], np.float32)),
-                   Tensor(np.array([[0.1], [0.2], [-.1]], np.float32)), grad_checker_class=OperationGradChecker,
-                   input_selector=[1], sampling_times=2)
+def test_arithmetic_simplify_02():
+    """ test_arithmetic_simplify_02 """
+    x = Tensor(np.ones([2, 3]).astype(np.int32))
+    y = Tensor(np.array([[1, 2, 3], [4, 5, 6]]).astype(np.int32))
+    res = arithmetic_simplify_02(x, y)
+    expect = np.array([[1, 2, 3], [4, 5, 6]]).astype(np.int32)
+    assert np.all(res.asnumpy() == expect)
 
 
-def test_ScalarJacobianChecker():
-    """ test_ScalarJacobianChecker """
-
-    def scalar_f(x, y):
-        return x * y
-
-    check_jacobian(scalar_f, 1.0, 4.0, grad_checker_class=ScalarGradChecker, input_selector=[0])
+@jit
+def arithmetic_simplify_03(x, y):
+    """ arithmetic_simplify_03 """
+    return x * C.ones_like(y)
 
 
-def test_OperationJacobianChecker():
-    """ test_OperationJacobianChecker """
-
-    class Net(nn.Cell):
-        """ Net definition """
-
-        def __init__(self):
-            super(Net, self).__init__()
-            self.matmul = P.MatMul()
-            self.z = Parameter(Tensor(np.array([1.0], np.float32)), name='z')
-
-        def construct(self, x, y):
-            x = x * self.z
-            out = self.matmul(x, y)
-            return x, out
-
-    check_jacobian(Net(), Tensor(np.array([[0.65, 0.8, 0.8], [0.1, 0.2, 0.3]], np.float32)),
-                   Tensor(np.array([[0.1, 0.3], [0.2, 0.2], [-.1, 0.4]], np.float32)),
-                   grad_checker_class=OperationGradChecker, input_selector=[0],
-                   output_selector=[0])
+def test_arithmetic_simplify_03():
+    """ test_arithmetic_simplify_03 """
+    x = Tensor(np.ones([2, 3]).astype(np.int32))
+    y = Tensor(np.array([[1, 2, 3], [4, 5, 6]]).astype(np.int32))
+    res = arithmetic_simplify_03(x, y)
+    expect = np.ones([2, 3]).astype(np.int32)
+    assert np.all(res.asnumpy() == expect)
 
 
-def test_NNJacobianChecker():
-    """ test_NNJacobianChecker """
+@jit
+def arithmetic_simplify_04(x):
+    """ arithmetic_simplify_04 """
+    return x + 0
 
-    class Net(nn.Cell):
-        """ Net definition """
 
-        def __init__(self):
-            super(Net, self).__init__()
-            self.dense = nn.Dense(10, 10)
+def test_arithmetic_simplify_04():
+    """ test_arithmetic_simplify_04 """
+    x = Tensor(np.array([[1, 2, 3], [4, 5, 6]]).astype(np.int32))
+    res = arithmetic_simplify_04(x)
+    expect = np.array([[1, 2, 3], [4, 5, 6]]).astype(np.int32)
+    assert np.all(res.asnumpy() == expect)
 
-        def construct(self, x):
-            out = self.dense(x)
-            return out, x
 
-    check_jacobian(Net(), Tensor(np.random.rand(1, 10).astype(np.float32)),
-                   delta=1e-3,
-                   max_error=1e-7,
-                   grad_checker_class=NNGradChecker,
-                   input_selector=[1],
-                   output_selector=[0])
+@jit
+def arithmetic_simplify_05(x):
+    """ arithmetic_simplify_05 """
+    return x * 1
+
+
+def test_arithmetic_simplify_05():
+    """ test_arithmetic_simplify_05 """
+    x = Tensor(np.array([[1, 2, 3], [4, 5, 6]]).astype(np.int32))
+    res = arithmetic_simplify_05(x)
+    expect = np.array([[1, 2, 3], [4, 5, 6]]).astype(np.int32)
+    assert np.all(res.asnumpy() == expect)
+
+
+@jit
+def arithmetic_simplify_06(x):
+    """ arithmetic_simplify_06 """
+    return x * 2 * 5
+
+
+def test_arithmetic_simplify_06():
+    """ test_arithmetic_simplify_06 """
+    x = Tensor(np.array([[1, 2, 3], [4, 5, 6]]).astype(np.int32))
+    res = arithmetic_simplify_06(x)
+    expect = np.array([[10, 20, 30], [40, 50, 60]]).astype(np.int32)
+    assert np.all(res.asnumpy() == expect)
+
+
+@jit
+def arithmetic_simplify_07(x):
+    """ arithmetic_simplify_07 """
+    return (x + 1) * 2 * 5
+
+
+def test_arithmetic_simplify_07():
+    """ test_arithmetic_simplify_07 """
+    x = Tensor(np.array([[1, 2, 3], [4, 5, 6]]).astype(np.int32))
+    res = arithmetic_simplify_07(x)
+    expect = np.array([[20, 30, 40], [50, 60, 70]]).astype(np.int32)
+    assert np.all(res.asnumpy() == expect)
+
+
+@jit
+def arithmetic_simplify_08(x, y):
+    """ arithmetic_simplify_08 """
+    return 1 * x * 1 * 1 + 1 * 0 * 1 + 0 + y * 1
+
+
+def test_arithmetic_simplify_08():
+    """ test_arithmetic_simplify_08 """
+    x = Tensor(np.array([[1, 2, 3], [4, 5, 6]]).astype(np.int32))
+    y = Tensor(np.ones([2, 3]).astype(np.int32))
+    res = arithmetic_simplify_08(x, y)
+    expect = np.array([[2, 3, 4], [5, 6, 7]]).astype(np.int32)
+    assert np.all(res.asnumpy() == expect)
 
 
 def multi_outputs(x, y):
@@ -668,11 +628,7 @@ def multi_outputs(x, y):
     return 2 * z, 2 * z
 
 
-def test_grad_multi_outputs():
-    assert C.grad_all_with_sens(multi_outputs)(2, 3, (1, 1)) == (4, 4)
-
-
-@ms_function
+@jit
 def while_sp(x, y, z):
     out = x
     i = c3
@@ -687,7 +643,7 @@ def test_while_sp():
     z = Tensor(np.ones([1, 3]).astype(np.float32))
     x = Tensor(np.ones([1, 3]).astype(np.float32) * 2.0)
     res = while_sp(x, y, z)
-    assert res == Tensor(np.ones([1, 3]).astype(np.float32) * 1024.0)
+    assert np.all(res.asnumpy() == np.ones([1, 3]).astype(np.float32) * 1024.0)
 
 
 def grad_refactor_simple_1(x, y):
@@ -696,7 +652,7 @@ def grad_refactor_simple_1(x, y):
 
 
 def test_grad_refactor_simple_1():
-    assert C.grad_all(grad_refactor_simple_1)(2, 1) == (4, 2)
+    assert grad_all(grad_refactor_simple_1)(Tensor(2, dtype=ms.int32), Tensor(1, dtype=ms.int32)) == (4, 2)
 
 
 def grad_refactor_simple_2(x, y, z):
@@ -705,7 +661,10 @@ def grad_refactor_simple_2(x, y, z):
 
 
 def test_grad_refactor_simple_2():
-    assert C.grad_all(grad_refactor_simple_2)(2, 3, 0) == (7, 4, 7)
+    x = Tensor(2, dtype=ms.int32)
+    y = Tensor(3, dtype=ms.int32)
+    z = Tensor(0, dtype=ms.int32)
+    assert grad_all(grad_refactor_simple_2)(x, y, z) == (7, 4, 7)
 
 
 def grad_refactor_1(a, b):
@@ -718,7 +677,7 @@ def grad_refactor_1(a, b):
 
 
 def test_grad_refactor_1():
-    assert C.grad_all(grad_refactor_1)(2, 3) == (3, 2)
+    assert grad_all(grad_refactor_1)(Tensor(2, dtype=ms.int32), Tensor(3, dtype=ms.int32)) == (3, 2)
 
 
 def grad_refactor_2(a, b):
@@ -731,7 +690,7 @@ def grad_refactor_2(a, b):
 
 
 def test_grad_refactor_2():
-    assert C.grad_all(grad_refactor_2)(2, 3) == (27, 54)
+    assert grad_all(grad_refactor_2)(Tensor(2, dtype=ms.int32), Tensor(3, dtype=ms.int32)) == (27, 54)
 
 
 def grad_refactor_3(a):
@@ -739,10 +698,6 @@ def grad_refactor_3(a):
     if a > 3:
         return 0
     return 3 * a
-
-
-def test_grad_refactor_3():
-    assert C.grad_all(grad_refactor_3)(3) == (3,)
 
 
 def grad_refactor_4(a):
@@ -753,7 +708,7 @@ def grad_refactor_4(a):
 
 
 def test_grad_refactor_4():
-    assert C.grad_all(grad_refactor_4)(4) == (3,)
+    assert grad_all(grad_refactor_4)(Tensor(4, dtype=ms.int32)) == (3,)
 
 
 def grad_refactor_5(a):
@@ -761,10 +716,6 @@ def grad_refactor_5(a):
     if a > 3:
         return 1
     return a
-
-
-def test_grad_refactor_5():
-    assert C.grad_all(grad_refactor_5)(1) == (1,)
 
 
 def grad_refactor_6(a, b):
@@ -775,7 +726,7 @@ def grad_refactor_6(a, b):
 
 
 def test_grad_refactor_6():
-    assert C.grad_all(grad_refactor_6)(3, 2) == (3, 1)
+    assert grad_all(grad_refactor_6)(Tensor(3, dtype=ms.int32), Tensor(2, dtype=ms.int32)) == (3, 1)
 
 
 def grad_refactor_while(x):
@@ -784,10 +735,6 @@ def grad_refactor_while(x):
     while rval < 4:
         rval = rval * rval
     return rval
-
-
-def test_grad_refactor_9():
-    assert C.grad_all(grad_refactor_while)(3) == (6,)
 
 
 def grad_refactor__while_1(x):
@@ -802,21 +749,17 @@ def grad_refactor__while_1(x):
 
 def test_grad_refactor_10():
     """ test_grad_while """
-    assert C.grad_all(grad_refactor__while_1)(5) == (60,)
+    assert grad_all(grad_refactor__while_1)(Tensor(5, dtype=ms.int32)) == (60,)
 
 
 def test_grad_refactor_11():
     class Net(nn.Cell):
         """ Net definition """
-
-        def __init__(self):
-            super(Net, self).__init__()
-
         def construct(self, x, y):
             return x * y * y
 
     net = Net()
-    C.grad_all(net)(Tensor(np.ones([2]).astype(np.float32)), Tensor(np.ones([2]).astype(np.float32)))
+    grad_all(net)(Tensor(np.ones([2]).astype(np.float32)), Tensor(np.ones([2]).astype(np.float32)))
 
 
 def test_grad_refactor_12():
@@ -831,7 +774,7 @@ def test_grad_refactor_12():
             return x * self.z * y
 
     net = Net()
-    C.grad_all(net)(Tensor(np.ones([2]).astype(np.float32)), Tensor(np.zeros([2]).astype(np.float32)))
+    grad_all(net)(Tensor(np.ones([2]).astype(np.float32)), Tensor(np.zeros([2]).astype(np.float32)))
 
 
 def test_grad_refactor_13():
@@ -847,7 +790,7 @@ def test_grad_refactor_13():
 
     net = Net()
     weights = ParameterTuple(net.trainable_params())
-    C.grad_by_list(net, weights)(Tensor(np.ones([2]).astype(np.float32)), Tensor(np.zeros([2]).astype(np.float32)))
+    grad_by_list(net, weights)(Tensor(np.ones([2]).astype(np.float32)), Tensor(np.zeros([2]).astype(np.float32)))
 
 
 def grad_refactor_14(a, b):
@@ -865,10 +808,6 @@ def grad_refactor_14(a, b):
         return b
 
     return inner1(b) + inner2(a) + inner3(a)
-
-
-def test_grad_refactor_14():
-    assert C.grad_all(grad_refactor_14)(2, 3) == (3, 9)
 
 
 # pylint: disable=using-constant-test
@@ -890,113 +829,17 @@ def test_grad_if_defer_inline():
     network = IfDeferInline([128, 96])
     network.add_flags(defer_inline=False)
     inp = Tensor(np.ones([128, 96]).astype(np.float32))
-    grads = C.grad_all(network)(inp)
-    assert grads == (Tensor(np.full([128, 96], 0.6, dtype=np.float32)),)
+    grads = grad_all(network)(inp)
+    assert np.all(grads[0].asnumpy() == np.full([128, 96], 0.6, dtype=np.float32))
 
 
-def test_bprop_with_wrong_output_num():
-    context.set_context(check_bprop=True)
-    class BpropWithWrongOutputNum(PrimitiveWithInfer):
-        @prim_attr_register
+def test_dict_const():
+    class Net(nn.Cell):
         def __init__(self):
-            super(BpropWithWrongOutputNum, self).__init__('BpropWithWrongOutputNum')
+            super(Net, self).__init__()
+            self.res = {'1': 10}
 
-        def __call__(self, x, y):
-            return x
+        def construct(self):
+            return self.res
 
-        def infer_shape(self, x_shape, yshape):
-            return x_shape
-
-        def infer_dtype(self, x_type, y_type):
-            return x_type
-
-    @bprop_getters.register(BpropWithWrongOutputNum)
-    def get_bprop_with_wrong_output_num(self):
-        """Generate bprop for BpropWithWrongOutputNum"""
-
-        def bprop(x, y, out, dout):
-            return (dout,)
-
-        return bprop
-
-    class BpropWithWrongOutputNumCell(nn.Cell):
-        def __init__(self):
-            super(BpropWithWrongOutputNumCell, self).__init__()
-
-        def construct(self, x, y):
-            return BpropWithWrongOutputNum()(x, y)
-
-    with pytest.raises(TypeError):
-        C.grad_all(BpropWithWrongOutputNumCell())(1, 2)
-
-def test_bprop_with_wrong_output_type():
-    context.set_context(check_bprop=True)
-    class BpropWithWrongOutputType(PrimitiveWithInfer):
-        @prim_attr_register
-        def __init__(self):
-            super(BpropWithWrongOutputType, self).__init__('BpropWithWrongOutputType')
-
-        def __call__(self, x):
-            return x
-
-        def infer_shape(self, x_shape):
-            return x_shape
-
-        def infer_dtype(self, x_type):
-            return x_type
-
-    @bprop_getters.register(BpropWithWrongOutputType)
-    def get_bprop_with_wrong_output_type(self):
-        """Generate bprop for BpropWithWrongOutputType"""
-
-        def bprop(x, out, dout):
-            return (1,)
-
-        return bprop
-
-    class BpropWithWrongOutputTypeCell(nn.Cell):
-        def __init__(self):
-            super(BpropWithWrongOutputTypeCell, self).__init__()
-
-        def construct(self, x):
-            return BpropWithWrongOutputType()(x)
-
-    with pytest.raises(TypeError):
-        C.grad_all(BpropWithWrongOutputTypeCell())(Tensor(np.ones([64, 10]).astype(np.int32)))
-
-
-def test_bprop_with_wrong_output_shape():
-    context.set_context(check_bprop=True)
-    class BpropWithWrongOutputShape(PrimitiveWithInfer):
-        @prim_attr_register
-        def __init__(self):
-            super(BpropWithWrongOutputShape, self).__init__('BpropWithWrongOutputShape')
-
-        def __call__(self, x):
-            return x
-
-        def infer_shape(self, x_shape):
-            return x_shape
-
-        def infer_dtype(self, x_type):
-            return x_type
-
-    @bprop_getters.register(BpropWithWrongOutputShape)
-    def get_bprop_with_wrong_output_shape(self):
-        """Generate bprop for BpropWithWrongOutputShape"""
-        ones = Tensor(np.ones([2,]).astype(np.int32))
-
-        def bprop(x, out, dout):
-            return (ones,)
-
-        return bprop
-
-    class BpropWithWrongOutputShapeCell(nn.Cell):
-        def __init__(self):
-            super(BpropWithWrongOutputShapeCell, self).__init__()
-
-        def construct(self, x):
-            return BpropWithWrongOutputShape()(x)
-
-    with pytest.raises(TypeError):
-        C.grad_all(BpropWithWrongOutputShapeCell())(Tensor(np.ones([64, 10]).astype(np.int32)))
+    Net()()

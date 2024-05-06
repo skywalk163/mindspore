@@ -18,10 +18,17 @@ import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
 from tests.ut.python.ops.test_math_ops import VirtualLoss
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
+grad_all = C.GradOperation(get_all=True)
 
 
 class NetWithLoss(nn.Cell):
@@ -41,17 +48,17 @@ class GradWrap(nn.Cell):
         self.network = network
 
     def construct(self, x, y, b, a):
-        return C.grad_all(self.network)(x, y, b, a)
+        return grad_all(self.network)(x, y, b, a)
 
 
 def test_two_matmul():
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2, strategy3, strategy4):
             super().__init__()
-            self.matmul1 = P.MatMul().set_strategy(strategy1)
-            self.matmul2 = P.MatMul().set_strategy(strategy2)
-            self.matmul3 = P.MatMul().set_strategy(strategy3)
-            self.matmul4 = P.MatMul().set_strategy(strategy4)
+            self.matmul1 = P.MatMul().shard(strategy1)
+            self.matmul2 = P.MatMul().shard(strategy2)
+            self.matmul3 = P.MatMul().shard(strategy3)
+            self.matmul4 = P.MatMul().shard(strategy4)
 
         def construct(self, x, y, b, a):
             out = self.matmul1(x, y)
@@ -72,5 +79,5 @@ def test_two_matmul():
     y = Tensor(np.ones([32, 128]), dtype=ms.float32)
     b = Tensor(np.ones([128, 128]), dtype=ms.float32)
     a = Tensor(np.ones([128, 128]), dtype=ms.float32)
-    net.set_auto_parallel()
-    _executor.compile(net, x, y, b, a)
+    net.set_train()
+    _cell_graph_executor.compile(net, x, y, b, a)

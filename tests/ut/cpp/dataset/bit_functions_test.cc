@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "dataset/core/constants.h"
+#include "minddata/dataset/include/dataset/constants.h"
 #include "common/common.h"
 
 using namespace mindspore::dataset;
@@ -23,7 +23,9 @@ class MindDataTestBits : public UT::Common {
     MindDataTestBits() {}
 };
 
-
+/// Feature: Bit functions
+/// Description: Test Bit functions basic usage
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestBits, Basics) {
   uint32_t x = 0;  // 00000
   BitSet(&x, 16);  // 10000

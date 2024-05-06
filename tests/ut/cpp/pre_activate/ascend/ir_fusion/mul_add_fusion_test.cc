@@ -15,8 +15,8 @@
  */
 #include "common/backend_common_test.h"
 #include "common/py_func_graph_fetcher.h"
-#include "pre_activate/ascend/ir_fusion/mul_add_fusion.h"
-#include "debug/anf_ir_dump.h"
+#include "plugin/device/ascend/optimizer/ir_fusion/mul_add_fusion.h"
+#include "include/common/debug/anf_ir_dump.h"
 
 namespace mindspore {
 namespace opt {
@@ -30,7 +30,7 @@ class TestHWMulAddFusion : public BackendCommon {
 
 TEST_F(TestHWMulAddFusion, test_mul_add_fusion1) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_mul_add_fusion", "before1");
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list;
   for (size_t i = 0; i < 3; ++i) {
@@ -54,7 +54,7 @@ TEST_F(TestHWMulAddFusion, test_mul_add_fusion1) {
 
 TEST_F(TestHWMulAddFusion, test_mul_add_fusion2) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_mul_add_fusion", "before2");
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list;
   for (size_t i = 0; i < 3; ++i) {

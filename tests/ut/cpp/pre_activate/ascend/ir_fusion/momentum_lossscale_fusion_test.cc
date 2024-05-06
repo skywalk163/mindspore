@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "pre_activate/ascend/ir_fusion/momentum_lossscale_fusion.h"
+#include "plugin/device/ascend/optimizer/ir_fusion/momentum_lossscale_fusion.h"
 #include "common/backend_common_test.h"
 #include "common/py_func_graph_fetcher.h"
 
@@ -31,7 +31,7 @@ class TestHWMomentumLossscaleFusion : public BackendCommon {
 TEST_F(TestHWMomentumLossscaleFusion, test_momentum_lossscale_fusion) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_momentum_lossscale_fusion", "before");
   EXPECT_NE(g, nullptr);
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list;
   for (size_t i = 0; i < 5; ++i) {

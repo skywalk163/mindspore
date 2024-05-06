@@ -19,9 +19,18 @@ import mindspore.common.dtype as mstype
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
+from mindspore.ops import functional as F
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
+grad_all = C.GradOperation(get_all=True)
+grad_all_with_sens = C.GradOperation(get_all=True, sens_param=True)
 
 
 class GradWrap(nn.Cell):
@@ -30,7 +39,7 @@ class GradWrap(nn.Cell):
         self.network = network
 
     def construct(self, x, y, b, sens):
-        return C.grad_all_with_sens(self.network)(x, y, b, sens)
+        return grad_all_with_sens(self.network)(x, y, b, sens)
 
 
 class GradWrap2(nn.Cell):
@@ -40,8 +49,8 @@ class GradWrap2(nn.Cell):
 
     def construct(self, x, y, b):
         loss = self.network(x, y, b)
-        sens = P.Fill()(mstype.float32, P.Shape()(loss), 1.0)
-        return C.grad_all_with_sens(self.network)(x, y, b, sens)
+        sens = F.fill(mstype.float32, P.Shape()(loss), 1.0)
+        return grad_all_with_sens(self.network)(x, y, b, sens)
 
 
 class GradWrap3(nn.Cell):
@@ -50,7 +59,8 @@ class GradWrap3(nn.Cell):
         self.network = network
 
     def construct(self, x, y, bias):
-        return C.grad_all(self.network)(x, y, bias)
+        return grad_all(self.network)(x, y, bias)
+
 
 class GradWrap4(nn.Cell):
     def __init__(self, network):
@@ -58,22 +68,30 @@ class GradWrap4(nn.Cell):
         self.network = network
 
     def construct(self, x, y):
-        return C.grad_all(self.network)(x, y)
+        return grad_all(self.network)(x, y)
+
 
 def compile_net(net, x, y, b):
-    net.set_auto_parallel()
-    _executor.compile(net, x, y, b)
+    net.set_train()
+    _cell_graph_executor.compile(net, x, y, b)
+
 
 def compile_net_no_bias(net, x, y):
-    net.set_auto_parallel()
-    _executor.compile(net, x, y)
+    net.set_train()
+    _cell_graph_executor.compile(net, x, y)
+
 
 def test_no_grad():
+    """
+    Feature: test no grad
+    Description: dev_num is 8, test no grad.
+    Expectation: compile success
+    """
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2):
             super().__init__()
-            self.matmul1 = P.MatMul().set_strategy(strategy1)
-            self.matmul2 = P.MatMul().set_strategy(strategy2)
+            self.matmul1 = P.MatMul().shard(strategy1)
+            self.matmul2 = P.MatMul().shard(strategy2)
 
         def construct(self, x, y, b):
             out = self.matmul1(x, y)
@@ -94,22 +112,25 @@ def test_no_grad():
 
 
 def test_grad_sens_parameter_type():
+    """
+    Feature: test grad sens parameter
+    Description: dev_num is 8, test grad sens parameter.
+    Expectation: compile success
+    """
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2):
             super().__init__()
-            self.matmul1 = P.MatMul().set_strategy(strategy1)
-            self.matmul2 = P.MatMul().set_strategy(strategy2)
+            self.matmul1 = P.MatMul().shard(strategy1)
+            self.matmul2 = P.MatMul().shard(strategy2)
 
         def construct(self, x, y, b):
             out = self.matmul1(x, y)
             out = self.matmul2(out, b)
             return out
 
-    context.set_auto_parallel_context(device_num=8, global_rank=0)
-
-    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
-    strategy1 = ((4, 2), (2, 1))
-    strategy2 = ((2, 4), (4, 1))
+    context.set_auto_parallel_context(parallel_mode="semi_auto_parallel", device_num=64, global_rank=0)
+    strategy1 = ((8, 1), (1, 8))
+    strategy2 = ((8, 8), (8, 1))
     net = GradWrap(Net(strategy1, strategy2))
 
     x = Tensor(np.ones([128, 32]), dtype=ms.float32)
@@ -117,17 +138,30 @@ def test_grad_sens_parameter_type():
     b = Tensor(np.ones([64, 64]), dtype=ms.float32)
 
     sens = Tensor(np.ones([128, 64]), dtype=ms.float32)
-    # net(x, y, b, sens)
-    net.set_auto_parallel()
-    _executor.compile(net, x, y, b, sens)
+    net.set_train()
+    _cell_graph_executor.compile(net, x, y, b, sens, phase='train')
+    x_layout = ([64], [-1, -1], [128, 32], 0, True, '')
+    y_layout = ([64], [-1, -1], [32, 64], 0, True, '')
+    b_layout = ([64], [-1, -1], [64, 64], 0, True, '')
+    sens_layout = ([8, 8], [1, -1], [16, 64], 0, True, '')
+    expect_dict = {'x': x_layout, 'y': y_layout, 'b': b_layout, 'sens': sens_layout}
+    assert net.parameter_layout_dict['x'][0:6] == expect_dict['x']
+    assert net.parameter_layout_dict['y'][0:6] == expect_dict['y']
+    assert net.parameter_layout_dict['b'][0:6] == expect_dict['b']
+    assert net.parameter_layout_dict['sens'][0:6] == expect_dict['sens']
 
 
 def test_grad_sens_tensor_type():
+    """
+    Feature: test grad sens tensor type
+    Description: dev_num is 8, test grad sens tensor type.
+    Expectation: compile success
+    """
     class Net(nn.Cell):
         def __init__(self, strategy1, strategy2):
             super().__init__()
-            self.matmul1 = P.MatMul().set_strategy(strategy1)
-            self.matmul2 = P.MatMul().set_strategy(strategy2)
+            self.matmul1 = P.MatMul().shard(strategy1)
+            self.matmul2 = P.MatMul().shard(strategy2)
 
         def construct(self, x, y, b):
             out = self.matmul1(x, y)
@@ -148,11 +182,16 @@ def test_grad_sens_tensor_type():
 
 
 def test_grad_sens_scalar_broadcast():
+    """
+    Feature: test grad sens scalar broadcast
+    Description: dev_num is 8, test grad sens scalar broadcast.
+    Expectation: compile success
+    """
     class Net(nn.Cell):
         def __init__(self, strategy0, strategy1):
             super().__init__()
-            self.fc_nobias = P.MatMul(transpose_b=True).set_strategy(strategy0)
-            self.reduce_sum = P.ReduceSum(keep_dims=False).set_strategy(strategy1)
+            self.fc_nobias = P.MatMul(transpose_b=True).shard(strategy0)
+            self.reduce_sum = P.ReduceSum(keep_dims=False).shard(strategy1)
 
         def construct(self, x, y):
             out = self.fc_nobias(x, y)

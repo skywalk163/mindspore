@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,14 +23,11 @@
 
 
 #include "common/common.h"
-#include "dataset/engine/connector.h"
-#include "dataset/util/task_manager.h"
+#include "minddata/dataset/engine/connector.h"
+#include "minddata/dataset/util/task_manager.h"
 #include "utils/log_adapter.h"
 
 using namespace mindspore::dataset;
-using mindspore::MsLogLevel::INFO;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::LogStream;
 
 class MindDataTestConnector : public UT::Common {
 public:
@@ -67,7 +64,7 @@ private:
 
   // This worker loop read from input_ vector that have complete list of tasks/elements.
   // The assignment from the elements in input_ to each worker is ensured in RoundRobin,
-  // i.e., tid-0 will pick input_[0], tid-1 will pick input_[1], so-on circularly.
+  // i.e., tid-0 will pick input_[0], tid-1 will pick input_[1], so-on circular.
   Status FirstWorkerPush(
                          int tid,
                          std::shared_ptr<Connector<uint32_t> > my_conn,
@@ -89,8 +86,10 @@ private:
   void GoToSleep(int max_dur);
 };
 
-
-// Test0 : single producer, single consumer which means there is only one queue in the connector
+/// Feature: Connector
+/// Description: Test Connector with single producer and single consumer,
+///     which means there is only one queue in the connector
+/// Expectation: Runs successfully
 TEST_F(MindDataTestConnector, Test0) {
   MS_LOG(INFO) << "MindDataTestConnector Test0: single producer, single consumer.";
   Status rc = this->Run_test_0();
@@ -99,9 +98,10 @@ TEST_F(MindDataTestConnector, Test0) {
   ASSERT_TRUE(rc.IsOk());
 }
 
-// Test1: multiple producers, multiple consumers without random delay
-// A chain of three layer of thread groups connected by two Connectors between
-// two layer.
+/// Feature: Connector
+/// Description: Test Connector with multiple producers and multiple consumers without random delay,
+///     a chain of three layers of thread groups connected by two Connectors between two layers.
+/// Expectation: Runs successfully
 TEST_F(MindDataTestConnector, Test1) {
   MS_LOG(INFO) << "MindDataTestConnector Test1.";
   Status rc = this->Run_test_1();
@@ -110,9 +110,10 @@ TEST_F(MindDataTestConnector, Test1) {
   ASSERT_TRUE(rc.IsOk());
 }
 
-// Test1: multiple producers, multiple consumers with random delay after push/pop
-// A chain of three layer of thread groups connected by two Connectors between
-// two layer.
+/// Feature: Connector
+/// Description: Test Connector with multiple producers and multiple consumers with random delay after push/pop,
+///     a chain of three layers of thread groups connected by two Connectors between two layers.
+/// Expectation: Runs successfully
 TEST_F(MindDataTestConnector, Test2) {
   MS_LOG(INFO) << "MindDataTestConnector Test2.";
   this->SetSleepMilliSec(30);
@@ -140,7 +141,7 @@ Status MindDataTestConnector::Run_test_0() {
   auto my_conn = std::make_shared<Connector<uint32_t>>(1,  // num of producers
                                                       1,  // num of consumers
                                                       10);  // capacity of each queue
-  DS_ASSERT(my_conn != nullptr);
+  MS_ASSERT(my_conn != nullptr);
 
   rc = my_conn->Register(tg_.get());
   RETURN_IF_NOT_OK(rc);
@@ -227,7 +228,7 @@ Status MindDataTestConnector::Run_test_1() {
                             std::bind(&MindDataTestConnector::SerialWorkerPull,
                                       this,
                                       0,  // thread id = 0, since it's the only one
-                                      conn2,  // poping the data from conn2
+                                      conn2,  // popping the data from conn2
                                       &output));
   RETURN_IF_NOT_OK(rc);
   // Wait for the threads to finish.
@@ -277,7 +278,7 @@ Status MindDataTestConnector::FirstWorkerPush(
                                       int start_in,
                                       int offset)  {
   TaskManager::FindMe()->Post();
-  DS_ASSERT(my_conn != nullptr);
+  MS_ASSERT(my_conn != nullptr);
   Status rc;
   for (int i = start_in; i < input_.size(); i += offset) {
     rc = my_conn->Push(tid, input_[i]);
@@ -294,7 +295,7 @@ Status MindDataTestConnector::MidWorkerJob(
                                    int tid,
                                    std::shared_ptr<Connector<uint32_t> > from_conn,
                                    std::shared_ptr<Connector<uint32_t> > to_conn) {
-  DS_ASSERT((from_conn != nullptr) && (to_conn != nullptr));
+  MS_ASSERT((from_conn != nullptr) && (to_conn != nullptr));
   Status rc;
   TaskManager::FindMe()->Post();
   while (1) {
@@ -316,7 +317,7 @@ Status MindDataTestConnector::ValidateOutput(const std::vector<uint32_t> &output
   int prev = 0;
   for (auto el : output) {
     if (prev >= el) {
-      return Status(StatusCode::kUnexpectedError, "Output vector are not in-order.");
+      return Status(StatusCode::kMDUnexpectedError, "Output vector are not in-order.");
     }
     prev = el;
   }

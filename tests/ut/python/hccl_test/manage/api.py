@@ -14,6 +14,7 @@
 # ============================================================================
 """api definition"""
 import threading
+from mindspore.parallel._auto_parallel_context import auto_parallel_context
 
 
 class Hccl():
@@ -22,6 +23,7 @@ class Hccl():
     _instance = None
     _rank_id = 0
     _rank_size = 1
+    _local_rank_id = 0
 
     def __init__(self):
         pass
@@ -35,6 +37,14 @@ class Hccl():
                     Hccl._instance = object.__new__(cls)
                     Hccl._instance.__init__()
         return Hccl._instance
+
+    @property
+    def local_rank_id(self):
+        return self._local_rank_id
+
+    @local_rank_id.setter
+    def local_rank_id(self, local_rank):
+        self._local_rank_id = local_rank
 
     @property
     def rank_id(self):
@@ -56,16 +66,29 @@ class Hccl():
 # pylint: disable=unused-argument
 def get_rank_id(group=None):
     hccl = Hccl()
+    if group is not None and "hccl_world_group" not in group:
+        group_size = get_rank_size(group)
+        rank = hccl.rank_id
+        if rank >= group_size:
+            return rank % group_size
     return hccl.rank_id
 
 
 def get_rank_size(group=None):
     hccl = Hccl()
-    if group is None:
-        return hccl.rank_size
+    if group is None or "hccl_world_group" in group or "nccl_world_group" in group:
+        if auto_parallel_context().get_device_num_is_set() is False:
+            return 1
+        return auto_parallel_context().get_device_num()
     if isinstance(group, str):
         return int(group.split("-")[0])
     raise ValueError
+
+
+# pylint: disable=unused-argument
+def get_local_rank_id(group=None):
+    hccl = Hccl()
+    return hccl.local_rank_id
 
 
 # pylint: disable=unused-argument
@@ -85,4 +108,14 @@ def create_group(group, rank_size, rank_ids):
 
 # pylint: disable=unused-argument
 def destroy_group(group):
+    pass
+
+
+# pylint: disable=unused-argument
+def set_fusion_strategy_by_idx():
+    pass
+
+
+# pylint: disable=unused-argument
+def set_fusion_strategy_by_size():
     pass

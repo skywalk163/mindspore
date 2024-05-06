@@ -17,7 +17,7 @@ import numpy as np
 import mindspore.context as context
 import mindspore.nn as nn
 from mindspore import Tensor
-from mindspore.common.api import ms_function
+from mindspore.common.api import jit
 from mindspore.common.initializer import initializer
 from mindspore.common.parameter import Parameter
 from mindspore.ops import operations as P
@@ -55,7 +55,7 @@ class Net(nn.Cell):
             [-3, -2, -3, -16]]]]).astype(np.float32)), [1, 1, 4, 4]), name='y')
         self.get_shape = P.Shape()
 
-    @ms_function
+    @jit
     def construct(self):
         return self.conv_input(self.out, self.w, self.get_shape(self.x))
 
@@ -63,14 +63,6 @@ class Net(nn.Cell):
 def test_conv2d_backprop_input():
     conv2d_input = Net()
     output = conv2d_input()
-    print("================================")
-#   expect output:
-#   [[[[ -5,  -4,   5,  12,   0,  -8]
-#      [-15,  -6,  17,  17,  -2, -11]
-#      [-15,  -8,  13,  12,   2,  -4]
-#      [-13,  -6,   8, -14,   5,  20]
-#      [ -3,  -4,  -4, -19,   7,  23]
-#      [ -3,  -2,   0, -14,   3,  16]]]]
     expect = np.array([[[[-5, -4, 5, 12, 0, -8],
                          [-15, -6, 17, 17, -2, -11],
                          [-15, -8, 13, 12, 2, -4],

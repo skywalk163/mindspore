@@ -18,28 +18,33 @@ import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
-from mindspore.ops.operations.comm_ops import _VirtualDataset
+from mindspore.nn.wrap.cell_wrapper import _VirtualDatasetCell
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
 
 context.set_context(mode=context.GRAPH_MODE)
+
+grad_all = C.GradOperation(get_all=True)
 
 
 class NetWithLoss(nn.Cell):
     def __init__(self, network, strategy3, strategy4, axis):
         super(NetWithLoss, self).__init__()
-        self.virtual_dataset = _VirtualDataset()
-        self.one_hot = P.OneHot(axis=axis).set_strategy(strategy3)
+        self.one_hot = P.OneHot(axis=axis).shard(strategy3)
         self.on_value = Tensor(2.0, ms.float32)
         self.off_value = Tensor(1.0, ms.float32)
-        self.loss = P.SoftmaxCrossEntropyWithLogits().set_strategy(strategy4)
+        self.loss = P.SoftmaxCrossEntropyWithLogits().shard(strategy4)
         self.network = network
 
     def construct(self, x, y, b):
-        b_virtual = self.virtual_dataset(b)
         predict = self.network(x, y)
-        label = self.one_hot(b_virtual, 64, self.on_value, self.off_value)
+        label = self.one_hot(b, 64, self.on_value, self.off_value)
         return self.loss(predict, label)[0]
 
 
@@ -49,14 +54,14 @@ class GradWrap(nn.Cell):
         self.network = network
 
     def construct(self, x, y, b):
-        return C.grad_all(self.network)(x, y, b)
+        return grad_all(self.network)(x, y, b)
 
 
 class Net(nn.Cell):
     def __init__(self, strategy1, strategy2):
         super().__init__()
-        self.matmul = P.MatMul().set_strategy(strategy1)
-        self.gelu = P.Gelu().set_strategy(strategy2)
+        self.matmul = P.MatMul().shard(strategy1)
+        self.gelu = P.GeLU().shard(strategy2)
 
     def construct(self, x, y):
         out = self.matmul(x, y)
@@ -65,17 +70,17 @@ class Net(nn.Cell):
 
 
 def compile_graph(strategy1, strategy2, strategy3, strategy4, auto=False, onthot_axis=-1):
-    net = GradWrap(NetWithLoss(Net(strategy1, strategy2), strategy3, strategy4, axis=onthot_axis))
-    net.set_auto_parallel()
+    net = GradWrap(_VirtualDatasetCell(NetWithLoss(Net(strategy1, strategy2), strategy3, strategy4, axis=onthot_axis)))
     if auto:
-        context.set_auto_parallel_context(parallel_mode="auto_parallel")
+        context.set_auto_parallel_context(parallel_mode="auto_parallel", search_mode="dynamic_programming")
     else:
         context.set_auto_parallel_context(parallel_mode="semi_auto_parallel")
 
     x = Tensor(np.ones([64, 32]), dtype=ms.float32)
     y = Tensor(np.ones([32, 64]), dtype=ms.float32)
     b = Tensor(np.ones([64]), dtype=ms.int32)
-    _executor.compile(net, x, y, b)
+    net.set_train()
+    _cell_graph_executor.compile(net, x, y, b)
 
 
 def test_onehot_model_parallel():

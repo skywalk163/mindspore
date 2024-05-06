@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Huawei Technologies Co., Ltd
+ * Copyright 2019-2022 Huawei Technologies Co., Ltd
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,11 @@
 #include "common/common.h"
 #include "gtest/gtest.h"
 
-#include "dataset/core/constants.h"
-#include "dataset/core/tensor.h"
-#include "dataset/engine/data_buffer.h"
-#include "dataset/engine/datasetops/source/sampler/sampler.h"
-#include "dataset/engine/datasetops/source/sampler/subset_random_sampler.h"
+#include "minddata/dataset/include/dataset/constants.h"
+#include "minddata/dataset/core/tensor.h"
+
+#include "minddata/dataset/engine/datasetops/source/sampler/sampler.h"
+#include "minddata/dataset/engine/datasetops/source/sampler/subset_random_sampler.h"
 
 #include <vector>
 #include <unordered_set>
@@ -31,35 +31,28 @@ class MindDataTestSubsetRandomSampler : public UT::Common {
  public:
   class DummyRandomAccessOp : public RandomAccessOp {
    public:
-    DummyRandomAccessOp(int64_t num_rows) : num_rows_(num_rows) {};
-    Status GetNumSamples(int64_t *num) const {
-      *num = num_rows_;
-      return Status::OK();
-    }
-
-    Status GetNumRowsInDataset(int64_t *num) const {
-      *num = num_rows_;
-      return Status::OK();
-    }
-
-   private:
-    int64_t num_rows_;
+    DummyRandomAccessOp(int64_t num_rows) {
+      num_rows_ = num_rows;  // base class
+    };
   };
 };
 
+/// Feature: SubsetRandomSampler
+/// Description: Test using all input for SubsetRandomSampler at once
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestSubsetRandomSampler, TestAllAtOnce) {
   std::vector<int64_t> in({0, 1, 2, 3, 4});
   std::unordered_set<int64_t> in_set(in.begin(), in.end());
-  SubsetRandomSampler sampler(in);
+  int64_t num_samples = 0;
+  SubsetRandomSamplerRT sampler(in, num_samples);
 
   DummyRandomAccessOp dummyRandomAccessOp(5);
   sampler.HandshakeRandomAccessOp(&dummyRandomAccessOp);
 
-  std::unique_ptr<DataBuffer> db;
   TensorRow row;
   std::vector<int64_t> out;
-  ASSERT_EQ(sampler.GetNextBuffer(&db), Status::OK());
-  db->PopRow(&row);
+  ASSERT_EQ(sampler.GetNextSample(&row), Status::OK());
+
   for (const auto &t : row) {
     for (auto it = t->begin<int64_t>(); it != t->end<int64_t>(); it++) {
       out.push_back(*it);
@@ -70,56 +63,59 @@ TEST_F(MindDataTestSubsetRandomSampler, TestAllAtOnce) {
     ASSERT_NE(in_set.find(out[i]), in_set.end());
   }
 
-  ASSERT_EQ(sampler.GetNextBuffer(&db), Status::OK());
-  ASSERT_EQ(db->eoe(), true);
+  ASSERT_EQ(sampler.GetNextSample(&row), Status::OK());
+  ASSERT_EQ(row.eoe(), true);
 }
 
-TEST_F(MindDataTestSubsetRandomSampler, TestGetNextBuffer) {
+/// Feature: SubsetRandomSampler
+/// Description: Test SubsetRandomSampler GetNextSample method with samples_per_tensor
+/// Expectation: Output is equal to the expected output
+TEST_F(MindDataTestSubsetRandomSampler, TestGetNextSample) {
   int64_t total_samples = 100000 - 5;
-  int64_t samples_per_buffer = 10;
+  int64_t samples_per_tensor = 10;
+  int64_t num_samples = 0;
   std::vector<int64_t> input(total_samples, 1);
-  SubsetRandomSampler sampler(input, samples_per_buffer);
+  SubsetRandomSamplerRT sampler(input, num_samples, samples_per_tensor);
 
   DummyRandomAccessOp dummyRandomAccessOp(total_samples);
   sampler.HandshakeRandomAccessOp(&dummyRandomAccessOp);
 
-  std::unique_ptr<DataBuffer> db;
   TensorRow row;
   std::vector<int64_t> out;
 
-  ASSERT_EQ(sampler.GetNextBuffer(&db), Status::OK());
+  ASSERT_EQ(sampler.GetNextSample(&row), Status::OK());
   int epoch = 0;
-  while (!db->eoe()) {
+  while (!row.eoe()) {
     epoch++;
-    db->PopRow(&row);
     for (const auto &t : row) {
       for (auto it = t->begin<int64_t>(); it != t->end<int64_t>(); it++) {
         out.push_back(*it);
       }
     }
-    db.reset();
 
-    ASSERT_EQ(sampler.GetNextBuffer(&db), Status::OK());
+    ASSERT_EQ(sampler.GetNextSample(&row), Status::OK());
   }
 
-  ASSERT_EQ(epoch, (total_samples + samples_per_buffer - 1) / samples_per_buffer);
+  ASSERT_EQ(epoch, (total_samples + samples_per_tensor - 1) / samples_per_tensor);
   ASSERT_EQ(input.size(), out.size());
 }
 
+/// Feature: SubsetRandomSampler
+/// Description: Test SubsetRandomSampler ResetSampler method
+/// Expectation: Output is equal to the expected output
 TEST_F(MindDataTestSubsetRandomSampler, TestReset) {
   std::vector<int64_t> in({0, 1, 2, 3, 4});
   std::unordered_set<int64_t> in_set(in.begin(), in.end());
-  SubsetRandomSampler sampler(in);
+  int64_t num_samples = 0;
+  SubsetRandomSamplerRT sampler(in, num_samples);
 
   DummyRandomAccessOp dummyRandomAccessOp(5);
   sampler.HandshakeRandomAccessOp(&dummyRandomAccessOp);
 
-  std::unique_ptr<DataBuffer> db;
   TensorRow row;
   std::vector<int64_t> out;
 
-  ASSERT_EQ(sampler.GetNextBuffer(&db), Status::OK());
-  db->PopRow(&row);
+  ASSERT_EQ(sampler.GetNextSample(&row), Status::OK());
   for (const auto &t : row) {
     for (auto it = t->begin<int64_t>(); it != t->end<int64_t>(); it++) {
       out.push_back(*it);
@@ -130,11 +126,10 @@ TEST_F(MindDataTestSubsetRandomSampler, TestReset) {
     ASSERT_NE(in_set.find(out[i]), in_set.end());
   }
 
-  sampler.Reset();
+  sampler.ResetSampler();
 
-  ASSERT_EQ(sampler.GetNextBuffer(&db), Status::OK());
-  ASSERT_EQ(db->eoe(), false);
-  db->PopRow(&row);
+  ASSERT_EQ(sampler.GetNextSample(&row), Status::OK());
+  ASSERT_EQ(row.eoe(), false);
   out.clear();
   for (const auto &t : row) {
     for (auto it = t->begin<int64_t>(); it != t->end<int64_t>(); it++) {
@@ -146,6 +141,6 @@ TEST_F(MindDataTestSubsetRandomSampler, TestReset) {
     ASSERT_NE(in_set.find(out[i]), in_set.end());
   }
 
-  ASSERT_EQ(sampler.GetNextBuffer(&db), Status::OK());
-  ASSERT_EQ(db->eoe(), true);
+  ASSERT_EQ(sampler.GetNextSample(&row), Status::OK());
+  ASSERT_EQ(row.eoe(), true);
 }

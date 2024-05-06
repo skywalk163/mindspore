@@ -15,71 +15,81 @@
 """ test_checkparameter """
 import pytest
 
-from mindspore._checkparam import check_int, check_int_positive, \
-    check_bool, check_input_format, _expand_tuple
+from mindspore._checkparam import check_input_format, _expand_tuple
+from mindspore import _checkparam as Validator
 
 once = _expand_tuple(1)
 twice = _expand_tuple(2)
 triple = _expand_tuple(3)
-kernel_size = 5
-kernel_size1 = twice(kernel_size)
+KERNEL_SIZE = 5
+kernel_size1 = twice(KERNEL_SIZE)
 assert kernel_size1 == (5, 5)
 
 
 def test_check_int_1():
-    assert check_int(3) == 3
+    assert Validator.check_is_int(3) == 3
 
 
 def check_int_positive_1():
     with pytest.raises(ValueError):
-        check_int_positive(-1)
+        Validator.check_positive_int(-1)
 
 
-def test_NCHW1():
+def test_nchw1():
+    """
+    Feature: test check_input_format
+    Description: NCHW
+    Expectation: success
+    """
     assert check_input_format("NCHW") == "NCHW"
 
 
-def test_NCHW3():
+def test_nchw3():
+    """
+    Feature: test check_input_format
+    Description: rt
+    Expectation: ValueError
+    """
     with pytest.raises(ValueError):
         check_input_format("rt")
 
 
 def test_check_int_2():
     with pytest.raises(TypeError):
-        check_int(3.3)
+        Validator.check_is_int(3.3)
 
 
 def test_check_int_3():
     with pytest.raises(TypeError):
-        check_int("str")
+        Validator.check_is_int("str")
 
 
 def test_check_int_4():
     with pytest.raises(TypeError):
-        check_int(True)
+        Validator.check_is_int(True)
 
 
 def test_check_bool_1():
-    assert check_bool(True)
+    assert Validator.check_bool(True)
 
 
 def test_check_bool_2():
-    assert check_bool(False) is not True
+    assert Validator.check_bool(False) is not True
 
 
 def test_check_bool_3():
     with pytest.raises(TypeError):
-        check_bool("str")
+        Validator.check_bool("str")
 
 
 def test_check_bool_4():
     with pytest.raises(TypeError):
-        check_bool(1)
+        Validator.check_bool(1)
 
 
 def test_check_bool_5():
     with pytest.raises(TypeError):
-        check_bool(3.5)
+        Validator.check_bool(3.5)
 
 
 def test_twice_1():

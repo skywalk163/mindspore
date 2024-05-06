@@ -16,18 +16,25 @@
 #include <iostream>
 #include <unordered_map>
 
-#include "optimizer/ad/grad.h"
+#include "frontend/optimizer/ad/grad.h"
+#include "mindspore/core/ops/sequence_ops.h"
+#include "mindspore/core/ops/comparison_ops.h"
+#include "mindspore/core/ops/array_ops.h"
+#include "mindspore/core/ops/arithmetic_ops.h"
+#include "mindspore/core/ops/framework_ops.h"
 #include "common/common_test.h"
 #include "common/py_func_graph_fetcher.h"
 #include "ir/manager.h"
 #include "ir/value.h"
 #include "ir/func_graph_cloner.h"
 #include "utils/log_adapter.h"
-#include "utils/graph_utils.h"
-#include "pipeline/resource.h"
-#include "pipeline/parse/parse.h"
-#include "debug/draw.h"
-#include "operator/ops.h"
+#include "ir/graph_utils.h"
+#include "pipeline/jit/ps/resource.h"
+#include "pipeline/jit/ps/parse/parse.h"
+#include "include/common/debug/draw.h"
+#include "frontend/operator/ops.h"
+#include "frontend/optimizer/optimizer.h"
+#include "utils/ms_context.h"
 
 namespace mindspore {
 namespace ad {
@@ -37,16 +44,20 @@ class TestAD : public UT::Common {
 
  public:
   UT::PyFuncGraphFetcher getPyFun;
-  pipeline::ResourceBasePtr resourcePtr = std::make_shared<pipeline::ResourceBase>();
+  pipeline::ResourcePtr resourcePtr = std::make_shared<pipeline::Resource>();
 
  protected:
-  void AssertExpect(const std::string& testCase) {
+  void AssertExpect(const std::string &testCase) {
+    auto ms_context = MsContext::GetInstance();
+    ms_context->set_param<int>(MS_CTX_EXECUTION_MODE, kGraphMode);
     FuncGraphPtr g = getPyFun(testCase);
-    FuncGraphPtr dg = Grad(g, resourcePtr);
+    resourcePtr->manager()->RemoveRoots();
+    resourcePtr->manager()->AddFuncGraph(g, true);
+    FuncGraphPtr dg = Grad(g, opt::Optimizer::MakeEmptyOptimizer(resourcePtr));
     AssertExpect(testCase, dg);
   }
 
-  void AssertExpect(const std::string& testCase, const FuncGraphPtr& dg) { ASSERT_TRUE(dg != nullptr); }
+  void AssertExpect(const std::string &testCase, const FuncGraphPtr &dg) { ASSERT_TRUE(dg != nullptr); }
 };
 
 TEST_F(TestAD, test_null) { AssertExpect("test_null"); }
@@ -159,19 +170,9 @@ TEST_F(TestAD, test_prim_identity) {
   AssertExpect("test_prim_identity", dg);
 }
 
-TEST_F(TestAD, test_prim_scalar_to_array) {
-  FuncGraphPtr dg = Kprim(NewValueNode(prim::kPrimScalarToArray), resourcePtr);
-  AssertExpect("test_prim_scalar_to_array", dg);
-}
-
 TEST_F(TestAD, test_prim_array_to_scalar) {
   FuncGraphPtr dg = Kprim(NewValueNode(prim::kPrimArrayToScalar), resourcePtr);
   AssertExpect("test_prim_array_to_scalar", dg);
-}
-
-TEST_F(TestAD, test_prim_dot) {
-  FuncGraphPtr dg = Kprim(NewValueNode(prim::kPrimDot), resourcePtr);
-  AssertExpect("test_prim_dot", dg);
 }
 
 TEST_F(TestAD, test_prim_distribute) {
@@ -184,11 +185,6 @@ TEST_F(TestAD, test_prim_broadcast_shape) {
   AssertExpect("test_prim_broadcast_shape", dg);
 }
 
-TEST_F(TestAD, test_prim_J) {
-  FuncGraphPtr dg = Kprim(NewValueNode(prim::kPrimJ), resourcePtr);
-  AssertExpect("test_prim_J", dg);
-}
-
 TEST_F(TestAD, test_prim_switch) {
   FuncGraphPtr dg = Kprim(NewValueNode(prim::kPrimSwitch), resourcePtr);
   AssertExpect("test_prim_switch", dg);
@@ -196,8 +192,8 @@ TEST_F(TestAD, test_prim_switch) {
 
 TEST_F(TestAD, test_grad_cache) {
   FuncGraphPtr g = getPyFun("test_null");
-  FuncGraphPtr dg1 = Grad(g, resourcePtr);
-  FuncGraphPtr dg2 = Grad(g, resourcePtr);
+  FuncGraphPtr dg1 = Grad(g, opt::Optimizer::MakeEmptyOptimizer(resourcePtr));
+  FuncGraphPtr dg2 = Grad(g, opt::Optimizer::MakeEmptyOptimizer(resourcePtr));
   ASSERT_TRUE(dg1 == dg2);
 }
 

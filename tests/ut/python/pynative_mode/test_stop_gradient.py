@@ -16,18 +16,24 @@
 import numpy as np
 import pytest
 
+import mindspore as ms
 import mindspore.common.dtype as mstype
 import mindspore.nn as nn
 from mindspore import Parameter, ParameterTuple
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import ms_function
+from mindspore.common.api import jit
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
 from mindspore.ops.functional import stop_gradient
 from mindspore.ops.primitive import prim_attr_register, PrimitiveWithInfer
+from tests.security_utils import security_off_wrap
 from ..ut_filter import non_graph_engine
 from ....mindspore_test_framework.utils.bprop_util import bprop
+
+
+grad_by_list = C.GradOperation(get_by_list=True)
+grad_all = C.GradOperation(get_all=True)
 
 
 def setup_module(module):
@@ -81,14 +87,22 @@ def stop_test4(x, y):
     return e
 
 
+@jit
 def grad_stop_test(x, y):
     """ grad_stop_test """
-    return C.grad_all(stop_test2)(x, y)
+    return grad_all(stop_test2)(x, y)
 
 
+@jit
 def grad_stop_test1(x, y):
     """ grad_stop_test1 """
-    return C.grad_all(stop_test3)(x, y)
+    return grad_all(stop_test3)(x, y)
+
+
+@jit
+def grad_stop_test5(x, y):
+    """ grad_stop_test5 """
+    return grad_all(stop_test5)(x, y)
 
 
 def test_stop():
@@ -103,7 +117,7 @@ def test_stop1():
 
 def test_stop5():
     """ test_stop1 """
-    print("test_stop5:", C.grad_all(stop_test5)(2, 3))
+    print("test_stop5:", grad_stop_test5(2, 3))
 
 
 class GradWrap(nn.Cell):
@@ -114,10 +128,10 @@ class GradWrap(nn.Cell):
         self.network = network
         self.weights = ParameterTuple(network.get_parameters())
 
-    @ms_function
+    @jit
     def construct(self, x, label):
         weights = self.weights
-        return C.grad_by_list(self.network, weights)(x, label)
+        return grad_by_list(self.network, weights)(x, label)
 
 
 @non_graph_engine
@@ -132,7 +146,7 @@ def test_softmaxloss_grad():
             self.loss = nn.SoftmaxCrossEntropyWithLogits()
             self.network = network
 
-        @ms_function
+        @jit
         def construct(self, x, label):
             predict = self.network(x)
             return self.loss(predict, label)
@@ -142,7 +156,7 @@ def test_softmaxloss_grad():
 
         def __init__(self):
             super(Net, self).__init__()
-            self.weight = Parameter(Tensor(np.ones([64, 10])), name="weight")
+            self.weight = Parameter(Tensor(np.ones([64, 10]).astype(np.float32)), name="weight")
             self.bias = Parameter(Tensor(np.ones([10]).astype(np.float32)), name="bias")
             self.fc = P.MatMul()
             self.fc2 = nn.Dense(10, 10)
@@ -150,7 +164,7 @@ def test_softmaxloss_grad():
             self.relu = nn.ReLU()
             self.cast = P.Cast()
 
-        @ms_function
+        @jit
         def construct(self, x):
             x = self.fc(x, self.weight)
             x = self.cast(x, mstype.float32)
@@ -162,7 +176,7 @@ def test_softmaxloss_grad():
 
     net = GradWrap(NetWithLossClass(Net()))
 
-    predict = Tensor(np.ones([1, 64]))
+    predict = Tensor(np.ones([1, 64]).astype(np.float32))
     label = Tensor(np.zeros([1, 10]).astype(np.float32))
     print("pynative run")
     out = net(predict, label)
@@ -174,7 +188,7 @@ def test_stop_gradient_1():
         def __init__(self):
             super(Mul, self).__init__()
 
-        @ms_function
+        @jit
         def construct(self, x, y):
             ret = x * y
             ret = stop_gradient(ret)
@@ -192,7 +206,7 @@ def test_stop_gradient_2():
         def __init__(self):
             super(Mul, self).__init__()
 
-        @ms_function
+        @jit
         def construct(self, x, y):
             c = x * y
             z = x * y
@@ -203,7 +217,7 @@ def test_stop_gradient_2():
             super(MulAdd, self).__init__()
             self.mul = Mul()
 
-        @ms_function
+        @jit
         def construct(self, x, y):
             u = x + y
             v = x - y
@@ -224,7 +238,7 @@ def test_stop_gradient_3():
         def __init__(self):
             super(TupleGetItem, self).__init__()
 
-        @ms_function
+        @jit
         def construct(self, x1, x2, x3, x4, x5):
             z1 = x1 + x1
             z2 = x1 * x2
@@ -247,7 +261,7 @@ def test_stop_gradient_4():
     def stop_test(x):
         return stop_gradient(x)
 
-    assert C.grad_all(stop_test)(1) == (0,)
+    assert grad_all(stop_test)(Tensor(1, dtype=ms.int32)) == (0,)
 
 
 def test_stop_gradient_5():
@@ -257,7 +271,7 @@ def test_stop_gradient_5():
         ret = x + y
         return ret
 
-    assert C.grad_all(stop_test)(1) == (1,)
+    assert grad_all(stop_test)(Tensor(1, dtype=ms.int32)) == (1,)
 
 
 def test_stop_gradient_6():
@@ -266,7 +280,7 @@ def test_stop_gradient_6():
         ret = stop_gradient(ret)
         return ret
 
-    assert C.grad_all(stop_test)(1, 3) == (0, 0)
+    assert grad_all(stop_test)(Tensor(1, dtype=ms.int32), Tensor(3, dtype=ms.int32)) == (0, 0)
 
 
 class PrimWithMultiOutputs(PrimitiveWithInfer):
@@ -297,18 +311,16 @@ def test_stop_gradient_7():
             super(PrimWithMultiOutputs_, self).__init__()
             self.prim_with_multi_outputs = PrimWithMultiOutputs()
 
-        @ms_function
+        @jit
         def construct(self, x1, x2):
             x1, x2 = self.prim_with_multi_outputs(x1, x2)
             x1 = stop_gradient(x1)
             return x1, x2
 
-    dx, dy = bprop(PrimWithMultiOutputs_(), Tensor(np.ones([2]).astype(np.float32)),
-                   Tensor(np.ones([2]).astype(np.float32)), wrt=['inputs'])
-    expect_dx = np.zeros([2])
-    expect_dy = np.ones([2])
-    assert (dx.asnumpy() == expect_dx).all()
-    assert (dy.asnumpy() == expect_dy).all()
+    ms.context.set_context(mode=ms.context.GRAPH_MODE, precompile_only=True)
+    bprop(PrimWithMultiOutputs_(), Tensor(np.ones([2]).astype(np.float32)), \
+        Tensor(np.ones([2]).astype(np.float32)), wrt=['inputs'])
+
 
 
 def test_stop_gradient_8():
@@ -317,7 +329,7 @@ def test_stop_gradient_8():
             super(PrimWithMultiOutputs_, self).__init__()
             self.prim_with_multi_output = PrimWithMultiOutputs()
 
-        @ms_function
+        @jit
         def construct(self, x1, x2):
             x1, x2 = stop_gradient(self.prim_with_multi_output(x1, x2))
             return x1, x2
@@ -335,7 +347,7 @@ def test_stop_gradient_9():
         def __init__(self):
             super(Mul, self).__init__()
 
-        @ms_function
+        @jit
         def construct(self, x, y):
             c = x * y
             z = x * y
@@ -346,7 +358,7 @@ def test_stop_gradient_9():
             super(MulAdd, self).__init__()
             self.mul = Mul()
 
-        @ms_function
+        @jit
         def construct(self, x, y):
             u = x + y
             v = x - y
@@ -385,7 +397,7 @@ def test_stop_gradient_10():
             super(PrimWithNoBprop_, self).__init__()
             self.prim_with_no_bprop = PrimWithNoBprop()
 
-        @ms_function
+        @jit
         def construct(self, x, y):
             x = x * y
             x, y = self.prim_with_no_bprop(x, y)
@@ -405,7 +417,7 @@ def test_stop_gradient_11():
             super(PrimWithNoBprop_, self).__init__()
             self.prim_with_no_bprop = PrimWithNoBprop()
 
-        @ms_function
+        @jit
         def construct(self, x, y):
             x, y = self.prim_with_no_bprop(x, y)
             x = stop_gradient(x)
@@ -416,6 +428,7 @@ def test_stop_gradient_11():
               Tensor(np.ones([2]).astype(np.float32)))
 
 
+@security_off_wrap
 def test_stop_print():
     class StopPrint(nn.Cell):
         def __init__(self):
@@ -427,5 +440,5 @@ def test_stop_print():
             self.printm(y)
             return x, y
 
-    C.grad_all(StopPrint())(Tensor(np.ones([2]).astype(np.float32)),
-                            Tensor(np.ones([2]).astype(np.float32)))
+    grad_all(StopPrint())(Tensor(np.ones([2]).astype(np.float32)),
+                          Tensor(np.ones([2]).astype(np.float32)))

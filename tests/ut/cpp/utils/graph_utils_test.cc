@@ -22,10 +22,10 @@
 #include "common/py_func_graph_fetcher.h"
 
 #include "ir/anf.h"
-#include "utils/graph_utils.h"
-
-#include "pipeline/parse/parse_base.h"
-#include "pipeline/parse/parse.h"
+#include "ir/graph_utils.h"
+#include "include/common/utils/convert_utils.h"
+#include "pipeline/jit/ps/parse/parse_base.h"
+#include "pipeline/jit/ps/parse/parse.h"
 
 namespace mindspore {
 

@@ -16,18 +16,25 @@
 
 #include "common/backend_common_test.h"
 #include "common/py_func_graph_fetcher.h"
-#include "device/kernel_info.h"
-#include "session/anf_runtime_algorithm.h"
+#include "include/backend/kernel_info.h"
+#include "include/backend/anf_runtime_algorithm.h"
 #include "kernel/oplib/oplib.h"
+#include "utils/ms_context.h"
+#include "include/common/utils/anfalgo.h"
+
 #define private public
 #define protected public
-#include "pre_activate/ascend/format_type/insert_trans_op.h"
-#include "pre_activate/ascend/ir_fusion/transpose_transdata_fusion.h"
+#include "plugin/device/ascend/optimizer/format_type/insert_trans_op.h"
+#include "plugin/device/ascend/optimizer/ir_fusion/transpose_transdata_fusion.h"
 #undef private
 #undef protected
 
 namespace mindspore {
 namespace opt {
+namespace {
+constexpr auto kPatternElemWise = "ElemWise";
+}
+
 using KernelBuildInfoBuilder = kernel::KernelBuildInfo::KernelBuildInfoBuilder;
 class TestHWTransposeTransdataFusion : public BackendCommon {
  public:
@@ -37,38 +44,6 @@ class TestHWTransposeTransdataFusion : public BackendCommon {
   UT::PyFuncGraphFetcher get_py_fun_;
 };
 
-class MockSupportedChecker : public SupportedChecker {
- public:
-  MockSupportedChecker() = default;
-  ~MockSupportedChecker() override = default;
-  bool CheckAiCoreSupported(const AnfNodePtr &anf_node, const kernel::KernelBuildInfoPtr &select_kernel_build_info) override {
-    return true;
-  }
-};
-
-class MockInsertTransOpKernelSelectTrans4Dto5D : public KernelSelect {
- public:
-  MockInsertTransOpKernelSelectTrans4Dto5D() = default;
-  ~MockInsertTransOpKernelSelectTrans4Dto5D() override = default;
-  void SelectKernel(const CNodePtr &cnode) override {
-    if (AnfAlgo::GetCNodeName(cnode) == "TransData") {
-      KernelBuildInfoBuilder builder;
-      builder.SetInputsFormat({"NCHW"});
-      builder.SetInputsDeviceType({kFloat16->type_id()});
-      builder.SetOutputsFormat({"NC1HWC0"});
-      builder.SetOutputsDeviceType({kFloat16->type_id()});
-      AnfAlgo::SetSelectKernelBuildInfo(builder.Build(), cnode.get());
-    } else {
-      KernelBuildInfoBuilder builder;
-      builder.SetInputsFormat({"NC1HWC0"});
-      builder.SetInputsDeviceType({kFloat16->type_id()});
-      builder.SetOutputsFormat({"NC1HWC0"});
-      builder.SetOutputsDeviceType({kFloat16->type_id()});
-      AnfAlgo::SetSelectKernelBuildInfo(builder.Build(), cnode.get());
-    }
-  }
-};
-
 TEST_F(TestHWTransposeTransdataFusion, test_transpose_transdata_fusion) {
   /*
    * def before(input0, input1):
@@ -76,9 +51,12 @@ TEST_F(TestHWTransposeTransdataFusion, test_transpose_transdata_fusion) {
    * transdata = Transdata(transpose)
    * return transdata
    */
+  auto ms_context = MsContext::GetInstance();
+  MS_EXCEPTION_IF_NULL(ms_context);
+  ms_context->set_param<int>(MS_CTX_EXECUTION_MODE, kGraphMode);
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_transpose_transdata_fusion", "before");
-  std::vector<int> shp{2, 4, 8, 16};
-  auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
+  std::vector<int64_t> shp{2, 4, 8, 16};
+  auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat16, shp);
   AbstractBasePtrList args_spec_list{x_abstract};
   auto kg = GetKernelGraph(g, args_spec_list);
 
@@ -89,28 +67,57 @@ TEST_F(TestHWTransposeTransdataFusion, test_transpose_transdata_fusion) {
   EXPECT_NE(transpose, nullptr);
 
   KernelBuildInfoBuilder builder;
-  builder.SetInputsFormat({"NCHW"});
+  builder.SetInputsReshapeType({""});
+  builder.SetOutputsReshapeType({""});
+  builder.SetInputsFormat({"DefaultFormat"});
   builder.SetInputsDeviceType({kFloat16->type_id()});
   builder.SetOutputsFormat({"NC1HWC0"});
   builder.SetOutputsDeviceType({kFloat16->type_id()});
   builder.SetKernelType(KernelType::TBE_KERNEL);
-  builder.SetFusionType(kernel::FusionType::ELEMWISE);
+  builder.SetFusionType(kPatternElemWise);
   builder.SetProcessor(kernel::Processor::AICORE);
+  builder.SetInputsKernelObjectType({kernel::KernelObjectType::TENSOR});
+  builder.SetOutputsKernelObjectType({kernel::KernelObjectType::TENSOR});
   auto kernel_info = std::make_shared<device::KernelInfo>();
   kernel_info->set_select_kernel_build_info(builder.Build());
   transpose->set_kernel_info(kernel_info);
 
+  // insert transdata
   auto optimizer = std::make_shared<opt::GraphOptimizer>();
   auto pm = std::make_shared<opt::PassManager>();
   auto insert_trans_op_pass = std::make_shared<opt::InsertTransOp>();
-  insert_trans_op_pass->kernel_select_ = std::make_shared<MockInsertTransOpKernelSelectTrans4Dto5D>();
   pm->AddPass(insert_trans_op_pass);
-  auto transpose_transdata_pass = std::make_shared<opt::TransposeTransDataFusion>();
-  transpose_transdata_pass->supported_checker_ = std::make_shared<MockSupportedChecker>();
-  pm->AddPass(transpose_transdata_pass);
   optimizer->AddPassManager(pm);
   FuncGraphPtr new_graph = optimizer->Optimize(kg);
 
+  // modify transdata
+  auto nodes = TopoSort(new_graph->get_return());
+  for (auto &node : nodes) {
+    if (AnfUtils::IsRealCNodeKernel(node) && common::AnfAlgo::GetCNodeName(node) == "TransData") {
+      KernelBuildInfoBuilder builder2;
+      builder2.SetInputsFormat({"DefaultFormat"});
+      builder2.SetInputsDeviceType({kFloat16->type_id()});
+      builder2.SetOutputsFormat({"NC1HWC0"});
+      builder2.SetOutputsDeviceType({kFloat16->type_id()});
+      builder2.SetInputsReshapeType({""});
+      builder2.SetOutputsReshapeType({""});
+      builder2.SetInputsKernelObjectType({kernel::KernelObjectType::TENSOR});
+      builder2.SetOutputsKernelObjectType({kernel::KernelObjectType::TENSOR});
+      builder2.SetKernelType(KernelType::TBE_KERNEL);
+      builder2.SetProcessor(kernel::Processor::AICORE);
+      AnfAlgo::SetSelectKernelBuildInfo(builder2.Build(), node.get());
+    }
+  }
+
+  // transpose transdata fusion
+  auto optimizer2 = std::make_shared<opt::GraphOptimizer>();
+  auto pm2 = std::make_shared<opt::PassManager>();
+  auto transpose_transdata_pass = std::make_shared<opt::TransposeTransDataFusion>();
+  pm2->AddPass(transpose_transdata_pass);
+  optimizer2->AddPassManager(pm2);
+  new_graph = optimizer2->Optimize(new_graph);
+
+  // check
   ret = new_graph->get_return();
   EXPECT_NE(ret->input(1), nullptr);
   temp = ret->input(1)->cast<CNodePtr>();

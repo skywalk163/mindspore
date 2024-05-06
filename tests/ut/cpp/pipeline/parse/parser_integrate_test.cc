@@ -18,8 +18,8 @@
 #include "common/common_test.h"
 #include "common/py_func_graph_fetcher.h"
 #include "utils/log_adapter.h"
-#include "pipeline/parse/parse.h"
-#include "debug/draw.h"
+#include "pipeline/jit/ps/parse/parse.h"
+#include "include/common/debug/draw.h"
 
 namespace mindspore {
 namespace parse {
@@ -82,7 +82,6 @@ TEST_F(TestParserIntegrate, TestParseGraphTestNone) {
 TEST_F(TestParserIntegrate, TestParseGraphResolveGetAttr) {
   getPyFun.SetDoResolve(true);
   auto func_graph = getPyFun("test_get_attr");
-  draw::Draw("getattr.dot", func_graph);
   ASSERT_TRUE(func_graph != nullptr);
 }
 

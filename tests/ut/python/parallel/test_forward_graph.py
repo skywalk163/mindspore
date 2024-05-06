@@ -16,16 +16,20 @@ import numpy as np
 
 import mindspore as ms
 from mindspore import context, Tensor, Parameter
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.nn import Cell
 from mindspore.ops import operations as P
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
 
 
 class Net(Cell):
     def __init__(self, mul_weight, strategy1=None, strategy2=None):
         super().__init__()
-        self.mul = P.Mul().set_strategy(strategy1)
-        self.neg = P.Neg().set_strategy(strategy2)
+        self.mul = P.Mul().shard(strategy1)
+        self.neg = P.Neg().shard(strategy2)
         self.mul_weight = Parameter(mul_weight, "w1")
 
     def construct(self, x, b):
@@ -40,8 +44,8 @@ _b = Tensor(np.ones([128, 64, 32]), dtype=ms.float32)
 
 
 def compile_net(net):
-    net.set_auto_parallel()
-    _executor.compile(net, _x, _b)
+    net.set_train()
+    _cell_graph_executor.compile(net, _x, _b)
     context.reset_auto_parallel_context()
 
 
@@ -70,7 +74,13 @@ def test_forward_graph_hybrid_parallel():
 
 
 def test_forward_graph_auto_parallel():
-    context.set_auto_parallel_context(parallel_mode="auto_parallel", device_num=16, global_rank=0)
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
+    context.set_auto_parallel_context(parallel_mode="auto_parallel", search_mode="dynamic_programming", device_num=16,
+                                      global_rank=0)
     net = Net(_w1)
     compile_net(net)
 

@@ -22,7 +22,8 @@ import numpy as np
 from mindspore.common.tensor import Tensor
 from mindspore.train.summary._summary_adapter import _calc_histogram_bins
 from mindspore.train.summary.summary_record import SummaryRecord, _cache_summary_tensor_data
-from .summary_reader import SummaryReader
+from tests.summary_utils import SummaryReader
+from tests.security_utils import security_off_wrap
 
 CUR_DIR = os.getcwd()
 SUMMARY_DIR = os.path.join(CUR_DIR, "/test_temp_summary_event_file/")
@@ -48,6 +49,7 @@ def _wrap_test_data(input_data: Tensor):
     }]
 
 
+@security_off_wrap
 def test_histogram_summary():
     """Test histogram summary."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -55,13 +57,13 @@ def test_histogram_summary():
             test_data = _wrap_test_data(Tensor([[1, 2, 3], [4, 5, 6]]))
             _cache_summary_tensor_data(test_data)
             test_writer.record(step=1)
+        file_name = os.path.realpath(test_writer.log_dir)
+        with SummaryReader(file_name) as reader:
+            event = reader.read_event()
+            assert event.summary.value[0].histogram.count == 6
 
-        file_name = os.path.join(tmp_dir, test_writer.event_file_name)
-        reader = SummaryReader(file_name)
-        event = reader.read_event()
-        assert event.summary.value[0].histogram.count == 6
 
-
+@security_off_wrap
 def test_histogram_multi_summary():
     """Test histogram multiple step."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -78,41 +80,14 @@ def test_histogram_multi_summary():
                 _cache_summary_tensor_data(test_data)
                 test_writer.record(step=i)
 
-        file_name = os.path.join(tmp_dir, test_writer.event_file_name)
-        reader = SummaryReader(file_name)
-        for _ in range(num_step):
-            event = reader.read_event()
-            assert event.summary.value[0].histogram.count == size
+        file_name = os.path.realpath(test_writer.log_dir)
+        with SummaryReader(file_name) as reader:
+            for _ in range(num_step):
+                event = reader.read_event()
+                assert event.summary.value[0].histogram.count == size
 
 
-def test_histogram_summary_scalar_tensor():
-    """Test histogram summary, input is a scalar tensor."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        with SummaryRecord(tmp_dir, file_suffix="_MS_HISTOGRAM") as test_writer:
-            test_data = _wrap_test_data(Tensor(1))
-            _cache_summary_tensor_data(test_data)
-            test_writer.record(step=1)
-
-        file_name = os.path.join(tmp_dir, test_writer.event_file_name)
-        reader = SummaryReader(file_name)
-        event = reader.read_event()
-        assert event.summary.value[0].histogram.count == 1
-
-
-def test_histogram_summary_empty_tensor():
-    """Test histogram summary, input is an empty tensor."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        with SummaryRecord(tmp_dir, file_suffix="_MS_HISTOGRAM") as test_writer:
-            test_data = _wrap_test_data(Tensor([]))
-            _cache_summary_tensor_data(test_data)
-            test_writer.record(step=1)
-
-        file_name = os.path.join(tmp_dir, test_writer.event_file_name)
-        reader = SummaryReader(file_name)
-        event = reader.read_event()
-        assert event.summary.value[0].histogram.count == 0
-
-
+@security_off_wrap
 def test_histogram_summary_same_value():
     """Test histogram summary, input is an ones tensor."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -124,14 +99,15 @@ def test_histogram_summary_same_value():
             _cache_summary_tensor_data(test_data)
             test_writer.record(step=1)
 
-        file_name = os.path.join(tmp_dir, test_writer.event_file_name)
-        reader = SummaryReader(file_name)
-        event = reader.read_event()
-        LOG.debug(event)
+        file_name = os.path.realpath(test_writer.log_dir)
+        with SummaryReader(file_name) as reader:
+            event = reader.read_event()
+            LOG.debug(event)
 
-        assert len(event.summary.value[0].histogram.buckets) == _calc_histogram_bins(dim1 * dim2)
+            assert len(event.summary.value[0].histogram.buckets) == _calc_histogram_bins(dim1 * dim2)
 
 
+@security_off_wrap
 def test_histogram_summary_high_dims():
     """Test histogram summary, input is a 4-dimension tensor."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -144,14 +120,15 @@ def test_histogram_summary_high_dims():
             _cache_summary_tensor_data(test_data)
             test_writer.record(step=1)
 
-        file_name = os.path.join(tmp_dir, test_writer.event_file_name)
-        reader = SummaryReader(file_name)
-        event = reader.read_event()
-        LOG.debug(event)
+        file_name = os.path.realpath(test_writer.log_dir)
+        with SummaryReader(file_name) as reader:
+            event = reader.read_event()
+            LOG.debug(event)
 
-        assert event.summary.value[0].histogram.count == tensor_data.size
+            assert event.summary.value[0].histogram.count == tensor_data.size
 
 
+@security_off_wrap
 def test_histogram_summary_nan_inf():
     """Test histogram summary, input tensor has nan."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -168,14 +145,15 @@ def test_histogram_summary_nan_inf():
             _cache_summary_tensor_data(test_data)
             test_writer.record(step=1)
 
-        file_name = os.path.join(tmp_dir, test_writer.event_file_name)
-        reader = SummaryReader(file_name)
-        event = reader.read_event()
-        LOG.debug(event)
+        file_name = os.path.realpath(test_writer.log_dir)
+        with SummaryReader(file_name) as reader:
+            event = reader.read_event()
+            LOG.debug(event)
 
-        assert event.summary.value[0].histogram.nan_count == 1
+            assert event.summary.value[0].histogram.nan_count == 1
 
 
+@security_off_wrap
 def test_histogram_summary_all_nan_inf():
     """Test histogram summary, input tensor has no valid number."""
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -184,12 +162,12 @@ def test_histogram_summary_all_nan_inf():
             _cache_summary_tensor_data(test_data)
             test_writer.record(step=1)
 
-        file_name = os.path.join(tmp_dir, test_writer.event_file_name)
-        reader = SummaryReader(file_name)
-        event = reader.read_event()
-        LOG.debug(event)
+        file_name = os.path.realpath(test_writer.log_dir)
+        with SummaryReader(file_name) as reader:
+            event = reader.read_event()
+            LOG.debug(event)
 
-        histogram = event.summary.value[0].histogram
-        assert histogram.nan_count == 3
-        assert histogram.pos_inf_count == 1
-        assert histogram.neg_inf_count == 1
+            histogram = event.summary.value[0].histogram
+            assert histogram.nan_count == 3
+            assert histogram.pos_inf_count == 1
+            assert histogram.neg_inf_count == 1

@@ -27,18 +27,6 @@
 	<object>
 		<name>person</name>
 		<pose>Left</pose>
-		<truncated>0</truncated>
-		<difficult>0</difficult>
-		<bndbox>
-			<xmin>425</xmin>
-			<ymin>239</ymin>
-			<xmax>445</xmax>
-			<ymax>235</ymax>
-		</bndbox>
-	</object>
-	<object>
-		<name>person</name>
-		<pose>Left</pose>
 		<truncated>1</truncated>
 		<difficult>0</difficult>
 		<bndbox>

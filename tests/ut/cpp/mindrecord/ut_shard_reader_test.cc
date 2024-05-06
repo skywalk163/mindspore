@@ -21,16 +21,12 @@
 #include <string>
 #include <vector>
 
-#include "common/utils.h"
+#include "utils/ms_utils.h"
 #include "gtest/gtest.h"
 #include "utils/log_adapter.h"
-#include "mindrecord/include/shard_reader.h"
-#include "mindrecord/include/shard_sample.h"
+#include "minddata/mindrecord/include/shard_reader.h"
+#include "minddata/mindrecord/include/shard_sample.h"
 #include "ut_common.h"
-
-using mindspore::LogStream;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::MsLogLevel::INFO;
 
 namespace mindspore {
 namespace mindrecord {
@@ -67,7 +63,31 @@ TEST_F(TestShardReader, TestShardReaderGeneral) {
       }
     }
   }
-  dataset.Finish();
+  dataset.Close();
+}
+
+TEST_F(TestShardReader, TestShardReaderLazyLoad) {
+  MS_LOG(INFO) << FormatInfo("Test read imageNet");
+  std::string file_name = "./imagenet.shard01";
+  auto column_list = std::vector<std::string>{"file_name"};
+
+  ShardReader dataset;
+  dataset.Open({file_name}, true, 4, column_list, {}, 0, LoadMode::kLazy);
+  dataset.Launch();
+
+  uint32_t count = 0;
+  while (true) {
+    auto x = dataset.GetNext();
+    if (x.empty()) break;
+    for (auto &j : x) {
+      for (auto &item : std::get<1>(j).items()) {
+        MS_LOG(INFO) << "key: " << item.key() << ", value: " << item.value().dump();
+      }
+    }
+    count++;
+  }
+  ASSERT_TRUE(count == 10);
+  dataset.Close();
 }
 
 TEST_F(TestShardReader, TestShardReaderSample) {
@@ -90,32 +110,32 @@ TEST_F(TestShardReader, TestShardReaderSample) {
       }
     }
   }
-  dataset.Finish();
   dataset.Close();
 }
 
-TEST_F(TestShardReader, TestShardReaderBlock) {
-  MS_LOG(INFO) << FormatInfo("Test read imageNet with block way");
+TEST_F(TestShardReader, TestShardReaderLazyLoadDistributed) {
+  MS_LOG(INFO) << FormatInfo("Test read imageNet");
   std::string file_name = "./imagenet.shard01";
-  auto column_list = std::vector<std::string>{"label"};
+  auto column_list = std::vector<std::string>{"file_name"};
 
   std::vector<std::shared_ptr<ShardOperator>> ops;
-  ops.push_back(std::make_shared<ShardSample>(3));
+  ops.push_back(std::make_shared<ShardSample>(1, 8));
   ShardReader dataset;
-  const bool kBlockReader = true;
-  dataset.Open({file_name}, true, 4, column_list, ops, kBlockReader);
+  dataset.Open({file_name}, true, 4, column_list, ops, 0, LoadMode::kLazy);
   dataset.Launch();
 
+  uint32_t count = 0;
   while (true) {
-    auto x = dataset.GetBlockNext();
+    auto x = dataset.GetNext();
     if (x.empty()) break;
     for (auto &j : x) {
       for (auto &item : std::get<1>(j).items()) {
         MS_LOG(INFO) << "key: " << item.key() << ", value: " << item.value().dump();
       }
     }
+    count++;
   }
-  dataset.Finish();
+  ASSERT_TRUE(count == 2);
   dataset.Close();
 }
 
@@ -135,7 +155,7 @@ TEST_F(TestShardReader, TestShardReaderEasy) {
       }
     }
   }
-  dataset.Finish();
+  dataset.Close();
 }
 
 TEST_F(TestShardReader, TestShardReaderColumnNotInIndex) {
@@ -143,8 +163,8 @@ TEST_F(TestShardReader, TestShardReaderColumnNotInIndex) {
   std::string file_name = "./imagenet.shard01";
   auto column_list = std::vector<std::string>{"label"};
   ShardReader dataset;
-  MSRStatus ret = dataset.Open({file_name}, true,  4, column_list);
-  ASSERT_EQ(ret, SUCCESS);
+  auto status = dataset.Open({file_name}, true,  4, column_list);
+  EXPECT_TRUE(status.IsOk());
   dataset.Launch();
 
   while (true) {
@@ -156,7 +176,7 @@ TEST_F(TestShardReader, TestShardReaderColumnNotInIndex) {
       }
     }
   }
-  dataset.Finish();
+  dataset.Close();
 }
 
 TEST_F(TestShardReader, TestShardReaderColumnNotInSchema) {
@@ -164,16 +184,16 @@ TEST_F(TestShardReader, TestShardReaderColumnNotInSchema) {
   std::string file_name = "./imagenet.shard01";
   auto column_list = std::vector<std::string>{"file_namex"};
   ShardReader dataset;
-  MSRStatus ret = dataset.Open({file_name}, true, 4, column_list);
-  ASSERT_EQ(ret, ILLEGAL_COLUMN_LIST);
+  auto status= dataset.Open({file_name}, true, 4, column_list);
+  EXPECT_FALSE(status.IsOk());
 }
 
 TEST_F(TestShardReader, TestShardVersion) {
   MS_LOG(INFO) << FormatInfo("Test shard version");
   std::string file_name = "./imagenet.shard01";
   ShardReader dataset;
-  MSRStatus ret = dataset.Open({file_name}, true,  4);
-  ASSERT_EQ(ret, SUCCESS);
+  auto status = dataset.Open({file_name}, true,  4);
+  EXPECT_TRUE(status.IsOk());
   dataset.Launch();
 
   while (true) {
@@ -186,7 +206,7 @@ TEST_F(TestShardReader, TestShardVersion) {
       }
     }
   }
-  dataset.Finish();
+  dataset.Close();
 }
 
 TEST_F(TestShardReader, TestShardReaderDir) {
@@ -195,8 +215,8 @@ TEST_F(TestShardReader, TestShardReaderDir) {
   auto column_list = std::vector<std::string>{"file_name"};
 
   ShardReader dataset;
-  MSRStatus ret = dataset.Open({file_name}, true,  4, column_list);
-  ASSERT_EQ(ret, FAILED);
+  auto status = dataset.Open({file_name}, true,  4, column_list);
+  EXPECT_FALSE(status.IsOk());
 }
 
 TEST_F(TestShardReader, TestShardReaderConsumer) {
@@ -217,7 +237,7 @@ TEST_F(TestShardReader, TestShardReaderConsumer) {
       }
     }
   }
-  dataset.Finish();
+  dataset.Close();
 }
 }  // namespace mindrecord
 }  // namespace mindspore

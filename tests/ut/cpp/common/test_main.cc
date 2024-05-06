@@ -13,18 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <iostream>
 #include "gtest/gtest.h"
-#include "utils/log_adapter.h"
-#include "pipeline/pipeline.h"
-#include "pipeline/resource.h"
+#include "pipeline/jit/ps/pipeline.h"
 
-namespace mindspore {
-  extern void InitSubModulesLogLevel();
+extern "C" {
+void common_log_init(void);
 }
 
-GTEST_API_ int main(int argc, char** argv) {
-  mindspore::InitSubModulesLogLevel();
+__attribute__((section(".init_array"), used)) static auto *init = common_log_init;
+
+GTEST_API_ int main(int argc, char **argv) {
   testing::InitGoogleTest(&argc, argv);
   int ret = RUN_ALL_TESTS();
   mindspore::pipeline::ClearResAtexit();

@@ -17,12 +17,14 @@
 #include <memory>
 #include <vector>
 
-#include "ir/value.h"
-#include "ir/manager.h"
 #include "common/common_test.h"
-#include "optimizer/ad/dfunctor.h"
-#include "debug/draw.h"
+#include "mindspore/core/ops/arithmetic_ops.h"
 #include "common/py_func_graph_fetcher.h"
+#include "frontend/optimizer/ad/dfunctor.h"
+#include "include/common/debug/draw.h"
+#include "include/common/utils/convert_utils.h"
+#include "ir/manager.h"
+#include "ir/value.h"
 
 namespace mindspore {
 namespace prim {
@@ -33,12 +35,14 @@ class TestGradImplementations : public UT::Common {
 };
 
 TEST_F(TestGradImplementations, TestGetAugmentedGraph) {
-  FuncGraphPtr fg = ad::g_k_prims.KPrimitive(NewValueNode(kPrimScalarMul), nullptr);
+  FuncGraphPtr fg = ad::g_k_prims.KPrimitive(nullptr, NewValueNode(kPrimScalarMul), nullptr);
   ASSERT_TRUE(fg != nullptr);
-  draw::Draw("gradImpl_TestGetAugmentedFuncGraph.dot", fg);
 
-  auto fg1 = ad::g_k_prims.KPrimitive(NewValueNode(kPrimScalarMul), nullptr);
-  ASSERT_TRUE(fg == fg1);
+  auto fg1 = ad::g_k_prims.KPrimitive(nullptr, NewValueNode(kPrimScalarMul), nullptr);
+
+  FuncGraphPairMapEquiv equiv_graph;
+  NodeMapEquiv equiv_node;
+  ASSERT_TRUE(Isomorphic(fg, fg1, &equiv_graph, &equiv_node));
 }
 
 }  // namespace prim

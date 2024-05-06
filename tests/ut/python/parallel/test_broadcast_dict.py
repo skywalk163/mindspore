@@ -19,6 +19,11 @@ import mindspore.nn as nn
 from mindspore import Tensor, Parameter
 from mindspore.communication.management import init
 from mindspore.ops import operations as P
+from mindspore.communication._comm_helper import GlobalComm
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
 
 
 class DataParallelNet(nn.Cell):
@@ -48,8 +53,11 @@ class ModelParallelNet(nn.Cell):
 def test_param_broadcast():
     context.set_context(mode=context.GRAPH_MODE)
     context.reset_auto_parallel_context()
-    context.set_auto_parallel_context(parallel_mode="data_parallel", parameter_broadcast=True)
+    context.set_auto_parallel_context(parallel_mode="data_parallel", parameter_broadcast=True,
+                                      dataset_strategy="data_parallel")
+    GlobalComm.CHECK_ENVS = False
     init()
+    GlobalComm.CHECK_ENVS = True
     network = DataParallelNet()
     network.set_train()
 
@@ -61,8 +69,11 @@ def test_param_broadcast():
 def test_param_not_broadcast():
     context.set_context(mode=context.GRAPH_MODE)
     context.reset_auto_parallel_context()
-    context.set_auto_parallel_context(parallel_mode="data_parallel", parameter_broadcast=False)
+    context.set_auto_parallel_context(parallel_mode="data_parallel", parameter_broadcast=False,
+                                      dataset_strategy="data_parallel")
+    GlobalComm.CHECK_ENVS = False
     init()
+    GlobalComm.CHECK_ENVS = True
     network = ModelParallelNet()
     network.set_train()
 

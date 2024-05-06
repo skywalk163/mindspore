@@ -24,8 +24,6 @@
 #include "graph/tensor.h"
 #include "graph/operator_reg.h"
 #include "graph/operator.h"
-#include "graph/utils/tensor_utils.h"
-#include "graph/utils/tensor_adapter.h"
 
 #include "external/ge/ge_api.h"
 
@@ -51,4 +49,10 @@ Status GEFinalize() { return ge::GRAPH_SUCCESS; }
 Status Graph::SaveToFile(const string& file_name) const { return ge::GRAPH_SUCCESS; }
 
 }  // namespace ge
+
+namespace gelc {
+uint32_t GetOptInfo(uint32_t mode, const std::string &soc_ver, std::map<std::string, std::string> &opt_info_map) {
+  return 0;
+}
+}  // namespace gelc
 #endif

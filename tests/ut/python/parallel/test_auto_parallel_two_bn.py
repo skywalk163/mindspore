@@ -19,11 +19,15 @@ import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.ops import operations as P
 from mindspore.parallel import set_algo_parameters
 from mindspore.parallel._utils import _reset_op_id as reset_op_id
 from tests.ut.python.ops.test_math_ops import VirtualLoss
+
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
 
 
 class NetWithLoss(nn.Cell):
@@ -40,7 +44,7 @@ class NetWithLoss(nn.Cell):
 class Blockcell(nn.Cell):
     def __init__(self):
         super(Blockcell, self).__init__()
-        self.bn = nn.BatchNorm2d(64, momentum=0.9)
+        self.bn = nn.BatchNorm1d(64, momentum=0.9)
 
     def construct(self, x):
         out = self.bn(x)
@@ -52,13 +56,19 @@ def get_block():
 
 
 def test_two_bn():
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
+
     class Net(nn.Cell):
         def __init__(self):
             super().__init__()
             self.block1 = get_block()
             self.block2 = get_block()
             self.relu = P.ReLU()
-            self.add = P.TensorAdd()
+            self.add = P.Add()
             self.bias = Tensor(np.ones([64, 64]), dtype=ms.float32)
 
         def construct(self, x):
@@ -68,18 +78,17 @@ def test_two_bn():
             out = self.block2(out)
             return out
 
+    context.set_auto_parallel_context(device_num=8, global_rank=0)
+    context.set_auto_parallel_context(parallel_mode="auto_parallel", search_mode="dynamic_programming")
     net = NetWithLoss(Net())
     x = Tensor(np.ones([64, 64]), dtype=ms.float32)
-    context.set_context(save_graphs=True)
-    context.set_auto_parallel_context(device_num=8, global_rank=0)
-    context.set_auto_parallel_context(parallel_mode="auto_parallel")
-    net.set_auto_parallel()
+    net.set_train()
     set_algo_parameters(elementwise_op_strategy_follow=True)
     reset_op_id()
 
-    _executor.compile(net, x, phase='train')
-    strategies = _executor._get_strategy(net)
-    assert len(strategies) == 4
+    _cell_graph_executor.compile(net, x, phase='train')
+    strategies = _cell_graph_executor._get_shard_strategy(net)
+    assert len(strategies) == 5
 
     for (k, v) in strategies.items():
         if re.search('BatchNorm-op', k) is not None:

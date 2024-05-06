@@ -18,16 +18,24 @@ import mindspore as ms
 import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import context
-from mindspore.common.api import _executor
+from mindspore.common.api import _cell_graph_executor
 from mindspore.common.parameter import Parameter
 from mindspore.nn.optim.momentum import Momentum
 from mindspore.ops import composite as C
 from mindspore.ops import operations as P
-from mindspore.train import Model, ParallelMode
+from mindspore.train import Model
+from mindspore.context import ParallelMode
 from tests.dataset_mock import MindData
 from tests.ut.python.ops.test_math_ops import VirtualLoss
 
+
+def setup_function():
+    context.set_auto_parallel_context(dataset_strategy="full_batch")
+
+
 context.set_context(mode=context.GRAPH_MODE)
+
+grad_all = C.GradOperation(get_all=True)
 
 
 class Dataset(MindData):
@@ -68,10 +76,16 @@ class GradWrap(nn.Cell):
         self.network = network
 
     def construct(self, x, y, b):
-        return C.grad_all(self.network)(x, y, b)
+        return grad_all(self.network)(x, y, b)
 
 
 def test_auto_parallel_arithmetic():
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile success
+    """
+
     class Net(nn.Cell):
         def __init__(self):
             super().__init__()
@@ -89,21 +103,27 @@ def test_auto_parallel_arithmetic():
 
     context.set_auto_parallel_context(device_num=8, global_rank=0)
     net = GradWrap(NetWithLoss(Net()))
-    context.set_auto_parallel_context(parallel_mode="auto_parallel")
-    net.set_auto_parallel()
+    context.set_auto_parallel_context(parallel_mode="auto_parallel", search_mode="dynamic_programming")
 
     x = Tensor(np.ones([64, 32]), dtype=ms.float32)
     y = Tensor(np.ones([32, 64]), dtype=ms.float32)
     b = Tensor(np.ones([64]), dtype=ms.int32)
-    _executor.compile(net, x, y, b)
+    net.set_train()
+    _cell_graph_executor.compile(net, x, y, b)
 
 
 def test_auto_parallel_arithmetic_model():
+    """
+    Feature: test auto parallel
+    Description: auto parallel
+    Expectation: compile and train success
+    """
+
     class NetOneHot(nn.Cell):
         def __init__(self):
             super().__init__()
             self.matmul = P.MatMul()
-            self.one_hot = P.OneHot().set_strategy(((1, 8), (), ()))
+            self.one_hot = P.OneHot().shard(((1, 8), (), ()))
             self.on_value = Tensor(1.0, ms.float32)
             self.off_value = Tensor(0.0, ms.float32)
             self.matmul2 = P.MatMul()
@@ -116,7 +136,8 @@ def test_auto_parallel_arithmetic_model():
             return out2
 
     context.reset_auto_parallel_context()
-    context.set_auto_parallel_context(device_num=8, global_rank=0, parallel_mode=ParallelMode.AUTO_PARALLEL)
+    context.set_auto_parallel_context(device_num=8, global_rank=0, parallel_mode=ParallelMode.AUTO_PARALLEL,
+                                      search_mode="dynamic_programming",dataset_strategy="data_parallel")
     net = NetOneHot()
 
     x = Tensor(np.ones([8, 32]), dtype=ms.float32)

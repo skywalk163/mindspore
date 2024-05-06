@@ -13,12 +13,15 @@
 # limitations under the License.
 # ============================================================================
 import numpy as np
+import pytest
 
 import mindspore.context as context
 import mindspore.nn as nn
 from mindspore import Tensor
-from mindspore.common.api import ms_function
+from mindspore.common.api import jit
 from mindspore.ops import operations as P
+from mindspore.ops import functional as F
+from mindspore.common import dtype as mstype
 
 context.set_context(device_target="Ascend")
 
@@ -28,7 +31,7 @@ class Net(nn.Cell):
         super(Net, self).__init__()
         self.argmax = P.Argmax(axis=1)
 
-    @ms_function
+    @jit
     def construct(self, x):
         return self.argmax(x)
 
@@ -39,3 +42,27 @@ def test_net():
     output = argmax(Tensor(x))
     print(x)
     print(output.asnumpy())
+
+
+class ArgmaxFuncNet(nn.Cell):
+    def construct(self, x):
+        return F.argmax(x, dim=-1)
+
+
+@pytest.mark.level1
+@pytest.mark.platform_arm_ascend_training
+@pytest.mark.platform_x86_ascend_training
+@pytest.mark.env_onecard
+@pytest.mark.parametrize('mode', [context.GRAPH_MODE, context.PYNATIVE_MODE])
+def test_functional_argmax(mode):
+    """
+    Feature: Test argmax functional api.
+    Description: Test argmax functional api for Graph and PyNative modes.
+    Expectation: the result match with expected result.
+    """
+    context.set_context(mode=mode, device_target="Ascend")
+    x = Tensor([[1, 20, 5], [67, 8, 9], [130, 24, 15]], mstype.float32)
+    net = ArgmaxFuncNet()
+    output = net(x)
+    expect_output = np.array([1, 0, 0]).astype(np.int32)
+    assert np.allclose(output.asnumpy(), expect_output)

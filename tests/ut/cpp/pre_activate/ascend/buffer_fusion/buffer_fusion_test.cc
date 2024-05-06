@@ -16,31 +16,41 @@
 
 #include "common/backend_common_test.h"
 #include "common/py_func_graph_fetcher.h"
-#include "debug/anf_ir_dump.h"
+#include "include/common/debug/anf_ir_dump.h"
 #include "kernel/kernel.h"
-#include "device/kernel_info.h"
-#include "pre_activate/common/optimizer.h"
-#include "session/anf_runtime_algorithm.h"
-#include "pre_activate/ascend/buffer_fusion/ub_pattern_fusion.h"
-#include "pre_activate/ascend/buffer_fusion/eltwise_fusion_pass.h"
-#include "pre_activate/ascend/buffer_fusion/conv2dbackprop_eltwise_eltwise_fusion_pass.h"
-#include "pre_activate/ascend/buffer_fusion/conv2dbackprop_eltwise_fusion_pass.h"
-#include "pre_activate/ascend/buffer_fusion/conv_single_in_fusion_pass.h"
-#include "pre_activate/ascend/buffer_fusion/conv_double_in_fusion_pass.h"
-#include "pre_activate/ascend/buffer_fusion/matmul_eltwise_fusion_pass.h"
-#include "pre_activate/ascend/buffer_fusion/depthwiseconv_eltwise_fusion_pass.h"
-#include "pre_activate/ascend/buffer_fusion/bnupdate_eltwise_fusion_pass.h"
-#include "pre_activate/ascend/buffer_fusion/bnupdate_eltwise_eltwise_fusion_pass.h"
-#include "pre_activate/ascend/buffer_fusion/conv_bnreduce_fusion_pass.h"
-#include "pre_activate/ascend/buffer_fusion/reduce_eltwise_fusion_pass.h"
-#include "pre_activate/ascend/buffer_fusion/segment_eltwise_fusion_pass.h"
+#include "kernel/kash/kernel_pack.h"
+#include "include/backend/kernel_info.h"
+#include "include/backend/optimizer/optimizer.h"
+#include "include/backend/anf_runtime_algorithm.h"
+#include "plugin/device/ascend/optimizer/buffer_fusion/ub_pattern_fusion.h"
+#include "plugin/device/ascend/optimizer/buffer_fusion/eltwise_fusion_pass.h"
+#include "plugin/device/ascend/optimizer/buffer_fusion/conv2dbackprop_eltwise_eltwise_fusion_pass.h"
+#include "plugin/device/ascend/optimizer/buffer_fusion/conv2dbackprop_eltwise_fusion_pass.h"
+#include "plugin/device/ascend/optimizer/buffer_fusion/conv_single_in_fusion_pass.h"
+#include "plugin/device/ascend/optimizer/buffer_fusion/conv_double_in_fusion_pass.h"
+#include "plugin/device/ascend/optimizer/buffer_fusion/matmul_eltwise_fusion_pass.h"
+#include "plugin/device/ascend/optimizer/buffer_fusion/depthwiseconv_eltwise_fusion_pass.h"
+#include "plugin/device/ascend/optimizer/buffer_fusion/bnupdate_eltwise_fusion_pass.h"
+#include "plugin/device/ascend/optimizer/buffer_fusion/bnupdate_eltwise_eltwise_fusion_pass.h"
+#include "plugin/device/ascend/optimizer/buffer_fusion/conv_bnreduce_fusion_pass.h"
+#include "plugin/device/ascend/optimizer/buffer_fusion/reduce_eltwise_fusion_pass.h"
+#include "plugin/device/ascend/optimizer/buffer_fusion/segment_eltwise_fusion_pass.h"
 
 namespace mindspore {
 namespace opt {
+namespace {
+constexpr auto kPatternOpaque = "Opaque";
+constexpr auto kPatternCommReduce = "CommReduce";
+}  // namespace
+
 using KernelBuildInfoBuilder = kernel::KernelBuildInfo::KernelBuildInfoBuilder;
 class TestHWBufferFusion : public BackendCommon {
  public:
-  TestHWBufferFusion() : get_py_fun_("gtest_input.pre_activate.buffer_fusion_test", true) {}
+  TestHWBufferFusion() : get_py_fun_("gtest_input.pre_activate.buffer_fusion_test", true) {
+    auto context = MsContext::GetInstance();
+    MS_EXCEPTION_IF_NULL(context);
+    context->set_param<std::string>(MS_CTX_DEVICE_TARGET, kAscendDevice);
+  }
   ~TestHWBufferFusion() override = default;
 
   UT::PyFuncGraphFetcher get_py_fun_;
@@ -48,7 +58,7 @@ class TestHWBufferFusion : public BackendCommon {
 
 TEST_F(TestHWBufferFusion, test_tbe_eltwise_fusion_1) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_tbe_eltwise_fusion_1", "before");
-  std::vector<int> shp{2, 32, 224, 224};
+  std::vector<int64_t> shp{2, 32, 224, 224};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list{x_abstract};
   auto kg = GetKernelGraph(g, args_spec_list);
@@ -69,7 +79,7 @@ TEST_F(TestHWBufferFusion, test_tbe_eltwise_fusion_1) {
   builder.SetInputsDeviceType({kFloat32->type_id()});
   builder.SetOutputsDeviceType({kFloat32->type_id()});
   builder.SetKernelType(KernelType::TBE_KERNEL);
-  builder.SetFusionType(kernel::FusionType::ELEMWISE);
+  builder.SetFusionType(kPatternElemWise);
   builder.SetProcessor(kernel::Processor::AICORE);
   builder.SetKernelType(KernelType::TBE_KERNEL);
 
@@ -84,7 +94,7 @@ TEST_F(TestHWBufferFusion, test_tbe_eltwise_fusion_1) {
   builder1.SetInputsDeviceType({kFloat32->type_id()});
   builder1.SetOutputsDeviceType({kFloat16->type_id()});
   builder1.SetKernelType(KernelType::TBE_KERNEL);
-  builder1.SetFusionType(kernel::FusionType::OPAQUE);
+  builder1.SetFusionType(kPatternOpaque);
   builder1.SetProcessor(kernel::Processor::AICORE);
   builder1.SetKernelType(KernelType::TBE_KERNEL);
 
@@ -107,8 +117,8 @@ TEST_F(TestHWBufferFusion, test_tbe_eltwise_fusion_1) {
 
 TEST_F(TestHWBufferFusion, test_tbe_eltwise_fusion_2) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_tbe_eltwise_fusion_2", "before");
-  std::vector<int> shp{32, 10};
-  std::vector<int> shp_bias{10};
+  std::vector<int64_t> shp{32, 10};
+  std::vector<int64_t> shp_bias{10};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   auto y_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp_bias);
   AbstractBasePtrList args_spec_list{x_abstract, y_abstract};
@@ -140,7 +150,7 @@ TEST_F(TestHWBufferFusion, test_tbe_eltwise_fusion_2) {
   builder.SetInputsDeviceType({kFloat32->type_id()});
   builder.SetOutputsDeviceType({kFloat32->type_id()});
   builder.SetKernelType(KernelType::TBE_KERNEL);
-  builder.SetFusionType(kernel::FusionType::ELEMWISE);
+  builder.SetFusionType(kPatternElemWise);
   builder.SetProcessor(kernel::Processor::AICORE);
   builder.SetKernelType(KernelType::TBE_KERNEL);
 
@@ -163,7 +173,7 @@ TEST_F(TestHWBufferFusion, test_tbe_eltwise_fusion_2) {
   builder1.SetInputsDeviceType({kFloat32->type_id()});
   builder1.SetOutputsDeviceType({kFloat16->type_id()});
   builder1.SetKernelType(KernelType::TBE_KERNEL);
-  builder1.SetFusionType(kernel::FusionType::OPAQUE);
+  builder1.SetFusionType(kPatternOpaque);
   builder1.SetProcessor(kernel::Processor::AICORE);
   builder1.SetKernelType(KernelType::TBE_KERNEL);
 
@@ -176,7 +186,7 @@ TEST_F(TestHWBufferFusion, test_tbe_eltwise_fusion_2) {
   builder2.SetInputsDeviceType({kFloat32->type_id(), kFloat32->type_id()});
   builder2.SetOutputsDeviceType({kFloat32->type_id()});
   builder2.SetKernelType(KernelType::TBE_KERNEL);
-  builder2.SetFusionType(kernel::FusionType::COMMREDUCE);
+  builder2.SetFusionType(kPatternCommReduce);
   builder2.SetProcessor(kernel::Processor::AICORE);
   builder2.SetKernelType(KernelType::TBE_KERNEL);
 
@@ -199,7 +209,7 @@ TEST_F(TestHWBufferFusion, test_tbe_eltwise_fusion_2) {
 
 TEST_F(TestHWBufferFusion, test_tbe_reduce_eltwise_fusion) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_tbe_reduce_eltwise_fusion", "before");
-  std::vector<int> shp{32, 10};
+  std::vector<int64_t> shp{32, 10};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, shp);
   AbstractBasePtrList args_spec_list{x_abstract};
   auto kg = GetKernelGraph(g, args_spec_list);
@@ -230,7 +240,7 @@ TEST_F(TestHWBufferFusion, test_tbe_reduce_eltwise_fusion) {
   builder.SetInputsDeviceType({kFloat32->type_id()});
   builder.SetOutputsDeviceType({kFloat32->type_id()});
   builder.SetKernelType(KernelType::TBE_KERNEL);
-  builder.SetFusionType(kernel::FusionType::ELEMWISE);
+  builder.SetFusionType(kPatternElemWise);
   builder.SetProcessor(kernel::Processor::AICORE);
   builder.SetKernelType(KernelType::TBE_KERNEL);
 
@@ -253,7 +263,7 @@ TEST_F(TestHWBufferFusion, test_tbe_reduce_eltwise_fusion) {
   builder1.SetInputsDeviceType({kFloat32->type_id()});
   builder1.SetOutputsDeviceType({kFloat16->type_id()});
   builder1.SetKernelType(KernelType::TBE_KERNEL);
-  builder1.SetFusionType(kernel::FusionType::OPAQUE);
+  builder1.SetFusionType(kPatternOpaque);
   builder1.SetProcessor(kernel::Processor::AICORE);
   builder1.SetKernelType(KernelType::TBE_KERNEL);
 
@@ -266,7 +276,7 @@ TEST_F(TestHWBufferFusion, test_tbe_reduce_eltwise_fusion) {
   builder2.SetInputsDeviceType({kFloat32->type_id()});
   builder2.SetOutputsDeviceType({kFloat32->type_id()});
   builder2.SetKernelType(KernelType::TBE_KERNEL);
-  builder2.SetFusionType(kernel::FusionType::COMMREDUCE);
+  builder2.SetFusionType(kPatternCommReduce);
   builder2.SetProcessor(kernel::Processor::AICORE);
   builder2.SetKernelType(KernelType::TBE_KERNEL);
 
@@ -289,8 +299,8 @@ TEST_F(TestHWBufferFusion, test_tbe_reduce_eltwise_fusion) {
 
 TEST_F(TestHWBufferFusion, test_tbe_matmul_eltwise_fusion) {
   FuncGraphPtr g = get_py_fun_.CallAndParseRet("test_tbe_matmul_eltwise_fusion", "before");
-  std::vector<int> x_shp{2048, 768};
-  std::vector<int> y_shp{768, 768};
+  std::vector<int64_t> x_shp{2048, 768};
+  std::vector<int64_t> y_shp{768, 768};
   auto x_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, x_shp);
   auto y_abstract = std::make_shared<abstract::AbstractTensor>(kFloat32, y_shp);
   AbstractBasePtrList args_spec_list{x_abstract, y_abstract};
@@ -312,7 +322,7 @@ TEST_F(TestHWBufferFusion, test_tbe_matmul_eltwise_fusion) {
   builder.SetInputsDeviceType({kFloat32->type_id()});
   builder.SetOutputsDeviceType({kFloat32->type_id()});
   builder.SetKernelType(KernelType::TBE_KERNEL);
-  builder.SetFusionType(kernel::FusionType::ELEMWISE);
+  builder.SetFusionType(kPatternElemWise);
   builder.SetProcessor(kernel::Processor::AICORE);
   builder.SetKernelType(KernelType::TBE_KERNEL);
   relu->set_kernel_info(std::make_shared<device::KernelInfo>());
@@ -324,7 +334,7 @@ TEST_F(TestHWBufferFusion, test_tbe_matmul_eltwise_fusion) {
   builder2.SetInputsDeviceType({kFloat32->type_id(), kFloat32->type_id()});
   builder2.SetOutputsDeviceType({kFloat32->type_id()});
   builder2.SetKernelType(KernelType::TBE_KERNEL);
-  builder2.SetFusionType(kernel::FusionType::OPAQUE);
+  builder2.SetFusionType(kPatternOpaque);
   builder2.SetProcessor(kernel::Processor::AICORE);
   builder2.SetKernelType(KernelType::TBE_KERNEL);
   matmul->set_kernel_info(std::make_shared<device::KernelInfo>());
@@ -336,7 +346,7 @@ TEST_F(TestHWBufferFusion, test_tbe_matmul_eltwise_fusion) {
   builder1.SetInputsDeviceType({kFloat32->type_id()});
   builder1.SetOutputsDeviceType({kFloat16->type_id()});
   builder1.SetKernelType(KernelType::TBE_KERNEL);
-  builder1.SetFusionType(kernel::FusionType::OPAQUE);
+  builder1.SetFusionType(kPatternOpaque);
   builder1.SetProcessor(kernel::Processor::AICORE);
   builder1.SetKernelType(KernelType::TBE_KERNEL);
   cast->set_kernel_info(std::make_shared<device::KernelInfo>());

@@ -17,16 +17,17 @@
 #include <memory>
 
 #include "common/common_test.h"
+#include "ops/arithmetic_ops.h"
 #include "common/py_func_graph_fetcher.h"
 
 #include "ir/manager.h"
-#include "pipeline/static_analysis/prim.h"
-#include "pipeline/static_analysis/program_specialize.h"
+#include "pipeline/jit/ps/static_analysis/prim.h"
+#include "pipeline/jit/ps/static_analysis/program_specialize.h"
 #include "pipeline/static_analysis/helper.h"
 #include "utils/log_adapter.h"
-#include "utils/graph_utils.h"
+#include "ir/graph_utils.h"
 #include "utils/misc.h"
-#include "debug/draw.h"
+#include "include/common/debug/draw.h"
 
 namespace mindspore {
 namespace abstract {
@@ -57,7 +58,7 @@ void TestSpecializeGraph::SetUp() {
    */
   graph_g_ = std::make_shared<FuncGraph>();
   ParameterPtr y = graph_g_->add_parameter();
-  auto prim_return = std::make_shared<Primitive>("return");
+  auto prim_return = std::make_shared<Primitive>("Return");
   std::vector<AnfNodePtr> inputs;
   inputs.push_back(NewValueNode(prim_return));
   inputs.push_back(y);
@@ -95,12 +96,12 @@ void TestSpecializeGraph::SetUp() {
   // build func_graph beta
   ParameterPtr x1 = graph_beta_->add_parameter();
   inputs.clear();
-  inputs.push_back(NewValueNode(std::make_shared<Primitive>("scalar_add")));
+  inputs.push_back(NewValueNode(std::make_shared<Primitive>("ScalarAdd")));
   inputs.push_back(x1);
   inputs.push_back(y);
   CNodePtr cnode_add = graph_beta_->NewCNode(inputs);
   inputs.clear();
-  inputs.push_back(NewValueNode(std::make_shared<Primitive>("return")));
+  inputs.push_back(NewValueNode(std::make_shared<Primitive>("Return")));
   inputs.push_back(cnode_add);
   CNodePtr cnode_return = graph_beta_->NewCNode(inputs);
   graph_beta_->set_return(cnode_return);
@@ -124,7 +125,7 @@ TEST_F(TestSpecializeGraph, test_specialize) {
   AbstractBasePtrList args_spec_list;
   MS_LOG(INFO) << "Begin TestSpecializeGraph call other graph.";
   MS_LOG(INFO) << "" << graph_f_->get_return()->ToString();
-  AbstractBasePtr abstract_v1 = FromValue(1, false);
+  AbstractBasePtr abstract_v1 = FromValue(static_cast<int64_t>(1), false);
   args_spec_list.push_back(abstract_v1);
 
   AnalysisResult result = engine_->Run(graph_f_, args_spec_list);
@@ -133,16 +134,12 @@ TEST_F(TestSpecializeGraph, test_specialize) {
 
 TEST_F(TestSpecializeGraph, test_specialize1) {
   AbstractBasePtrList args_spec_list;
-  AbstractBasePtr abstract_v1 = FromValue(1, true);
-  AbstractBasePtr abstract_v2 = FromValue(2, true);
+  AbstractBasePtr abstract_v1 = FromValue(static_cast<int64_t>(1), true);
+  AbstractBasePtr abstract_v2 = FromValue(static_cast<int64_t>(2), true);
   args_spec_list.push_back(abstract_v1);
   args_spec_list.push_back(abstract_v2);
   AnalysisResult result = engine_->Run(graph_alpha_, args_spec_list);
-  draw::Draw("befor_graph_alpha.dot", graph_alpha_);
   FuncGraphPtr new_graph = special_->Run(graph_alpha_, result.context);
-  if (new_graph) {
-    draw::Draw("after_graph_alpha.dot", new_graph);
-  }
 }
 
 class TestSpecializeMetaFuncGraph : public UT::Common {
@@ -162,17 +159,17 @@ class MetaScalarAdd : public MetaFuncGraph {
   /*
    * Generate a Graph for the given abstract arguments.
    */
-  FuncGraphPtr GenerateFromTypes(const TypePtrList& types) override {
+  FuncGraphPtr GenerateFromTypes(const TypePtrList &types) override {
     FuncGraphPtr graph_g = std::make_shared<FuncGraph>();
     ParameterPtr x = graph_g->add_parameter();
     ParameterPtr y = graph_g->add_parameter();
-    auto prim_scalar_add = std::make_shared<Primitive>("scalar_add");
+    auto prim_scalar_add = std::make_shared<Primitive>("ScalarAdd");
     std::vector<AnfNodePtr> inputs;
     inputs.push_back(NewValueNode(prim_scalar_add));
     inputs.push_back(x);
     inputs.push_back(y);
     CNodePtr cnode_add = graph_g->NewCNode(inputs);
-    auto prim_return = std::make_shared<Primitive>("return");
+    auto prim_return = std::make_shared<Primitive>("Return");
     inputs.clear();
     inputs.push_back(NewValueNode(prim_return));
     inputs.push_back(cnode_add);
@@ -201,7 +198,7 @@ void TestSpecializeMetaFuncGraph::SetUp() {
   inputs.push_back(x);
   inputs.push_back(y);
   CNodePtr cnode_add = graph_->NewCNode(inputs);
-  auto prim_return = std::make_shared<Primitive>("return");
+  auto prim_return = std::make_shared<Primitive>("Return");
   inputs.clear();
   inputs.push_back(NewValueNode(prim_return));
   inputs.push_back(cnode_add);
@@ -214,17 +211,12 @@ void TestSpecializeMetaFuncGraph::TearDown() {}
 TEST_F(TestSpecializeMetaFuncGraph, test_specialize) {
   AbstractBasePtrList args_spec_list;
   std::cout << graph_->get_return()->ToString() << std::endl;
-  AbstractBasePtr abstract_v1 = FromValue(1, true);
-  AbstractBasePtr abstract_v2 = FromValue(2, true);
+  AbstractBasePtr abstract_v1 = FromValue(static_cast<int64_t>(1), true);
+  AbstractBasePtr abstract_v2 = FromValue(static_cast<int64_t>(2), true);
   args_spec_list.push_back(abstract_v1);
   args_spec_list.push_back(abstract_v2);
   AnalysisResult result = engine_->Run(graph_, args_spec_list);
-
-  draw::Draw("befor_graph.dot", graph_);
   FuncGraphPtr new_graph = special_->Run(graph_, result.context);
-  if (new_graph) {
-    draw::Draw("after_graph.dot", new_graph);
-  }
 }
 
 }  // namespace abstract

@@ -16,7 +16,7 @@
 import pytest
 
 import mindspore.nn as nn
-from mindspore import Model
+from mindspore.train import Model
 
 
 class Net(nn.Cell):
@@ -47,13 +47,6 @@ class Net(nn.Cell):
         x = self.flatten(x)
         out = self.fc(x)
         return out
-
-
-def test_shape_error():
-    """ for fuzz test"""
-    in_str = "3 22222222222222222222222222264 3 64 64 222 222 3"
-    with pytest.raises(ValueError):
-        Net(in_str)
 
 
 class LeNet5(nn.Cell):
@@ -98,7 +91,7 @@ class LeNet5(nn.Cell):
         return x
 
 
-def test_shape_error_2():
+def test_shape_error():
     """ for fuzz test"""
     in_str = "3 6 5 6 -6 5 16 5 5 120 120 84 84 3 2"
     with pytest.raises(ValueError):

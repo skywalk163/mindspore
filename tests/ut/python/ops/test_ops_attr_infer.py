@@ -14,15 +14,19 @@
 # ============================================================================
 """ test nn ops """
 import numpy as np
+from numpy.random import normal
+import pytest
 
 import mindspore.nn as nn
 import mindspore.context as context
+from mindspore.ops.composite.base import core
+from mindspore.common.api import jit
 
 from mindspore import Tensor
 from mindspore.ops import functional as F
 from mindspore.ops import prim_attr_register, PrimitiveWithInfer
 
-context.set_context(mode=context.GRAPH_MODE, save_graphs=True)
+context.set_context(mode=context.GRAPH_MODE)
 
 
 class FakeOp(PrimitiveWithInfer):
@@ -59,14 +63,41 @@ def test_conv2d_same_primitive():
     net(t1, t2)
 
 
+# test free variable function list as parameter
+def test_remove_and_fv_2():
+    @core(loop_can_uroll=True)
+    def inner_loop(x, input_data, fv_func_list):
+        ret = ()
+        for fv_fn in fv_func_list:
+            ele = fv_fn(input_data)
+            ret += (ele,)
+        return ret
+
+    @jit
+    def out_loop(input1, input_data0, input_data1):
+        ret = ()
+
+        def fv_func1(y):
+            return input1 * y
+        def fv_func2(y):
+            return input1 - y
+        fv_func_list = [fv_func1, fv_func2]
+        ele0 = inner_loop(input1, input_data0, fv_func_list)
+        ele1 = inner_loop(input1, input_data1, fv_func_list)
+        ret = (ele0, ele1)
+        return ret
+
+    input_data0 = Tensor(normal(0, 0.1, (3, 3)))
+    input_data1 = Tensor(normal(0, 0.1, (3, 1)))
+    input1 = Tensor(normal(0, 0.1, (3, 3)))
+    out_loop(input1, input_data0, input_data1)
+
+
 # test cell as high order argument
 # The graph with free variables used as argument is not supported yet
 # because of the limit of inference specialize system
-def Xtest_conv2d_op_with_arg():
+def test_conv2d_op_with_argi_1():
     class Conv2dNet(nn.Cell):
-        def __init__(self):
-            super(Conv2dNet, self).__init__()
-
         def construct(self, op, x):
             return op(x)
 
@@ -98,9 +129,6 @@ def test_conv2d_op_with_arg():
             return self.op(x, y)
 
     class OpNet(nn.Cell):
-        def __init__(self):
-            super(OpNet, self).__init__()
-
         def construct(self, op, x, y):
             return op(x, y)
 
@@ -132,9 +160,6 @@ def test_conv2d_op_with_arg_same_input():
             return self.op(x, y)
 
     class OpNet(nn.Cell):
-        def __init__(self):
-            super(OpNet, self).__init__()
-
         def construct(self, op, x, y):
             return op(x, y)
 
@@ -252,9 +277,6 @@ def test_nest_partial():
 # op and op args as network arguments
 def test_op_with_arg_as_input():
     class WithOpArgNet(nn.Cell):
-        def __init__(self):
-            super(WithOpArgNet, self).__init__()
-
         def construct(self, op, x, y):
             return op(x, y)
 
@@ -279,11 +301,9 @@ def test_op_with_arg_as_input():
 
 # The partial application used as argument is not supported yet
 # because of the limit of inference specialize system
-def Xtest_partial_as_arg():
+@pytest.mark.skip("poly in infer")
+def test_partial_as_arg():
     class PartialArgNet(nn.Cell):
-        def __init__(self):
-            super(PartialArgNet, self).__init__()
-
         def construct(self, partial_op, y):
             return partial_op(y)
 

@@ -29,19 +29,15 @@
 
 #include "gtest/gtest.h"
 #include "utils/log_adapter.h"
-#include "mindrecord/include/shard_error.h"
-#include "mindrecord/include/shard_reader.h"
-#include "mindrecord/include/shard_writer.h"
-#include "mindrecord/include/shard_index.h"
-#include "mindrecord/include/shard_header.h"
-#include "mindrecord/include/shard_schema.h"
-#include "mindrecord/include/shard_statistics.h"
+#include "minddata/mindrecord/include/shard_error.h"
+#include "minddata/mindrecord/include/shard_reader.h"
+#include "minddata/mindrecord/include/shard_writer.h"
+#include "minddata/mindrecord/include/shard_index.h"
+#include "minddata/mindrecord/include/shard_header.h"
+#include "minddata/mindrecord/include/shard_schema.h"
+#include "minddata/mindrecord/include/shard_statistics.h"
 #include "securec.h"
 #include "ut_common.h"
-
-using mindspore::LogStream;
-using mindspore::ExceptionType::NoExceptionType;
-using mindspore::MsLogLevel::INFO;
 
 namespace mindspore {
 namespace mindrecord {
@@ -79,36 +75,37 @@ TEST_F(TestShardHeader, AddIndexFields) {
   std::pair<uint64_t, std::string> index_field2(schema_id1, "box");
   fields.push_back(index_field1);
   fields.push_back(index_field2);
-  MSRStatus res = header_data.AddIndexFields(fields);
-  ASSERT_EQ(res, SUCCESS);
+  Status status = header_data.AddIndexFields(fields);
+  EXPECT_TRUE(status.IsOk());
+
   ASSERT_EQ(header_data.GetFields().size(), 2);
 
   fields.clear();
   std::pair<uint64_t, std::string> index_field3(schema_id1, "name");
   fields.push_back(index_field3);
-  res = header_data.AddIndexFields(fields);
-  ASSERT_EQ(res, FAILED);
+  status = header_data.AddIndexFields(fields);
+  EXPECT_FALSE(status.IsOk());
   ASSERT_EQ(header_data.GetFields().size(), 2);
 
   fields.clear();
   std::pair<uint64_t, std::string> index_field4(schema_id1, "names");
   fields.push_back(index_field4);
-  res = header_data.AddIndexFields(fields);
-  ASSERT_EQ(res, FAILED);
+  status = header_data.AddIndexFields(fields);
+  EXPECT_FALSE(status.IsOk());
   ASSERT_EQ(header_data.GetFields().size(), 2);
 
   fields.clear();
   std::pair<uint64_t, std::string> index_field5(schema_id1 + 1, "name");
   fields.push_back(index_field5);
-  res = header_data.AddIndexFields(fields);
-  ASSERT_EQ(res, FAILED);
+  status = header_data.AddIndexFields(fields);
+  EXPECT_FALSE(status.IsOk());
   ASSERT_EQ(header_data.GetFields().size(), 2);
 
   fields.clear();
   std::pair<uint64_t, std::string> index_field6(schema_id1, "label");
   fields.push_back(index_field6);
-  res = header_data.AddIndexFields(fields);
-  ASSERT_EQ(res, FAILED);
+  status = header_data.AddIndexFields(fields);
+  EXPECT_FALSE(status.IsOk());
   ASSERT_EQ(header_data.GetFields().size(), 2);
 
   std::string desc_new = "this is a test1";
@@ -129,26 +126,26 @@ TEST_F(TestShardHeader, AddIndexFields) {
   single_fields.push_back("name");
   single_fields.push_back("name");
   single_fields.push_back("box");
-  res = header_data_new.AddIndexFields(single_fields);
-  ASSERT_EQ(res, FAILED);
+  status = header_data_new.AddIndexFields(single_fields);
+  EXPECT_FALSE(status.IsOk());
   ASSERT_EQ(header_data_new.GetFields().size(), 1);
 
   single_fields.push_back("name");
   single_fields.push_back("box");
-  res = header_data_new.AddIndexFields(single_fields);
-  ASSERT_EQ(res, FAILED);
+  status = header_data_new.AddIndexFields(single_fields);
+  EXPECT_FALSE(status.IsOk());
   ASSERT_EQ(header_data_new.GetFields().size(), 1);
 
   single_fields.clear();
   single_fields.push_back("names");
-  res = header_data_new.AddIndexFields(single_fields);
-  ASSERT_EQ(res, FAILED);
+  status = header_data_new.AddIndexFields(single_fields);
+  EXPECT_FALSE(status.IsOk());
   ASSERT_EQ(header_data_new.GetFields().size(), 1);
 
   single_fields.clear();
   single_fields.push_back("box");
-  res = header_data_new.AddIndexFields(single_fields);
-  ASSERT_EQ(res, SUCCESS);
+  status = header_data_new.AddIndexFields(single_fields);
+  EXPECT_TRUE(status.IsOk());
   ASSERT_EQ(header_data_new.GetFields().size(), 2);
 }
 }  // namespace mindrecord
